@@ -1,0 +1,242 @@
+[
+ {
+  "feature": "adapters",
+  "cmd": "adapters",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 3.5,
+  "tail": "\u2502                        \u2502 Generation Place               \u2502\n\u2502 vivado     \u2502 \u2713     \u2502 fpga                   \u2502 vivado v2025.1 (64-bit)        \u2502\n\u2502 questa     \u2502 \u2717     \u2502 sim,coverage           \u2502 not-installed                  \u2502\n\u2502 vcs        \u2502 \u2717     \u2502 sim,coverage           \u2502 not-installed                  \u2502\n\u2502 primetime  \u2502 \u2717     \u2502 sta                    \u2502 not-installed                  \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\u250f\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2513\n\u2503 role     \u2503 selected   \u2503 live \u2503 pinned     \u2503\n\u2521\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2529\n\u2502 sim      \u2502 icarus     \u2502 \u2713    \u2502 icarus     \u2502\n\u2502 lint     \u2502 verilator  \u2502 \u2713    \u2502 verilator  \u2502\n\u2502 format   \u2502 verible    \u2502 \u2713    \u2502            \u2502\n\u2502 coverage \u2502 verilator  \u2502 \u2713    \u2502            \u2502\n\u2502 synth    \u2502 yosys      \u2502 \u2713    \u2502 yosys      \u2502\n\u2502 elab     \u2502 verilator  \u2502 \u2713    \u2502            \u2502\n\u2502 lec      \u2502 eqy        \u2502 \u2713    \u2502 eqy        \u2502\n\u2502 formal   \u2502 symbiyosys \u2502 \u2713    \u2502 symbiyosys \u2502\n\u2502 sta      \u2502 yosys      \u2502 \u2713    \u2502            \u2502\n\u2502 pnr      \u2502 librelane  \u2502 \u2713    \u2502            \u2502\n\u2502 efpga    \u2502 fabulous   \u2502 \u2717    \u2502            \u2502\n\u2502 fpga     \u2502 nextpnr    \u2502 \u2713    \u2502            \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518"
+ },
+ {
+  "feature": "index",
+  "cmd": "index --rebuild",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.2,
+  "tail": "Indexed 6 modules, 6 files (tree 331dc775a811) \u00b7 front end: slang\ntops: soc_top, tick_timer, timer_reg_top"
+ },
+ {
+  "feature": "hier",
+  "cmd": "hier soc_top",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.1,
+  "tail": "(top) : soc_top  #(DATA_W=32, FIFO_DEPTH=8)\n  u_beats : counter  #(WIDTH=8, WRAP=1)\n  u_fifo : sync_fifo  #(WIDTH=32, DEPTH=8, AW=3)\n  u_arb : arbiter_fsm"
+ },
+ {
+  "feature": "module_card",
+  "cmd": "module sync_fifo",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.2,
+  "tail": " out), 3 params, 0 sub-instances, 1 \nprocedural blocks. Clocks: clk.',\n    'ports': [\n        {'name': 'clk', 'dir': 'input', 'width': None, 'type': 'logic'},\n        {'name': 'rst_n', 'dir': 'input', 'width': None, 'type': 'logic'},\n        {'name': 'wr_en', 'dir': 'input', 'width': None, 'type': 'logic'},\n        {\n            'name': 'wr_data',\n            'dir': 'input',\n            'width': '[31:0]',\n            'type': 'logic[31:0]'\n        },\n        {'name': 'full', 'dir': 'output', 'width': None, 'type': 'logic'},\n        {'name': 'rd_en', 'dir': 'input', 'width': None, 'type': 'logic'},\n        {\n            'name': 'rd_data',\n            'dir': 'output',\n            'width': '[31:0]',\n            'type': 'logic[31:0]'\n        },\n        {'name': 'empty', 'dir': 'output', 'width': None, 'type': 'logic'},\n        {\n            'name': 'level',\n            'dir': 'output',\n            'width': '[3:0]',\n            'type': 'logic[3:0]'\n        }\n    ],\n    'params': [\n        {'name': 'WIDTH', 'default': '32'},\n        {'name': 'DEPTH', 'default': '8'}\n    ],\n    'clocks': ['clk'],\n    'resets': ['rst_n'],\n    'instances': [],\n    'has_fsm': False,\n    'confidence': 'high'\n}"
+ },
+ {
+  "feature": "cdc",
+  "cmd": "cdc soc_top",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.2,
+  "tail": "{\n    'crossings': [],\n    'count': 0,\n    'note': 'structural CDC-lite; signoff CDC (Spyglass/Questa) is M2'\n}"
+ },
+ {
+  "feature": "fsm",
+  "cmd": "fsm arbiter_fsm",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.2,
+  "tail": "{\n    'module': 'arbiter_fsm',\n    'fsms': [\n        {\n            'state_reg': 'state',\n            'encoding': 'binary',\n            'states': ['IDLE', 'SERVE0', 'SERVE1'],\n            'transitions': [\n                {'from': 'IDLE', 'to': 'SERVE0', 'cond': 'req0'},\n                {'from': 'IDLE', 'to': 'SERVE1', 'cond': 'req1'},\n                {'from': 'SERVE0', 'to': 'SERVE1', 'cond': 'req1'},\n                {'from': 'SERVE0', 'to': 'IDLE', 'cond': '!req0'},\n                {'from': 'SERVE1', 'to': 'SERVE0', 'cond': 'req0'},\n                {'from': 'SERVE1', 'to': 'IDLE', 'cond': '!req1'}\n            ]\n        }\n    ]\n}"
+ },
+ {
+  "feature": "diagram",
+  "cmd": "diagram soc_top",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.2,
+  "tail": "\u250c\u2500 soc_top : soc_top #(DATA_W=32,FIFO_DEPTH=8)\n  \u250c\u2500 u_beats : counter #(WIDTH=8,WRAP=1)\n  \u250c\u2500 u_fifo : sync_fifo #(WIDTH=32,DEPTH=8,AW=3)\n  \u250c\u2500 u_arb : arbiter_fsm"
+ },
+ {
+  "feature": "cone",
+  "cmd": "cone sync_fifo rd_data --dir fanin",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.3,
+  "tail": "\u256d\u2500 sync_fifo.rd_data (fanin cone) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 // phase_a_ws/rtl/sync_fifo.sv:46                                            \u2502\n\u2502 assign rd_data = mem[rptr];                                                  \u2502\n\u2502 // phase_a_ws/rtl/sync_fifo.sv:30                                            \u2502\n\u2502 always_ff @(posedge clk, negedge rst_n) ... // assigns rptr                  \u2502\n\u2502 // phase_a_ws/rtl/sync_fifo.sv:30                                            \u2502\n\u2502 always_ff @(posedge clk, negedge rst_n) ... // assigns mem                   \u2502\n\u2502 // phase_a_ws/rtl/sync_fifo.sv:30                                            \u2502\n\u2502 always_ff @(posedge clk, negedge rst_n) ... // assigns wptr                  \u2502\n\u2502 // phase_a_ws/rtl/sync_fifo.sv:30                                            \u2502\n\u2502 always_ff @(posedge clk, negedge rst_n) ... // assigns count                 \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f"
+ },
+ {
+  "feature": "lint",
+  "cmd": "lint",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.3,
+  "tail": "verilator J-0001: 0 error(s), 4 warning(s)\n  warning PINCONNECTEMPTY \n/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scrat\nchpad/stress/phase_a_ws/rtl/soc_top.sv:41 Instance pin connected by name with \nempty reference: 'tc'\n  warning UNUSEDSIGNAL \n/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scrat\nchpad/stress/phase_a_ws/rtl/soc_top.sv:10 Signal is not used: 'clk_io'\n  warning UNUSEDSIGNAL \n/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scrat\nchpad/stress/phase_a_ws/rtl/soc_top.sv:45 Signal is not used: 'full'\n  warning UNUSEDSIGNAL \n/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scrat\nchpad/stress/phase_a_ws/rtl/soc_top.sv:46 Signal is not used: 'level'"
+ },
+ {
+  "feature": "sim_sv",
+  "cmd": "sim fifo_smoke",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.2,
+  "tail": "J-0002: pass \u2014 testbench reported pass\n  waves: J-0002 (query with the agent or wave.* tools)"
+ },
+ {
+  "feature": "sim_cocotb",
+  "cmd": "sim counter_cocotb",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.8,
+  "tail": "J-0003: pass \u2014 cocotb: 1 passed, 0 failed"
+ },
+ {
+  "feature": "sim_uvm",
+  "cmd": "sim counter_uvm_smoke",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 122.2,
+  "tail": "J-0004: pass \u2014 UVM test counter_smoke_test passed (2 warnings)"
+ },
+ {
+  "feature": "triage",
+  "cmd": "triage --tag smoke",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.4,
+  "tail": "triage: 9/12 passed, 0 failed, 3 errored, 0 failure cluster(s), 0 flaky"
+ },
+ {
+  "feature": "coverage",
+  "cmd": "cov counter_cov_cocotb",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.3,
+  "tail": "{\n    'job': 'J-0017',\n    'set': 'default',\n    'summary': {\n        'total': 100.0,\n        'by_kind': {},\n        'by_section': {},\n        'bins': 0,\n        'tests': []\n    }\n}"
+ },
+ {
+  "feature": "synth",
+  "cmd": "synth counter",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.2,
+  "tail": "J-0018: cells=8 latches=0  metrics={'cells': 8, 'wires': 13, 'latches': 0}\n  SYNTH: Replacing memory \\mem with list of registers. See \n/tmp/claude-1000/-home-riadh-chipchamp/c9"
+ },
+ {
+  "feature": "fpga_ice40",
+  "cmd": "fpga counter --family ice40 --freq-mhz 100",
+  "ok": false,
+  "rc": 2,
+  "wall_s": 0.1,
+  "tail": "Usage: chipchamp fpga [OPTIONS] MODULE\nTry 'chipchamp fpga -h' for help.\n\nError: No such option: --freq-mhz Did you mean --freq?"
+ },
+ {
+  "feature": "fpga_vivado",
+  "cmd": "fpga counter --flow vivado --freq-mhz 200",
+  "ok": false,
+  "rc": 2,
+  "wall_s": 0.1,
+  "tail": "Usage: chipchamp fpga [OPTIONS] MODULE\nTry 'chipchamp fpga -h' for help.\n\nError: No such option: --freq-mhz Did you mean --freq?"
+ },
+ {
+  "feature": "pnr_librelane",
+  "cmd": "pnr counter",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 63.5,
+  "tail": "running RTL-to-GDSII for counter (this takes minutes)\u2026\nJ-0019: signoff-clean\n  timing : setup WNS 1.6377539787896327 ns \u00b7 hold WHS 0.11107837186677012 ns\n  DRC 0 \u00b7 LVS 0 \u00b7 antenna 0\n  area   : 775.744 \u00b5m\u00b2 cells \u00b7 0.845161 util \u00b7 die 2016.57 \u00b5m\u00b2\n  GDSII: .chipchamp/pd/counter/runs/chipchamp/final/gds/counter.gds"
+ },
+ {
+  "feature": "optimize_brief",
+  "cmd": "optimize tick_timer",
+  "ok": false,
+  "rc": 2,
+  "wall_s": 0.1,
+  "tail": "Usage: chipchamp optimize [OPTIONS]\nTry 'chipchamp optimize -h' for help.\n\nError: Got unexpected extra argument (tick_timer)"
+ },
+ {
+  "feature": "uvm_scaffold",
+  "cmd": "uvm tick_timer",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.2,
+  "tail": "UVM bench generated in verif/uvm/tick_timer (13 files)\n  verif/uvm/tick_timer/tick_timer_if.sv\n  verif/uvm/tick_timer/tick_timer_seq_item.sv\n  verif/uvm/tick_timer/tick_timer_sequencer.sv\n  verif/uvm/tick_timer/tick_timer_driver.sv\n  verif/uvm/tick_timer/tick_timer_monitor.sv\n  verif/uvm/tick_timer/tick_timer_agent.sv\n  verif/uvm/tick_timer/tick_timer_scoreboard.sv\n  verif/uvm/tick_timer/tick_timer_env.sv\n  verif/uvm/tick_timer/tick_timer_seq_lib.sv\n  verif/uvm/tick_timer/tick_timer_test_lib.sv\n  verif/uvm/tick_timer/tick_timer_pkg.sv\n  verif/uvm/tick_timer/tb_tick_timer_uvm.sv\n  verif/uvm/tick_timer/tick_timer_uvm.f\n  manifest: tests.yaml: tick_timer_uvm_smoke\n  run: chipchamp sim tick_timer_uvm_smoke   (or sim.run in a session)\n  scoreboard reference model is TODO \u2014 wire the DUT's expected behavior, then \nclimb the ladder"
+ },
+ {
+  "feature": "regmap",
+  "cmd": "regmap hw/regs/timer.yaml",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.2,
+  "tail": "spec ok \u2014 CTRL@0x000, COUNT@0x004, STATUS@0x008\n  rtl/gen/timer_reg_top.sv  unchanged (6db7001c67e4)\n  sw/include/timer_regs.h  unchanged (93eb35308cb0)\n  docs/gen/timer_regs.md  unchanged (3e88d9d083f5)"
+ },
+ {
+  "feature": "packs",
+  "cmd": "packs",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.1,
+  "tail": "apb \u2014 Chipchamp protocol knowledge pack (SPEC \u00a715.3) for AMBA APB (APB2/3 \nessentials).\n  /home/riadh/chipchamp/packs/apb \u00b7 3 file(s)"
+ },
+ {
+  "feature": "skills_list",
+  "cmd": "skills list",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.2,
+  "tail": "       Tcl language semantics for EDA tool scripting \u2014 \nVivado, OpenROAD/OpenSTA\n  vhdl-design              Synthesizable VHDL semantics \u2014 what design constructs\nmean to simulators\n  vhdl-flow                VHDL language suite orchestrator \u2014 standards, tools, \necosystem choice, a\n  vhdl-interop             VHDL tool interop \u2014 mixed-language boundaries, \nper-tool flags, cocotb on\n  vhdl-math                VHDL arithmetic in practice \u2014 numeric_std usage, \nfixed-point with fixed_\n  vhdl-osvvm               OSVVM \u2014 Open Source VHDL Verification Methodology \nlibraries.\n  vhdl-psl                 Assertions and formal verification for VHDL \u2014 \nconcurrent asserts, PSL, a\n  vhdl-sim                 VHDL simulation semantics \u2014 delta cycles, drivers, \ninitialization, and t\n  vhdl-structure           VHDL structural constructs \u2014 entities, architectures,\ngenerics, packages\n  vhdl-tb                  Plain-VHDL testbench architecture without frameworks.\n  vhdl-types               The VHDL type system in practice.\n  vhdl-uvvm                UVVM \u2014 Universal VHDL Verification Methodology \nframework.\n  vhdl-vunit               VUnit \u2014 Python-driven test runner and libraries for \nVHDL regressions."
+ },
+ {
+  "feature": "library_list",
+  "cmd": "library list",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.2,
+  "tail": "              Dual-clock (CDC) asynchronous FIFO with gray-coded \npointers and re\n    fifo_fwft                Synchronous first-word fall-through (show-ahead) \nFIFO with ready/v\n    fifo_sync                Synchronous single-clock FIFO with ready/valid \nports and status fl\n    mailbox                  Single-element (depth-1) ready/valid handshake \nbuffer / one-place \n    queue                    Generic synchronous FIFO queue with a \npush/pop/count interface.\n  storage/lifo\n    lifo                     Synchronous single-clock LIFO (stack) with push/pop\nand status fla\n  storage/memory\n    mem_1r1w                 Simple dual-port RAM with one write port and one \nregistered read p\n    mem_1rw                  Single-port synchronous RAM with registered read \n(1-cycle read lat\n    mem_banked               Multi-bank synchronous memory (single port, \nregistered read, 1-cyc\n    mem_tdp                  True dual-port RAM with two independent read/write \nports and an A-\n    rom                      Self-contained read-only memory initialized by a \nsynthesizable fun\n  storage/register_file\n    register_file            Multi-port register file (NumRead read / NumWrite \nwrite) with opti"
+ },
+ {
+  "feature": "library_show",
+  "cmd": "library show fifo_async",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.2,
+  "tail": "=2 CDC synchronizer depth in flops\n  AlmostFullThresh default=1 assert almost_full when free slots <= this\n  AlmostEmptyThresh default=1 assert almost_empty when occupancy <= this\n  RstActiveHigh    default=0 reset polarity (1=active-high)\n  RstSync          default=0 reset synchronicity (1=synchronous)\n  HasReset         default=1 instantiate reset logic\ninstantiation\nfifo_async #(\n  .Width(32),  // data width in bits\n  .Depth(8),  // number of entries (power of two, >= 4)\n  .SyncStages(2),  // CDC synchronizer depth in flops\n  .AlmostFullThresh(1),  // assert almost_full when free slots <= this\n  .AlmostEmptyThresh(1),  // assert almost_empty when occupancy <= this\n  .RstActiveHigh(0),  // reset polarity (1=active-high)\n  .RstSync(0),  // reset synchronicity (1=synchronous)\n  .HasReset(1)  // instantiate reset logic\n) u_fifo_async (\n  .wr_clk_i(),  // in \n  .rd_clk_i(),  // in \n  .wr_rst_ni(),  // in \n  .rd_rst_ni(),  // in \n  .s_valid_i(),  // in \n  .s_ready_o(),  // out\n  .s_data_i(),  // in  [Width]\n  .full_o(),  // out\n  .almost_full_o(),  // out\n  .m_valid_o(),  // out\n  .m_ready_i(),  // in \n  .m_data_o(),  // out [Width]\n  .empty_o(),  // out\n  .almost_empty_o()  // out\n);"
+ },
+ {
+  "feature": "library_search",
+  "cmd": "library search axi stream fifo",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.1,
+  "tail": "stream_fifo               Ready/valid stream FIFO built by reusing the \nfifo_sync c\n  axi_cdc                   AXI4-full asynchronous clock-domain crossing (one \ndual-c\n  axis_fifo                 AXI4-Stream FIFO with configurable depth, built on a\nsyn\n  axi_demux                 AXI4-full 1-to-N demultiplexer (select-routed, \nsingle-ou\n  axi_mux                   AXI4-full N-to-1 multiplexer (round-robin \narbitrated, si\n  axi_reg_slice             AXI4-full register slice (timing-decoupling pipeline\nsta\n  axi_xbar                  AXI4-full NumMaster x NumSlave crossbar \n(address-decoded\n  axil_mux                  AXI4-Lite N-to-1 round-robin mux (NumSlave slave \nports t\n  axil_reg_slice            AXI4-Lite register slice (timing-decoupling pipeline\nsta\n  axi_burst_splitter        AXI4-full burst splitter (serializes a burst into \nsingle\n  axi_dw_converter          AXI4-full data-width converter \n(downsize/upsize/passthro\n  axi_err_slave             AXI4-full decode-error subordinate (burst-aware; \nabsorbs"
+ },
+ {
+  "feature": "library_fetch",
+  "cmd": "library fetch sync_2ff --dest rtl/lib",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.2,
+  "tail": "fetched rtl/lib/registers.svh\n  fetched rtl/lib/assertions.svh\n  fetched rtl/lib/riscvier_pkg.sv\n  fetched rtl/lib/sync_2ff.sv\nensure 'rtl/lib/*.sv' is in the target's globs and 'rtl/lib' is on the include \npath (`include directives)\ninstantiation\nsync_2ff #(\n  .Width(1),  // number of independent bits to synchronize\n  .Stages(2),  // synchronizer depth in flops\n  .RstActiveHigh(0),  // reset polarity (1=active-high)\n  .RstSync(0),  // reset synchronicity (1=synchronous)\n  .HasReset(1),  // instantiate reset logic\n  .ResetValue(0)  // value the chain resets to\n) u_sync_2ff (\n  .clk_i(),  // in \n  .rst_ni(),  // in \n  .d_i(),  // in  [Width]\n  .q_o()  // out [Width]\n);"
+ },
+ {
+  "feature": "jobs",
+  "cmd": "jobs",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.1,
+  "tail": "J-0001  passed   lint      verilator  0 error(s), 4 warning(s)\nJ-0002  passed   sim       icarus     testbench reported pass\nJ-0003  passed   sim       cocotb     cocotb: 1 passed, 0 failed\nJ-0004  passed   sim       verilator  UVM test counter_smoke_test passed (2 \nwarnings)\nJ-0005  passed   sim       icarus     testbench reported pass\nJ-0006  passed   sim       icarus     testbench reported pass\nJ-0007  passed   sim       icarus     testbench reported pass\nJ-0008  passed   sim       icarus     testbench reported pass\nJ-0009  passed   sim       icarus     testbench reported pass\nJ-0010  passed   sim       icarus     testbench reported pass\nJ-0011  passed   sim       icarus     testbench reported pass\nJ-0012  passed   sim       icarus     testbench reported pass\nJ-0013  passed   sim       icarus     testbench reported pass\nJ-0014  error    sim       icarus     compile failed\nJ-0015  error    sim       icarus     compile failed\nJ-0016  error    sim       icarus     compile failed\nJ-0017  failed   coverage  verilator  coverage failed\nJ-0018  passed   synth     yosys      cells=8 latches=0\nJ-0019  passed   pnr       librelane  signoff-clean: setup 1.6377539787896327ns,\nDRC 0,"
+ },
+ {
+  "feature": "dashboard",
+  "cmd": "dashboard",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 0.1,
+  "tail": "dashboard: .chipchamp/dashboard.html"
+ },
+ {
+  "feature": "ci_gate",
+  "cmd": "ci",
+  "ok": true,
+  "rc": 0,
+  "wall_s": 107.8,
+  "tail": "# chipchamp ci report\n\n- lint: PASS (0 errors, 4 warnings, job J-0020)\n- sim fifo_smoke: PASS (job J-0021)\n- sim counter_smoke: PASS (job J-0022)\n- sim timer_regs_smoke: PASS (job J-0023)\n- sim counter_uvm_smoke: PASS (job J-0024)\n- sim tick_timer_uvm_smoke: PASS (job J-0025)\nreport: .chipchamp/ci-report.md \u00b7 dashboard regenerated"
+ }
+]

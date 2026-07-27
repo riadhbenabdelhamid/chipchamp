@@ -1,0 +1,32 @@
+--------------------------------------------------------------------------------
+ Synthetic timing-paths fixture (report_timing-style path blocks).
+ Hand-authored for the parser test; invented values, not real tool output.
+--------------------------------------------------------------------------------
+
+Slack (MET) :             2.603ns  (required time - arrival time)
+  Source:            count_q_reg[3]/C
+                       (rising edge-triggered cell clocked by clk)
+  Destination:       count_q_reg[7]/D
+                       (rising edge-triggered cell clocked by clk)
+  Path Group:        clk
+  Path Type:         Setup (Max at Slow Process Corner)
+  Data Path Delay:        1.234ns  (logic 0.456ns (37.0%)  route 0.778ns (63.0%))
+  Logic Levels:           2  (LUT6=1 LUT2=1)
+
+
+Slack (MET) :             2.741ns  (required time - arrival time)
+  Source:            count_q_reg[5]/C
+  Destination:       count_q_reg[6]/D
+  Path Group:        clk
+  Path Type:         Setup (Max at Slow Process Corner)
+  Data Path Delay:        1.102ns  (logic 0.401ns (36.4%)  route 0.701ns (63.6%))
+  Logic Levels:           1  (LUT4=1)
+
+
+Slack (MET) :             2.980ns  (required time - arrival time)
+  Source:            count_q_reg[1]/C
+  Destination:       count_q_reg[2]/D
+  Path Group:        clk
+  Path Type:         Setup (Max at Slow Process Corner)
+  Data Path Delay:        0.964ns  (logic 0.362ns (37.6%)  route 0.602ns (62.4%))
+  Logic Levels:           1  (LUT3=1)

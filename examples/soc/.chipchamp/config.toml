@@ -1,0 +1,99 @@
+[project]
+name = "soc-example"
+design_md = ["DESIGN.md"]
+default_target = "soc"
+
+[targets.soc]
+top = "soc_top"
+globs = ["rtl/*.sv", "rtl/gen/*.sv"]
+defines = { SIMULATION = "1" }
+
+# Source-of-truth map (SPEC §12.5, FR-PROJ-04): these outputs are generated —
+# the agent edits the spec and regenerates; direct edits are refused.
+[[generated]]
+kind = "regmap"
+sources = ["hw/regs/timer.yaml"]
+outputs = ["rtl/gen/timer_reg_top.sv", "sw/include/timer_regs.h", "docs/gen/timer_regs.md"]
+generator = "chipchamp regmap hw/regs/timer.yaml"
+
+[tools]
+sim_inner = "icarus"
+lint = ["verilator", "verible"]
+synth = "yosys"
+lec = "eqy"
+formal = "symbiyosys"
+
+[runner]
+kind = "local"
+max_parallel = 4
+
+[context]
+deny = ["pdk/**", "**/*.lic"]
+module_card_tokens = 220
+
+[budgets.default]
+v3_submissions_per_task = 8
+license_hours = 24
+cpu_hours = 200
+model_tokens = 2000000
+
+[waves]
+prefer = "vcd"
+retention_days = 14
+
+# Agent skills (SPEC §15.3): expert playbooks in SKILL.md format. Directories
+# here are versioned team intent; `chipchamp skills add <dir>` registers ad-hoc
+# ones (persisted in .chipchamp/skills.json). index controls the system-prompt
+# index (bodies always load on demand via skill.use):
+#   semantic (default) — embed each skill's "Use when…" prose once (cached in
+#     .chipchamp/skills.vec.json; `chipchamp skills reindex` prebuilds) and put
+#     only the top_k most relevant skills in the prompt for each task, ranked
+#     by a local /v1/embeddings endpoint (LM Studio/Ollama/vLLM auto-detected;
+#     an explicit skill-name mention always wins). Falls back to compact when
+#     no embedding endpoint is reachable.
+#   compact — name + first sentence for every skill on every call
+#   full — whole descriptions (most tokens) · off — no index
+#
+# [skills]
+# index = "semantic"
+# dirs = ["~/skills"]
+# embed_provider = ""   # blank = auto-probe local providers
+# embed_model = ""      # blank = first model id containing "embed"
+# top_k = 5
+# min_score = 0.25
+
+# IP component library (SPEC §12): point at a manifest.json library with
+# `chipchamp library add <dir>` (persisted in .chipchamp/library.json), or list
+# dirs here. `lib.match` finds components by FUNCTION + INTERFACE (name-
+# independent) using the same local /v1/embeddings endpoint as skills — embed
+# each component once (cached in .chipchamp/library.vec.json; `chipchamp library
+# reindex` prebuilds) and cosine-rank + interface-score the agent's described
+# sub-block against it; falls back to lexical + interface scoring with no
+# endpoint. `library match "<behavior>" --interface "<ports/protocol>"` from
+# the shell.
+#
+# [library]
+# dirs = ["~/rtllib-pillars"]
+# embed_provider = ""   # blank = auto-probe (same endpoint as skills)
+# embed_model = ""      # blank = first model id containing "embed"
+# top_k = 6
+# min_score = 0.2
+
+# Model layer is provider-agnostic (SPEC §14). By default the model is chosen via
+# `chipchamp model`, env (CHIPCHAMP_PROVIDER/CHIPCHAMP_MODEL), or ANTHROPIC/OPENAI keys.
+# Built-in providers: anthropic, openai, lmstudio, ollama, vllm, llamacpp.
+# Uncomment to pin a default for this workspace:
+#
+# [model]
+# provider = "ollama"        # any built-in or custom [providers.*] name
+# model = "qwen3.5:9b"       # blank -> the provider's default
+# request_timeout = 300      # total wall-clock budget per model call, seconds
+#                            # (also CHIPCHAMP_MODEL_TIMEOUT env; a slow/wedged
+#                            #  model times out cleanly instead of hanging)
+#
+# Example custom OpenAI-compatible endpoint (e.g. an in-house/on-prem gateway):
+# [providers.corp]
+# kind = "openai"
+# base_url = "https://llm.corp.internal/v1"
+# api_key_env = "CORP_LLM_KEY"
+# default_model = "llama-3.1-70b-instruct"

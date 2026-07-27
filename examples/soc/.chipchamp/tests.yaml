@@ -1,0 +1,67 @@
+defaults:
+  timeout_s: 60
+  seeds: [1]
+
+tests:
+  - name: fifo_smoke
+    target: soc
+    runner: { kind: sv, tb_top: tb_sync_fifo, files: [tb/tb_sync_fifo.sv] }
+    tags: [smoke, fifo]
+    owner: dana
+  - name: counter_smoke
+    target: soc
+    runner: { kind: sv, tb_top: tb_counter, files: [tb/tb_counter.sv] }
+    tags: [smoke, counter]
+    owner: dana
+  - name: timer_regs_smoke
+    target: soc
+    runner: { kind: sv, tb_top: tb_timer_regs, files: [tb/tb_timer_regs.sv] }
+    tags: [smoke, regs]
+    owner: dana
+  - name: tick_smoke
+    target: soc
+    runner: { kind: sv, tb_top: tb_tick_timer, files: [tb/tb_tick_timer.sv] }
+    tags: [tick, deadwidth-demo]   # the optimize-loop demo workload
+    owner: chipchamp
+  - name: counter_cocotb
+    target: soc
+    runner:
+      kind: cocotb
+      module: test_counter_cocotb
+      toplevel: counter
+      rtl: [rtl/counter.sv]
+      test_dir: tb
+      hdl_sim: icarus
+    tags: [cocotb, counter]
+    owner: ravi
+  - name: counter_cov_cocotb
+    target: soc
+    runner:
+      kind: cocotb
+      module: test_counter_cov_cocotb
+      toplevel: counter
+      rtl: [rtl/counter.sv]
+      test_dir: tb
+      hdl_sim: icarus
+      # cocotb-coverage export (adapter pins the path via CHIPCHAMP_COV_XML,
+      # surfaced as the job's coverage_xml artifact) -> cov.load
+    tags: [cocotb, counter, coverage]
+    owner: ravi
+  # --- chipchamp uvm: counter_uvm_smoke ---
+  - name: counter_uvm_smoke
+    target: soc
+    runner:
+      kind: uvm
+      tb_top: tb_counter_uvm
+      files:
+      - verif/uvm/counter/counter_pkg.sv
+      - verif/uvm/counter/tb_counter_uvm.sv
+      incdirs:
+      - verif/uvm/counter
+      uvm_test: counter_smoke_test
+    tags:
+    - uvm
+    - smoke
+    - counter
+    owner: chipchamp
+  # --- end chipchamp uvm ---

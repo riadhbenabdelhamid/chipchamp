@@ -1,0 +1,1280 @@
+[
+  {
+    "model": "ollama:qwen3-coder:30b",
+    "scenario": "cache",
+    "outcome": "timeout",
+    "metrics": {
+      "steps": 0,
+      "wall_s": 413.79,
+      "model_calls": 1,
+      "tokens_in": 0,
+      "tokens_out": 0,
+      "tokens_total": 0,
+      "context_chars_max": 142,
+      "context_messages_max": 1,
+      "tool_calls": 0,
+      "tool_failures": 0,
+      "tools": {},
+      "jobs": 0,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:qwen3-coder:30b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 0,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 179,
+      "feature_checks": {
+        "job_cache_hit": false,
+        "ladder_evaluable": true,
+        "history_recorded": false,
+        "compacted": false
+      }
+    },
+    "checks": {
+      "job_cache_hit": false,
+      "ladder_evaluable": true,
+      "history_recorded": false,
+      "compacted": false
+    },
+    "experiment": "E-3d4123c202",
+    "workspace": "/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scratchpad/lab/ollama_qwen3-coder_30b__cache"
+  },
+  {
+    "model": "ollama:qwen3-coder:30b",
+    "scenario": "disclosure",
+    "outcome": "timeout",
+    "metrics": {
+      "steps": 0,
+      "wall_s": 412.05,
+      "model_calls": 1,
+      "tokens_in": 0,
+      "tokens_out": 0,
+      "tokens_total": 0,
+      "context_chars_max": 156,
+      "context_messages_max": 1,
+      "tool_calls": 0,
+      "tool_failures": 0,
+      "tools": {},
+      "jobs": 0,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:qwen3-coder:30b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 0,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 179,
+      "feature_checks": {
+        "tools_load_called": false,
+        "deferred_tool_used": false,
+        "compacted": false
+      }
+    },
+    "checks": {
+      "tools_load_called": false,
+      "deferred_tool_used": false,
+      "compacted": false
+    },
+    "experiment": "E-60871268ec",
+    "workspace": "/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scratchpad/lab/ollama_qwen3-coder_30b__disclosure"
+  },
+  {
+    "model": "ollama:qwen3-coder:30b",
+    "scenario": "detach",
+    "outcome": "timeout",
+    "metrics": {
+      "steps": 0,
+      "wall_s": 411.35,
+      "model_calls": 1,
+      "tokens_in": 0,
+      "tokens_out": 0,
+      "tokens_total": 0,
+      "context_chars_max": 177,
+      "context_messages_max": 1,
+      "tool_calls": 0,
+      "tool_failures": 0,
+      "tools": {},
+      "jobs": 0,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:qwen3-coder:30b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 0,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 179,
+      "feature_checks": {
+        "detached_job": false,
+        "job_wait_called": false,
+        "compacted": false
+      }
+    },
+    "checks": {
+      "detached_job": false,
+      "job_wait_called": false,
+      "compacted": false
+    },
+    "experiment": "E-5a270b2591",
+    "workspace": "/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scratchpad/lab/ollama_qwen3-coder_30b__detach"
+  },
+  {
+    "model": "ollama:nemotron-3-nano:4b",
+    "scenario": "cache",
+    "outcome": "answered",
+    "metrics": {
+      "steps": 6,
+      "wall_s": 169.75,
+      "model_calls": 6,
+      "tokens_in": 41776,
+      "tokens_out": 690,
+      "tokens_total": 42466,
+      "context_chars_max": 1400,
+      "context_messages_max": 11,
+      "tool_calls": 3,
+      "tool_failures": 1,
+      "tools": {
+        "lint.run": {
+          "calls": 1,
+          "failed": 0
+        },
+        "plan.update": {
+          "calls": 1,
+          "failed": 0
+        },
+        "sim.run": {
+          "calls": 1,
+          "failed": 1
+        }
+      },
+      "jobs": 1,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [
+        {
+          "tool": "sim.run",
+          "job": "",
+          "status": "?",
+          "cached": false
+        }
+      ],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:nemotron-3-nano:4b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 3,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 351,
+      "feature_checks": {
+        "job_cache_hit": false,
+        "ladder_evaluable": true,
+        "history_recorded": false,
+        "compacted": false
+      }
+    },
+    "checks": {
+      "job_cache_hit": false,
+      "ladder_evaluable": true,
+      "history_recorded": false,
+      "compacted": false
+    },
+    "experiment": "E-1103d83eb3",
+    "workspace": "/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scratchpad/lab/ollama_nemotron-3-nano_4b__cache"
+  },
+  {
+    "model": "ollama:nemotron-3-nano:4b",
+    "scenario": "disclosure",
+    "outcome": "answered",
+    "metrics": {
+      "steps": 7,
+      "wall_s": 189.11,
+      "model_calls": 7,
+      "tokens_in": 72660,
+      "tokens_out": 1013,
+      "tokens_total": 73673,
+      "context_chars_max": 1596,
+      "context_messages_max": 13,
+      "tool_calls": 4,
+      "tool_failures": 0,
+      "tools": {
+        "design.hierarchy": {
+          "calls": 1,
+          "failed": 0
+        },
+        "fs.grep": {
+          "calls": 1,
+          "failed": 0
+        },
+        "fs.list": {
+          "calls": 1,
+          "failed": 0
+        },
+        "tools.load": {
+          "calls": 1,
+          "failed": 0
+        }
+      },
+      "jobs": 0,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:nemotron-3-nano:4b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 3,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 565,
+      "feature_checks": {
+        "tools_load_called": true,
+        "deferred_tool_used": false,
+        "compacted": false
+      }
+    },
+    "checks": {
+      "tools_load_called": true,
+      "deferred_tool_used": false,
+      "compacted": false
+    },
+    "experiment": "E-6edcb20f2c",
+    "workspace": "/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scratchpad/lab/ollama_nemotron-3-nano_4b__disclosure"
+  },
+  {
+    "model": "ollama:nemotron-3-nano:4b",
+    "scenario": "detach",
+    "outcome": "answered",
+    "metrics": {
+      "steps": 10,
+      "wall_s": 266.71,
+      "model_calls": 10,
+      "tokens_in": 86637,
+      "tokens_out": 1846,
+      "tokens_total": 88483,
+      "context_chars_max": 2639,
+      "context_messages_max": 19,
+      "tool_calls": 6,
+      "tool_failures": 1,
+      "tools": {
+        "design.hierarchy": {
+          "calls": 1,
+          "failed": 0
+        },
+        "job.status": {
+          "calls": 1,
+          "failed": 0
+        },
+        "plan.update": {
+          "calls": 1,
+          "failed": 0
+        },
+        "policy.check": {
+          "calls": 1,
+          "failed": 0
+        },
+        "sim.run": {
+          "calls": 2,
+          "failed": 1
+        }
+      },
+      "jobs": 2,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [
+        {
+          "tool": "sim.run",
+          "job": "",
+          "status": "?",
+          "cached": false
+        },
+        {
+          "tool": "sim.run",
+          "job": "J-0001",
+          "status": "running",
+          "cached": false
+        }
+      ],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [
+        "J-0001"
+      ],
+      "models_used": [
+        "ollama:nemotron-3-nano:4b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 3,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 331,
+      "feature_checks": {
+        "detached_job": true,
+        "job_wait_called": false,
+        "compacted": false
+      }
+    },
+    "checks": {
+      "detached_job": true,
+      "job_wait_called": false,
+      "compacted": false
+    },
+    "experiment": "E-d0ff25a072",
+    "workspace": "/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scratchpad/lab/ollama_nemotron-3-nano_4b__detach"
+  },
+  {
+    "model": "ollama:nemotron-3-nano:4b",
+    "scenario": "notebook",
+    "outcome": "answered",
+    "metrics": {
+      "steps": 4,
+      "wall_s": 64.0,
+      "model_calls": 4,
+      "tokens_in": 32636,
+      "tokens_out": 429,
+      "tokens_total": 33065,
+      "context_chars_max": 893,
+      "context_messages_max": 7,
+      "tool_calls": 3,
+      "tool_failures": 0,
+      "tools": {
+        "fs.grep": {
+          "calls": 1,
+          "failed": 0
+        },
+        "fs.list": {
+          "calls": 1,
+          "failed": 0
+        },
+        "note.add": {
+          "calls": 1,
+          "failed": 0
+        }
+      },
+      "jobs": 0,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:nemotron-3-nano:4b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 0,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 48,
+      "feature_checks": {
+        "note_recorded": true,
+        "digest_nonempty": true,
+        "compacted": false
+      }
+    },
+    "checks": {
+      "note_recorded": true,
+      "digest_nonempty": true,
+      "compacted": false
+    },
+    "experiment": "E-e33968fa04",
+    "workspace": "/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scratchpad/lab/ollama_nemotron-3-nano_4b__notebook"
+  },
+  {
+    "model": "ollama:nemotron-3-nano:4b",
+    "scenario": "spawn",
+    "outcome": "answered",
+    "metrics": {
+      "steps": 6,
+      "wall_s": 464.74,
+      "model_calls": 6,
+      "tokens_in": 50721,
+      "tokens_out": 1533,
+      "tokens_total": 52254,
+      "context_chars_max": 2208,
+      "context_messages_max": 11,
+      "tool_calls": 3,
+      "tool_failures": 1,
+      "tools": {
+        "agent.spawn": {
+          "calls": 1,
+          "failed": 1
+        },
+        "plan.update": {
+          "calls": 2,
+          "failed": 0
+        }
+      },
+      "jobs": 0,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:nemotron-3-nano:4b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 3,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 246,
+      "feature_checks": {
+        "spawn_called": true,
+        "spawn_ok": false,
+        "compacted": false
+      }
+    },
+    "checks": {
+      "spawn_called": true,
+      "spawn_ok": false,
+      "compacted": false
+    },
+    "experiment": "E-a66120786e",
+    "workspace": "/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scratchpad/lab/ollama_nemotron-3-nano_4b__spawn"
+  },
+  {
+    "model": "ollama:nemotron-3-nano:4b",
+    "scenario": "budget",
+    "outcome": "answered",
+    "metrics": {
+      "steps": 2,
+      "wall_s": 83.89,
+      "model_calls": 1,
+      "tokens_in": 7991,
+      "tokens_out": 423,
+      "tokens_total": 8414,
+      "context_chars_max": 76,
+      "context_messages_max": 1,
+      "tool_calls": 1,
+      "tool_failures": 0,
+      "tools": {
+        "sim.run": {
+          "calls": 1,
+          "failed": 0
+        }
+      },
+      "jobs": 1,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [
+        {
+          "tool": "sim.run",
+          "job": "J-0001",
+          "status": "error",
+          "cached": false
+        }
+      ],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:nemotron-3-nano:4b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 0,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 60,
+      "feature_checks": {
+        "budget_blocked": true,
+        "compacted": false
+      }
+    },
+    "checks": {
+      "budget_blocked": true,
+      "compacted": false
+    },
+    "experiment": "E-064698bc4b",
+    "workspace": "/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scratchpad/lab/ollama_nemotron-3-nano_4b__budget"
+  },
+  {
+    "model": "ollama:qwen3.6:35b",
+    "scenario": "-",
+    "outcome": "unavailable",
+    "error": "HTTP Error 500: Internal Server Error"
+  },
+  {
+    "model": "ollama:gpt-oss:20b",
+    "scenario": "cache",
+    "outcome": "capped",
+    "metrics": {
+      "steps": 12,
+      "wall_s": 155.63,
+      "model_calls": 12,
+      "tokens_in": 68205,
+      "tokens_out": 813,
+      "tokens_total": 69018,
+      "context_chars_max": 4084,
+      "context_messages_max": 23,
+      "tool_calls": 12,
+      "tool_failures": 3,
+      "tools": {
+        "fs.grep": {
+          "calls": 4,
+          "failed": 0
+        },
+        "fs.list": {
+          "calls": 5,
+          "failed": 1
+        },
+        "fs__search": {
+          "calls": 1,
+          "failed": 1
+        },
+        "fs_list": {
+          "calls": 1,
+          "failed": 1
+        },
+        "sim.list_tests": {
+          "calls": 1,
+          "failed": 0
+        }
+      },
+      "jobs": 0,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:gpt-oss:20b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 0,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 273,
+      "feature_checks": {
+        "job_cache_hit": false,
+        "ladder_evaluable": true,
+        "history_recorded": false,
+        "compacted": false
+      }
+    },
+    "checks": {
+      "job_cache_hit": false,
+      "ladder_evaluable": true,
+      "history_recorded": false,
+      "compacted": false
+    },
+    "experiment": "E-dd5b6e0e5d",
+    "workspace": "/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scratchpad/lab/ollama_gpt-oss_20b__cache"
+  },
+  {
+    "model": "ollama:gpt-oss:20b",
+    "scenario": "disclosure",
+    "outcome": "completed",
+    "metrics": {
+      "steps": 10,
+      "wall_s": 70.66,
+      "model_calls": 10,
+      "tokens_in": 63193,
+      "tokens_out": 1850,
+      "tokens_total": 65043,
+      "context_chars_max": 8061,
+      "context_messages_max": 19,
+      "tool_calls": 8,
+      "tool_failures": 0,
+      "tools": {
+        "design.hierarchy": {
+          "calls": 1,
+          "failed": 0
+        },
+        "design.module": {
+          "calls": 1,
+          "failed": 0
+        },
+        "report.done": {
+          "calls": 1,
+          "failed": 0
+        },
+        "sta.run": {
+          "calls": 1,
+          "failed": 0
+        },
+        "synth.run": {
+          "calls": 3,
+          "failed": 0
+        },
+        "tools.load": {
+          "calls": 1,
+          "failed": 0
+        }
+      },
+      "jobs": 4,
+      "jobs_passed": 3,
+      "jobs_cached": 0,
+      "job_detail": [
+        {
+          "tool": "synth.run",
+          "job": "J-0001",
+          "status": "passed",
+          "cached": false
+        },
+        {
+          "tool": "sta.run",
+          "job": "J-0002",
+          "status": "passed",
+          "cached": false
+        },
+        {
+          "tool": "synth.run",
+          "job": "J-0003",
+          "status": "passed",
+          "cached": false
+        },
+        {
+          "tool": "synth.run",
+          "job": "J-0004",
+          "status": "failed",
+          "cached": false
+        }
+      ],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:gpt-oss:20b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 0,
+      "length_stops": 0,
+      "reported_done": true,
+      "answer_chars": 15,
+      "feature_checks": {
+        "tools_load_called": true,
+        "deferred_tool_used": true,
+        "compacted": false
+      }
+    },
+    "checks": {
+      "tools_load_called": true,
+      "deferred_tool_used": true,
+      "compacted": false
+    },
+    "experiment": "E-26f4e642c8",
+    "workspace": "/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scratchpad/lab/ollama_gpt-oss_20b__disclosure"
+  },
+  {
+    "model": "ollama:gpt-oss:20b",
+    "scenario": "detach",
+    "outcome": "answered",
+    "metrics": {
+      "steps": 1,
+      "wall_s": 39.84,
+      "model_calls": 1,
+      "tokens_in": 4687,
+      "tokens_out": 1382,
+      "tokens_total": 6069,
+      "context_chars_max": 177,
+      "context_messages_max": 1,
+      "tool_calls": 0,
+      "tool_failures": 0,
+      "tools": {},
+      "jobs": 0,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:gpt-oss:20b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 0,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 240,
+      "feature_checks": {
+        "detached_job": false,
+        "job_wait_called": false,
+        "compacted": false
+      }
+    },
+    "checks": {
+      "detached_job": false,
+      "job_wait_called": false,
+      "compacted": false
+    },
+    "experiment": "E-f10579d663",
+    "workspace": "/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scratchpad/lab/ollama_gpt-oss_20b__detach"
+  },
+  {
+    "model": "ollama:gpt-oss:20b",
+    "scenario": "notebook",
+    "outcome": "answered",
+    "metrics": {
+      "steps": 6,
+      "wall_s": 43.48,
+      "model_calls": 6,
+      "tokens_in": 31888,
+      "tokens_out": 1498,
+      "tokens_total": 33386,
+      "context_chars_max": 3427,
+      "context_messages_max": 11,
+      "tool_calls": 5,
+      "tool_failures": 0,
+      "tools": {
+        "fs.grep": {
+          "calls": 1,
+          "failed": 0
+        },
+        "fs.read": {
+          "calls": 1,
+          "failed": 0
+        },
+        "note.add": {
+          "calls": 1,
+          "failed": 0
+        },
+        "note.list": {
+          "calls": 1,
+          "failed": 0
+        },
+        "plan.update": {
+          "calls": 1,
+          "failed": 0
+        }
+      },
+      "jobs": 0,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:gpt-oss:20b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 0,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 953,
+      "feature_checks": {
+        "note_recorded": true,
+        "digest_nonempty": true,
+        "compacted": false
+      }
+    },
+    "checks": {
+      "note_recorded": true,
+      "digest_nonempty": true,
+      "compacted": false
+    },
+    "experiment": "E-8c3a116a78",
+    "workspace": "/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scratchpad/lab/ollama_gpt-oss_20b__notebook"
+  },
+  {
+    "model": "ollama:gpt-oss:20b",
+    "scenario": "spawn",
+    "outcome": "capped",
+    "metrics": {
+      "steps": 8,
+      "wall_s": 102.43,
+      "model_calls": 8,
+      "tokens_in": 37498,
+      "tokens_out": 3605,
+      "tokens_total": 41103,
+      "context_chars_max": 2796,
+      "context_messages_max": 15,
+      "tool_calls": 7,
+      "tool_failures": 3,
+      "tools": {
+        "agent.spawn": {
+          "calls": 2,
+          "failed": 2
+        },
+        "fs.grep": {
+          "calls": 1,
+          "failed": 0
+        },
+        "fs.read": {
+          "calls": 1,
+          "failed": 0
+        },
+        "info": {
+          "calls": 1,
+          "failed": 1
+        },
+        "lint.run": {
+          "calls": 1,
+          "failed": 0
+        },
+        "sim.list_tests": {
+          "calls": 1,
+          "failed": 0
+        }
+      },
+      "jobs": 0,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:gpt-oss:20b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 1,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 0,
+      "feature_checks": {
+        "spawn_called": true,
+        "spawn_ok": false,
+        "compacted": false
+      }
+    },
+    "checks": {
+      "spawn_called": true,
+      "spawn_ok": false,
+      "compacted": false
+    },
+    "experiment": "E-98bcd65f3e",
+    "workspace": "/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scratchpad/lab/ollama_gpt-oss_20b__spawn"
+  },
+  {
+    "model": "ollama:gpt-oss:20b",
+    "scenario": "budget",
+    "outcome": "answered",
+    "metrics": {
+      "steps": 2,
+      "wall_s": 18.09,
+      "model_calls": 1,
+      "tokens_in": 4675,
+      "tokens_out": 563,
+      "tokens_total": 5238,
+      "context_chars_max": 76,
+      "context_messages_max": 1,
+      "tool_calls": 1,
+      "tool_failures": 0,
+      "tools": {
+        "plan.update": {
+          "calls": 1,
+          "failed": 0
+        }
+      },
+      "jobs": 0,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:gpt-oss:20b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 0,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 60,
+      "feature_checks": {
+        "budget_blocked": true,
+        "compacted": false
+      }
+    },
+    "checks": {
+      "budget_blocked": true,
+      "compacted": false
+    },
+    "experiment": "E-cb2299df4c",
+    "workspace": "/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scratchpad/lab/ollama_gpt-oss_20b__budget"
+  },
+  {
+    "model": "ollama:devstral:24b",
+    "scenario": "cache",
+    "outcome": "answered",
+    "metrics": {
+      "steps": 5,
+      "wall_s": 195.51,
+      "model_calls": 5,
+      "tokens_in": 32505,
+      "tokens_out": 542,
+      "tokens_total": 33047,
+      "context_chars_max": 3680,
+      "context_messages_max": 9,
+      "tool_calls": 3,
+      "tool_failures": 0,
+      "tools": {
+        "lint.run": {
+          "calls": 1,
+          "failed": 0
+        },
+        "sim.run": {
+          "calls": 2,
+          "failed": 0
+        }
+      },
+      "jobs": 2,
+      "jobs_passed": 1,
+      "jobs_cached": 0,
+      "job_detail": [
+        {
+          "tool": "sim.run",
+          "job": "J-0002",
+          "status": "passed",
+          "cached": false
+        },
+        {
+          "tool": "sim.run",
+          "job": "J-0003",
+          "status": "running",
+          "cached": false
+        }
+      ],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [
+        "J-0003"
+      ],
+      "models_used": [
+        "ollama:devstral:24b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 0,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 297,
+      "feature_checks": {
+        "job_cache_hit": false,
+        "ladder_evaluable": true,
+        "history_recorded": true,
+        "compacted": false
+      }
+    },
+    "checks": {
+      "job_cache_hit": false,
+      "ladder_evaluable": true,
+      "history_recorded": true,
+      "compacted": false
+    },
+    "experiment": "E-cac7f2648a",
+    "workspace": "/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scratchpad/lab/ollama_devstral_24b__cache"
+  },
+  {
+    "model": "ollama:devstral:24b",
+    "scenario": "disclosure",
+    "outcome": "answered",
+    "metrics": {
+      "steps": 2,
+      "wall_s": 38.5,
+      "model_calls": 2,
+      "tokens_in": 11499,
+      "tokens_out": 43,
+      "tokens_total": 11542,
+      "context_chars_max": 315,
+      "context_messages_max": 3,
+      "tool_calls": 0,
+      "tool_failures": 0,
+      "tools": {},
+      "jobs": 0,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:devstral:24b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 1,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 119,
+      "feature_checks": {
+        "tools_load_called": false,
+        "deferred_tool_used": false,
+        "compacted": false
+      }
+    },
+    "checks": {
+      "tools_load_called": false,
+      "deferred_tool_used": false,
+      "compacted": false
+    },
+    "experiment": "E-3b3dff5e90",
+    "workspace": "/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scratchpad/lab/ollama_devstral_24b__disclosure"
+  },
+  {
+    "model": "ollama:devstral:24b",
+    "scenario": "detach",
+    "outcome": "completed",
+    "metrics": {
+      "steps": 8,
+      "wall_s": 112.63,
+      "model_calls": 8,
+      "tokens_in": 49842,
+      "tokens_out": 486,
+      "tokens_total": 50328,
+      "context_chars_max": 3374,
+      "context_messages_max": 15,
+      "tool_calls": 4,
+      "tool_failures": 0,
+      "tools": {
+        "design.hierarchy": {
+          "calls": 1,
+          "failed": 0
+        },
+        "job.status": {
+          "calls": 1,
+          "failed": 0
+        },
+        "report.done": {
+          "calls": 1,
+          "failed": 0
+        },
+        "sim.run": {
+          "calls": 1,
+          "failed": 0
+        }
+      },
+      "jobs": 1,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [
+        {
+          "tool": "sim.run",
+          "job": "J-0001",
+          "status": "running",
+          "cached": false
+        }
+      ],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [
+        "J-0001"
+      ],
+      "models_used": [
+        "ollama:devstral:24b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 2,
+      "length_stops": 0,
+      "reported_done": true,
+      "answer_chars": 160,
+      "feature_checks": {
+        "detached_job": true,
+        "job_wait_called": false,
+        "compacted": false
+      }
+    },
+    "checks": {
+      "detached_job": true,
+      "job_wait_called": false,
+      "compacted": false
+    },
+    "experiment": "E-f62a4f8ac0",
+    "workspace": "/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scratchpad/lab/ollama_devstral_24b__detach"
+  },
+  {
+    "model": "ollama:devstral:24b",
+    "scenario": "notebook",
+    "outcome": "answered",
+    "metrics": {
+      "steps": 1,
+      "wall_s": 35.41,
+      "model_calls": 1,
+      "tokens_in": 5729,
+      "tokens_out": 281,
+      "tokens_total": 6010,
+      "context_chars_max": 156,
+      "context_messages_max": 1,
+      "tool_calls": 0,
+      "tool_failures": 0,
+      "tools": {},
+      "jobs": 0,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:devstral:24b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 0,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 1137,
+      "feature_checks": {
+        "note_recorded": false,
+        "digest_nonempty": false,
+        "compacted": false
+      }
+    },
+    "checks": {
+      "note_recorded": false,
+      "digest_nonempty": false,
+      "compacted": false
+    },
+    "experiment": "E-d4523d9a4b",
+    "workspace": "/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scratchpad/lab/ollama_devstral_24b__notebook"
+  },
+  {
+    "model": "ollama:devstral:24b",
+    "scenario": "spawn",
+    "outcome": "completed",
+    "metrics": {
+      "steps": 6,
+      "wall_s": 343.29,
+      "model_calls": 17,
+      "tokens_in": 105670,
+      "tokens_out": 2735,
+      "tokens_total": 108405,
+      "context_chars_max": 9309,
+      "context_messages_max": 19,
+      "tool_calls": 11,
+      "tool_failures": 3,
+      "tools": {
+        "agent.spawn": {
+          "calls": 1,
+          "failed": 0
+        },
+        "design.hierarchy": {
+          "calls": 1,
+          "failed": 0
+        },
+        "design.module": {
+          "calls": 1,
+          "failed": 0
+        },
+        "fs.list": {
+          "calls": 3,
+          "failed": 0
+        },
+        "fs.read": {
+          "calls": 4,
+          "failed": 3
+        },
+        "report.done": {
+          "calls": 1,
+          "failed": 0
+        }
+      },
+      "jobs": 0,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:devstral:24b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 2,
+      "length_stops": 0,
+      "reported_done": true,
+      "answer_chars": 1489,
+      "feature_checks": {
+        "spawn_called": true,
+        "spawn_ok": true,
+        "compacted": false
+      }
+    },
+    "checks": {
+      "spawn_called": true,
+      "spawn_ok": true,
+      "compacted": false
+    },
+    "experiment": "E-c3d90acea6",
+    "workspace": "/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scratchpad/lab/ollama_devstral_24b__spawn"
+  },
+  {
+    "model": "ollama:devstral:24b",
+    "scenario": "budget",
+    "outcome": "answered",
+    "metrics": {
+      "steps": 1,
+      "wall_s": 32.88,
+      "model_calls": 1,
+      "tokens_in": 5724,
+      "tokens_out": 56,
+      "tokens_total": 5780,
+      "context_chars_max": 76,
+      "context_messages_max": 1,
+      "tool_calls": 0,
+      "tool_failures": 0,
+      "tools": {},
+      "jobs": 0,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:devstral:24b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 0,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 247,
+      "feature_checks": {
+        "budget_blocked": false,
+        "compacted": false
+      }
+    },
+    "checks": {
+      "budget_blocked": false,
+      "compacted": false
+    },
+    "experiment": "E-fca2eb7b7b",
+    "workspace": "/tmp/claude-1000/-home-riadh-chipchamp/c9b08b22-9d5d-4475-84f2-e44d61dd6535/scratchpad/lab/ollama_devstral_24b__budget"
+  }
+]

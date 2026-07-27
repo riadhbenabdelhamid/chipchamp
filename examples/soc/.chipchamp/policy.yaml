@@ -1,0 +1,13 @@
+autonomy:
+  default: L1
+  "rtl/soc_top.sv": { max: L1, approvers: [dana, sam] }
+  "docs/**": { max: L3 }
+  "tb/**": { max: L2 }
+
+protected:
+  - ".chipchamp/policy.yaml"
+  - "waivers/**"
+
+approvals:
+  waivers: [sam]
+  coverage_exclusions: [dana, sam]

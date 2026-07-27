@@ -1,0 +1,28 @@
+# Synthetic STA power-report fixture — hand-authored for the power-report parser.
+# The "== CHIPCHAMP X ==" section markers are emitted by chipchamp's own power.tcl.
+# Invented values; not real tool output; contains no third-party content.
+
+== CHIPCHAMP ANNOTATION ==
+vcd            13
+unannotated   168
+
+== CHIPCHAMP POWER ==
+Group                  Internal     Switching    Leakage      Total        %
+---------------------  -----------  -----------  -----------  -----------  ------
+Sequential             1.300000e-04 2.000000e-05 1.500000e-10 1.500000e-04  64.9%
+Combinational          1.000000e-05 5.500000e-06 8.000000e-11 1.550000e-05   6.7%
+Clock                  4.500000e-05 2.045000e-05 5.000000e-11 6.545000e-05  28.3%
+Macro                  0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00   0.0%
+Pad                    0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00   0.0%
+---------------------  -----------  -----------  -----------  -----------  ------
+Total                  1.610363e-04 7.022568e-05 3.238217e-10 2.312623e-04 100.0%
+
+== CHIPCHAMP INSTANCES ==
+   Internal   Switching   Leakage     Total       Instance
+ 1.743042e-05 6.328296e-06 1.232310e-11 2.375873e-05 clkbuf_0_clk
+ 1.520000e-05 5.100000e-06 1.100000e-11 2.030000e-05 clkbuf_1_0__f_clk
+ 1.450000e-05 4.900000e-06 1.050000e-11 1.940000e-05 clkbuf_1_1__f_clk
+ 8.500000e-06 3.200000e-06 6.000000e-12 1.170000e-05 count_q_reg_3_
+ 5.100000e-06 1.900000e-06 4.000000e-12 7.000000e-06 count_q_reg_7_
+
+== CHIPCHAMP DONE ==

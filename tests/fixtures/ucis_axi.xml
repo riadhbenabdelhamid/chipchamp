@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<UCIS xmlns="http://www.accellera.org/XMLSchema/UCIS/1.0"
+      ucisVersion="1.0" writtenBy="questa" writtenTime="2026-07-09T21:14:02">
+  <sourceFiles fileName="verif/axi_cov.sv" id="1"/>
+  <sourceFiles fileName="verif/axi_env.sv" id="2"/>
+  <historyNodes historyNodeId="1" logicalName="axi_burst_test" physicalName="axi_burst_test.ucdb"
+                kind="test" testStatus="true" simtime="200000" timeunit="ns" cmd="vsim -c"/>
+  <instanceCoverages name="axi_env" key="0" instanceId="1" moduleName="axi_env">
+    <covergroupCoverage weight="1">
+      <cgInstance name="axi_mstr_cg" key="0">
+        <options weight="1" goal="100" at_least="1"/>
+        <cgId cgName="axi_mstr_cg" moduleName="axi_env">
+          <cginstSourceId file="1" line="12" inlineCount="1"/>
+          <cgSourceId file="1" line="12" inlineCount="1"/>
+        </cgId>
+        <coverpoint name="burst_cp" key="0">
+          <options weight="1" at_least="1"/>
+          <coverpointBin name="fixed" type="bins" key="0">
+            <range from="0" to="0"><contents coverageCount="120"/></range>
+          </coverpointBin>
+          <coverpointBin name="incr" type="bins" key="1">
+            <range from="1" to="1"><contents coverageCount="87"/></range>
+          </coverpointBin>
+          <coverpointBin name="wrap16" type="bins" key="2">
+            <range from="2" to="2"><contents coverageCount="0"/></range>
+          </coverpointBin>
+        </coverpoint>
+        <coverpoint name="size_cp" key="1">
+          <options weight="2" at_least="1"/>
+          <coverpointBin name="b1" type="bins" key="0">
+            <range from="0" to="0"><contents coverageCount="40"/></range>
+          </coverpointBin>
+          <coverpointBin name="b4" type="bins" key="1">
+            <range from="2" to="2"><contents coverageCount="55"/></range>
+          </coverpointBin>
+        </coverpoint>
+        <cross name="burst_x_size" key="0">
+          <options weight="1" at_least="1"/>
+          <crossExpr>burst_cp</crossExpr>
+          <crossExpr>size_cp</crossExpr>
+          <crossBin name="&lt;incr,b4&gt;" key="0">
+            <index>1</index><index>1</index>
+            <contents coverageCount="31"/>
+          </crossBin>
+          <crossBin name="&lt;wrap16,b4&gt;" key="1">
+            <index>2</index><index>1</index>
+            <contents coverageCount="0"/>
+          </crossBin>
+        </cross>
+      </cgInstance>
+    </covergroupCoverage>
+  </instanceCoverages>
+</UCIS>

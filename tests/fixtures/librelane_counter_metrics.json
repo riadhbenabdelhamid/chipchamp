@@ -1,0 +1,21 @@
+{
+  "__comment__": "Synthetic LibreLane-style metrics.json — hand-authored test fixture for the metrics normalizer. Invented values; not real tool output; contains no third-party content.",
+  "design__name": "counter",
+  "timing__setup__ws__corner:nom_tt_025C_1v80": 3.210,
+  "timing__setup__ws__corner:min_ff_n40C_1v95": 4.050,
+  "timing__setup__ws__corner:max_ss_100C_1v60": 0.870,
+  "timing__hold__ws__corner:nom_tt_025C_1v80": 0.190,
+  "timing__hold__ws__corner:min_ff_n40C_1v95": 0.120,
+  "timing__hold__ws__corner:max_ss_100C_1v60": 0.340,
+  "magic__drc_error__count": 0,
+  "klayout__drc_error__count": 0,
+  "route__drc_errors": 0,
+  "design__lvs_error__count": 0,
+  "antenna__violating__nets": 0,
+  "design__die__area": 2500.0,
+  "design__instance__area": 812.34,
+  "design__instance__utilization": 0.42,
+  "design__instance__count": 96,
+  "route__wirelength__estimated": 1543.0,
+  "power__internal__total": 8.9e-05
+}

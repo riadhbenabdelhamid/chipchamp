@@ -1,0 +1,35 @@
+# Chipchamp CI (SPEC §7.3): unit suite + the headless verification gate on the
+# example workspace, using apt's OSS EDA tools. The ci job's exit code is the
+# gate; its markdown report + dashboard are uploaded as artifacts.
+name: chipchamp
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install OSS EDA tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends verilator iverilog yosys
+      - name: Bootstrap
+        run: ./setup.sh
+      - name: Unit + integration suite
+        run: .venv/bin/python -m pytest -q
+      - name: Headless verification gate (example SoC)
+        run: .venv/bin/python -m chipchamp --root examples/soc ci --tag smoke
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chipchamp-evidence
+          path: |
+            examples/soc/.chipchamp/ci-report.md
+            examples/soc/.chipchamp/dashboard.html
+          if-no-files-found: ignore

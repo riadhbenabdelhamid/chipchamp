@@ -1,0 +1,14 @@
+--------------------------------------------------------------------------------
+ Synthetic timing-summary fixture (report_timing_summary-style layout).
+ Hand-authored for the parser test; invented values, not real tool output.
+--------------------------------------------------------------------------------
+
+Design Timing Summary
+---------------------
+
+  WNS(ns)   TNS(ns)  TNS Failing   TNS Total   WHS(ns)   THS(ns)  THS Failing   THS Total
+  -------   -------  -----------   ---------   -------   -------  -----------   ---------
+    2.603     0.000            0           8     0.188     0.050            0           8
+
+
+All user specified timing constraints are met.

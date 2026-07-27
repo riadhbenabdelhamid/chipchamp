@@ -1,0 +1,25 @@
+UVM_INFO /home/riadh/.cache/chipchamp/uvm-core/src/base/uvm_traversal.svh(345) @ 0: reporter [UVM/COMP/NAMECHECK] This implementation of the component name checks requires DPI to be enabled
+UVM_WARNING /home/riadh/.cache/chipchamp/uvm-core/src/base/uvm_traversal.svh(314) @ 0: reporter [NO_VISIT_CHECK] Because UVM_REGEX_NO_DPI is defined, no uvm component name constraints will be checked
+UVM_INFO tb_smoke.sv(12) @ 0: uvm_test_top [SMOKE] hello from UVM on Verilator
+UVM_INFO tb_smoke.sv(14) @ 10000: uvm_test_top [SMOKE] objection dropping
+UVM_INFO /home/riadh/.cache/chipchamp/uvm-core/src/base/uvm_report_server.svh(1009) @ 10000: reporter [UVM/REPORT/SERVER] 
+--- UVM Report Summary ---
+
+** Report counts by severity
+UVM_INFO :    6
+UVM_WARNING :    2
+UVM_ERROR :    0
+UVM_FATAL :    0
+** Report counts by id
+[NO_DPI_TSTNAME]     1
+[NO_DPI_USED]     1
+[NO_VISIT_CHECK]     1
+[RNTST]     1
+[SMOKE]     2
+[UVM/COMP/NAMECHECK]     1
+[UVM/RELNOTES]     1
+
+- /home/riadh/.cache/chipchamp/uvm-core/src/base/uvm_root.svh:633: Verilog $finish
+- S i m u l a t i o n   R e p o r t: Verilator 5.049 devel
+- Verilator: $finish at 10ns; walltime 0.010 s; speed 992.407 ns/s
+- Verilator: cpu 0.006 s on 1 threads; allocated 23 MB

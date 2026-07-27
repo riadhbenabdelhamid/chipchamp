@@ -1,0 +1,16 @@
+--------------------------------------------------------------------------------
+ Synthetic power-summary fixture (report_power-style layout).
+ Hand-authored for the parser test; invented values, not real tool output.
+--------------------------------------------------------------------------------
+
+1. Summary
+----------
+
++--------------------------+--------+
+| On-Chip Power            |        |
++--------------------------+--------+
+| Total On-Chip Power (W)  | 0.069  |
+| Dynamic (W)              | 0.012  |
+| Device Static (W)        | 0.057  |
+| Confidence Level         | Low    |
++--------------------------+--------+

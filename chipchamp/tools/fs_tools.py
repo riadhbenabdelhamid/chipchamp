@@ -1,0 +1,237 @@
+"""Workspace file tools (SPEC §9 group A), ACL- and policy-gated.
+
+Reads are refused for ACL-denied paths *in the tool layer* (below the model, so a
+jailbreak can't exfiltrate PDK IP — FR-SEC-02). Writes are refused for protected
+and denied paths, and every write is recorded so the policy engine can
+reconstruct the change set for gating.
+"""
+from __future__ import annotations
+
+import os
+import re
+
+from .base import tool, truncate
+from .context import ToolContext
+
+
+def _abs(ctx: ToolContext, path: str) -> str:
+    return path if os.path.isabs(path) else os.path.join(ctx.ws.root, path)
+
+
+@tool("fs.read", "Read a source file (ACL-enforced).", group="workspace",
+      schema={"type": "object", "properties": {
+          "path": {"type": "string"},
+          "start": {"type": "integer"}, "end": {"type": "integer"}},
+          "required": ["path"]})
+def fs_read(ctx: ToolContext, path: str, start: int = 1, end: int = 0) -> dict:
+    if not ctx.policy.can_read(path):
+        return {"error": f"read denied: {ctx.policy.acl.reason(path)}"}
+    ap = _abs(ctx, path)
+    if not os.path.exists(ap):
+        return {"error": f"no such file: {path}",
+                "hint": "paths are relative to the workspace root "
+                        "(e.g. rtl/soc_top.sv); fs.list shows the tree"}
+    lines = open(ap, errors="replace").read().splitlines()
+    end = end or len(lines)
+    chunk = lines[max(0, start - 1):end]
+    numbered = "\n".join(f"{i+start:5d}  {ln}" for i, ln in enumerate(chunk))
+    return truncate({"path": path, "lines": f"{start}-{start+len(chunk)-1}",
+                     "content": numbered}, max_str=8000)
+
+
+@tool("fs.list", "List source files under a directory (ACL-filtered).",
+      group="workspace",
+      schema={"type": "object", "properties": {
+          "dir": {"type": "string", "default": "."},
+          "pattern": {"type": "string", "default": "*.sv"}}})
+def fs_list(ctx: ToolContext, dir: str = ".", pattern: str = "*.sv") -> dict:
+    import glob
+    base = _abs(ctx, dir)
+    hits = glob.glob(os.path.join(base, "**", pattern), recursive=True)
+    rels = [ctx.rel(h) for h in hits if ctx.policy.can_read(ctx.rel(h))]
+    return truncate({"dir": dir, "files": sorted(rels)})
+
+
+@tool("fs.grep", "Regex search across source files (ACL-filtered).", group="workspace",
+      schema={"type": "object", "properties": {
+          "pattern": {"type": "string"}, "glob": {"type": "string", "default": "**/*.sv"}},
+          "required": ["pattern"]})
+def fs_grep(ctx: ToolContext, pattern: str, glob: str = "**/*.sv") -> dict:
+    import glob as _g
+    rx = re.compile(pattern)
+    hits = []
+    for f in _g.glob(os.path.join(ctx.ws.root, glob), recursive=True):
+        rel = ctx.rel(f)
+        if not ctx.policy.can_read(rel):
+            continue
+        try:
+            for i, ln in enumerate(open(f, errors="replace"), 1):
+                if rx.search(ln):
+                    hits.append(f"{rel}:{i}: {ln.rstrip()}")
+        except OSError:
+            continue
+    return truncate({"pattern": pattern, "hits": hits}, max_items=40)
+
+
+@tool("fs.write", "Create or overwrite a file (policy/ACL-gated; recorded for "
+      "gating). Refuses generated outputs and protected paths.", permission="write",
+      group="workspace",
+      schema={"type": "object", "properties": {
+          "path": {"type": "string"}, "content": {"type": "string"}},
+          "required": ["path", "content"]})
+def fs_write(ctx: ToolContext, path: str, content: str) -> dict:
+    ok, why = ctx.policy.can_write(path)
+    if not ok:
+        return {"error": f"write denied: {why}"}
+    ap = _abs(ctx, path)
+    old = open(ap, errors="replace").read() if os.path.exists(ap) else ""
+    status = "modified" if old else "added"
+    os.makedirs(os.path.dirname(ap), exist_ok=True)
+    with open(ap, "w") as fh:
+        fh.write(content)
+    ctx.record_edit(path, old, content, status)
+    ctx.ws.invalidate(ctx.target_name)  # design DB + live source glob
+    return {"path": path, "status": status, "bytes": len(content)}
+
+
+def _strip_render_prefix(lines: list[str]) -> list[str] | None:
+    """If EVERY line starts with a line-number prefix (a pasted fs.read
+    numbered render), strip it; else None."""
+    import re as _re
+    out = []
+    for ln in lines:
+        m = _re.match(r"^\s*\d+\s{2}(.*)$", ln)
+        if not m:
+            return None
+        out.append(m.group(1))
+    return out
+
+
+def _lenient_find(file_lines: list[str], old_lines: list[str]) -> list[int]:
+    """Start indices where old matches file ignoring per-line leading/trailing
+    whitespace."""
+    want = [ln.strip() for ln in old_lines]
+    hits = []
+    for i in range(len(file_lines) - len(want) + 1):
+        if [file_lines[i + j].strip() for j in range(len(want))] == want:
+            hits.append(i)
+    return hits
+
+
+def _apply_lenient(file_lines: list[str], start: int, n_old: int,
+                   old_lines: list[str], new: str) -> list[str]:
+    """Replace the matched window, re-indenting `new` by the indentation delta
+    between the file's first matched line and the caller's first old line."""
+    file_indent = len(file_lines[start]) - len(file_lines[start].lstrip())
+    old_indent = len(old_lines[0]) - len(old_lines[0].lstrip())
+    delta = file_indent - old_indent
+    new_lines = []
+    for ln in new.split("\n"):
+        if not ln.strip():
+            new_lines.append("")
+        elif delta >= 0:
+            new_lines.append(" " * delta + ln)
+        else:
+            cur = len(ln) - len(ln.lstrip())
+            new_lines.append(ln[min(-delta, cur):])
+    return file_lines[:start] + new_lines + file_lines[start + n_old:]
+
+
+def _nearest_raw(text: str, old: str, window: int = 2) -> dict | None:
+    """The raw file bytes around the line closest to the first old line —
+    so a model can retry with an exact match."""
+    import difflib
+    first = next((ln.strip() for ln in old.split("\n") if ln.strip()), "")
+    if not first:
+        return None
+    lines = text.split("\n")
+    close = difflib.get_close_matches(first, [ln.strip() for ln in lines],
+                                      n=1, cutoff=0.4)
+    if not close:
+        return None
+    idx = next(i for i, ln in enumerate(lines) if ln.strip() == close[0])
+    lo, hi = max(0, idx - window), min(len(lines), idx + window + 1)
+    return {"line": idx + 1, "raw": "\n".join(lines[lo:hi])}
+
+
+@tool("fs.delete", "Delete a file (DESTRUCTIVE — irreversible; always requires "
+      "explicit human confirmation, in every autonomy mode). Recorded for "
+      "gating. Prefer leaving a stale file over deleting; never delete files "
+      "you did not create for this task.", permission="write",
+      destructive=True, group="workspace",
+      schema={"type": "object", "properties": {
+          "path": {"type": "string"}}, "required": ["path"]})
+def fs_delete(ctx: ToolContext, path: str) -> dict:
+    ok, why = ctx.policy.can_write(path)
+    if not ok:
+        return {"error": f"delete denied: {why}"}
+    ap = _abs(ctx, path)
+    if not os.path.exists(ap):
+        return {"error": f"no such file: {path}"}
+    if os.path.isdir(ap):
+        return {"error": f"{path} is a directory (fs.delete removes single files)"}
+    old = open(ap, errors="replace").read()
+    os.remove(ap)
+    ctx.record_edit(path, old, "", "deleted")
+    ctx.ws.invalidate(ctx.target_name)
+    return {"path": path, "status": "deleted", "bytes": len(old)}
+
+
+@tool("fs.edit", "Exact string replacement in a file (policy/ACL-gated; "
+      "recorded). `old` must match the file's RAW bytes — fs.read's line "
+      "numbers are a display prefix, not file content. Whitespace-lenient "
+      "fallback applies when the match is unique.",
+      permission="write", group="workspace",
+      schema={"type": "object", "properties": {
+          "path": {"type": "string"}, "old": {"type": "string"}, "new": {"type": "string"}},
+          "required": ["path", "old", "new"]})
+def fs_edit(ctx: ToolContext, path: str, old: str, new: str) -> dict:
+    ok, why = ctx.policy.can_write(path)
+    if not ok:
+        return {"error": f"write denied: {why}"}
+    ap = _abs(ctx, path)
+    if not os.path.exists(ap):
+        return {"error": f"no such file: {path}"}
+    text = open(ap, errors="replace").read()
+    baseline = ctx.edits.get(path, {}).get("old", text)
+
+    def commit(updated: str, match: str) -> dict:
+        with open(ap, "w") as fh:
+            fh.write(updated)
+        ctx.record_edit(path, baseline, updated, "modified")
+        ctx.ws.invalidate(ctx.target_name)
+        return {"path": path, "status": "modified", "replaced": 1,
+                "match": match}
+
+    if text.count(old) == 1:
+        return commit(text.replace(old, new, 1), "exact")
+    if text.count(old) > 1:
+        return {"error": f"old string is not unique ({text.count(old)} matches)"}
+
+    # Not found verbatim. Models copy from fs.read's numbered render and lose
+    # exact indentation (or keep the number prefix) — recover when the intent
+    # is unambiguous, fail with the raw bytes when it isn't.
+    file_lines = text.split("\n")
+    for prep, label in ((old.split("\n"), "whitespace-lenient"),
+                        (_strip_render_prefix(old.split("\n")),
+                         "line-numbers-stripped")):
+        if not prep or not any(ln.strip() for ln in prep):
+            continue
+        hits = _lenient_find(file_lines, prep)
+        if len(hits) == 1:
+            updated = "\n".join(_apply_lenient(file_lines, hits[0], len(prep),
+                                               prep, new))
+            return commit(updated, label)
+        if len(hits) > 1:
+            return {"error": f"old string is not unique even ignoring "
+                             f"whitespace ({len(hits)} matches) — include "
+                             f"more surrounding lines"}
+    out = {"error": "old string not found (must match the file's raw bytes "
+                    "exactly — fs.read line numbers and their indentation "
+                    "are display-only, not file content)"}
+    near = _nearest_raw(text, old)
+    if near:
+        out["nearest_match"] = near
+        out["hint"] = ("closest raw text shown in nearest_match.raw — copy it "
+                       "verbatim as `old`")
+    return out

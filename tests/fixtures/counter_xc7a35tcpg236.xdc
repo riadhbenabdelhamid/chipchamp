@@ -1,0 +1,15 @@
+# Legal xc7a35tcpg236-1 package pins (queried from Vivado); clk on a
+# clock-capable (RCC) pin. Verification constraints, not a board pinout.
+set_property -dict {PACKAGE_PIN A16 IOSTANDARD LVCMOS33} [get_ports clk]
+set_property -dict {PACKAGE_PIN A14 IOSTANDARD LVCMOS33} [get_ports rst_n]
+set_property -dict {PACKAGE_PIN A15 IOSTANDARD LVCMOS33} [get_ports en]
+set_property -dict {PACKAGE_PIN A18 IOSTANDARD LVCMOS33} [get_ports clr]
+set_property -dict {PACKAGE_PIN B15 IOSTANDARD LVCMOS33} [get_ports {count[0]}]
+set_property -dict {PACKAGE_PIN B16 IOSTANDARD LVCMOS33} [get_ports {count[1]}]
+set_property -dict {PACKAGE_PIN B17 IOSTANDARD LVCMOS33} [get_ports {count[2]}]
+set_property -dict {PACKAGE_PIN B18 IOSTANDARD LVCMOS33} [get_ports {count[3]}]
+set_property -dict {PACKAGE_PIN C15 IOSTANDARD LVCMOS33} [get_ports {count[4]}]
+set_property -dict {PACKAGE_PIN C16 IOSTANDARD LVCMOS33} [get_ports {count[5]}]
+set_property -dict {PACKAGE_PIN C17 IOSTANDARD LVCMOS33} [get_ports {count[6]}]
+set_property -dict {PACKAGE_PIN D17 IOSTANDARD LVCMOS33} [get_ports {count[7]}]
+set_property -dict {PACKAGE_PIN D18 IOSTANDARD LVCMOS33} [get_ports tc]

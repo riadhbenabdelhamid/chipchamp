@@ -1,0 +1,22 @@
+# Register-map source of truth for the timer block (SPEC §12.5, P10).
+# Edit THIS file and regenerate; never hand-edit rtl/gen/timer_reg_top.sv.
+name: timer
+bus: apb
+addr_width: 12
+registers:
+  - name: CTRL
+    offset: 0x000
+    desc: Control register
+    fields:
+      - { name: EN,       bits: "0",    access: RW, reset: 0,   desc: Timer enable }
+      - { name: PRESCALE, bits: "15:8", access: RW, reset: 0x4, desc: Clock prescaler }
+  - name: COUNT
+    offset: 0x004
+    desc: Live counter value
+    fields:
+      - { name: VALUE, bits: "31:0", access: RO, desc: Current count (hw-driven) }
+  - name: STATUS
+    offset: 0x008
+    desc: Sticky status flags (write 1 to clear)
+    fields:
+      - { name: OVF, bits: "0", access: W1C, reset: 0, desc: Counter overflow }

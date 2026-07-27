@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chipchamp"
+version = "0.1.0"
+description = "Agentic coding platform for RTL design & verification (implements SPEC.md)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Chipchamp" }]
+dependencies = [
+    "click>=8.1",
+    "rich>=13.0",
+    "pygments>=2.15",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+model = ["anthropic>=0.40"]
+tui = ["prompt_toolkit>=3.0"]
+slang = ["pyslang>=7"]              # production SystemVerilog front end
+dev = ["pytest>=8.0", "prompt_toolkit>=3.0", "pyslang>=7"]
+
+[project.scripts]
+chipchamp = "chipchamp.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["chipchamp*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

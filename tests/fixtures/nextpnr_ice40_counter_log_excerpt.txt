@@ -1,0 +1,3 @@
+Info: Device utilisation:
+Info: Max frequency for clock 'clk$SB_IO_IN_$glb_clk': 392.77 MHz (PASS at 100.00 MHz)
+Info: Max frequency for clock 'clk$SB_IO_IN_$glb_clk': 365.36 MHz (PASS at 100.00 MHz)

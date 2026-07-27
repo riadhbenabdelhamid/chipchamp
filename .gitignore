@@ -1,0 +1,58 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.chipchamp/runs/
+.chipchamp/db-*.json
+.chipchamp/sessions/
+.chipchamp/bundles/
+.chipchamp/audit.jsonl
+.chipchamp/formal/
+.chipchamp/lec/
+.chipchamp/coverage/
+examples/**/obj_cov*/
+examples/**/*.vcd
+examples/**/*.vvp
+examples/**/coverage*.dat
+
+# generated per-workspace state (any nested .chipchamp/)
+**/.chipchamp/runs/
+**/.chipchamp/db-*.json
+**/.chipchamp/sessions/
+**/.chipchamp/bundles/
+**/.chipchamp/audit.jsonl
+**/.chipchamp/golden.vcd
+**/.chipchamp/formal/
+**/.chipchamp/lec/
+**/.chipchamp/coverage/
+
+# generated test artifacts
+**/*.results.xml
+**/cocotb_build/
+
+# stray root workspace state
+/.chipchamp/
+**/.chipchamp/model.json
+**/*.cov.xml
+examples/**/obj_*/
+**/.chipchamp/ppa/
+examples/**/verif/uvm_t/
+**/.chipchamp/fpga/
+**/.chipchamp/power/
+**/.chipchamp/sweep/
+**/.chipchamp/glsim/
+**/.chipchamp/skills.json
+*.vec.json
+
+# agent scratch/design dir (regenerable; never commit generated RTL/sim)
+work/
+
+# per-workspace state added by the loop waves (regenerable, machine-written)
+**/.chipchamp/history.json
+**/.chipchamp/notebook.json
+**/.chipchamp/experiments/
+**/.chipchamp/cache.json
+**/.chipchamp/riscv/
+
+# stray capture files
+/h
