@@ -1714,6 +1714,11 @@ def _agent_events(c):
                 ui.console().print(f"  [yellow]⊘ skipped {name} (not approved)[/]")
             elif "error" in res:
                 ui.console().print(f"  [red]✗ {name}: {str(res['error'])[:100]}[/]")
+            elif res.get("images"):
+                # an MCP renderer (e.g. wavelets' render_waveform_png) handed
+                # back a picture; the base64 never entered the transcript, so
+                # this is the only place it becomes visible
+                ui.show_images(res["images"], mode=_image_mode(c), relto=c.ws.root)
             elif name in ("fs.edit", "fs.write") and res.get("path"):
                 _show_diff(res["path"])
                 # the first edit is what CREATES the obligation — it decides the
@@ -1937,6 +1942,18 @@ def _undo_cmd(c) -> None:
         echo(f"[dim]undone: {out.get('checkpoint') or 'last task'}[/]")
 
 
+def _image_mode(c) -> str:
+    """`[ui] mcp_images` — how a picture from an MCP tool is presented.
+
+    auto (default) draws it when the terminal has an inline protocol and links
+    it otherwise; `image` is the same but says why it could not draw; `off`
+    always links. Text chronograms are a different TOOL, not a fallback, so
+    `off` is a preference for the rendering that survives asciinema, SSH and
+    tmux rather than a degraded mode."""
+    mode = str((c.ws.config.get("ui", {}) or {}).get("mcp_images", "auto")).lower()
+    return mode if mode in ("auto", "image", "off") else "auto"
+
+
 def _context_budget(c, gw) -> int:
     """Transcript budget for this session, or 0 to never compact.
 
@@ -2051,7 +2068,9 @@ def _interactive(ctx_obj, prompt=None, model=None, provider=None, max_steps=40,
     if plan_mode is None:
         plan_mode = c.policy.default_autonomy == "L0"
 
-    mcp_tools, mcp_clients = load_mcp_tools(c.ws.config, cwd=c.ws.root)
+    mcp_tools, mcp_clients = load_mcp_tools(
+        c.ws.config, cwd=c.ws.root,
+        image_dir=str(c.ws.dot / "mcp-images"))
     tool_set = {**_all(), **mcp_tools} if mcp_tools else None
     store = str(c.ws.dot / "sessions")
     sess, resumed = None, None

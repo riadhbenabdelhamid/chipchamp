@@ -21,9 +21,11 @@ import re
 import sys
 import threading
 import time
+from pathlib import Path
 
 from rich.console import Console
 from rich.markdown import CodeBlock, Markdown
+from rich.markup import escape
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.syntax import Syntax
@@ -91,6 +93,97 @@ def clear() -> None:
 
 def rule(label: str = "") -> None:
     _console.print(Rule(label, style="grey37", characters="─"))
+
+
+# ---- inline images (MCP renderers) ------------------------------------------
+#
+# A tool like wavelets' render_waveform_png hands back a real picture. Two
+# terminals can draw one straight into the scrollback from base64 PNG — kitty's
+# graphics protocol and iTerm2's inline-image escape. Everywhere else the honest
+# answer is a path, NOT a broken escape sequence sprayed at the screen.
+#
+# Sixel is deliberately unsupported: it needs a PNG→sixel conversion that is not
+# in the stdlib, and claiming it while emitting nothing would be worse than
+# saying so.
+
+def image_protocol() -> str:
+    """`kitty` | `iterm2` | `""` — what this terminal can draw inline."""
+    if not sys.stdout.isatty():
+        return ""
+    env = os.environ
+    if env.get("KITTY_WINDOW_ID") or "kitty" in env.get("TERM", ""):
+        return "kitty"
+    if env.get("TERM_PROGRAM") in ("iTerm.app", "WezTerm"):
+        return "iterm2"
+    if env.get("WEZTERM_PANE"):
+        return "iterm2"          # WezTerm implements the iTerm2 protocol
+    return ""
+
+
+def inline_image(path: str, *, max_cols: int = 0) -> bool:
+    """Draw `path` in the terminal. True if drawn, False if it must be linked.
+
+    Only raster formats go inline — an SVG has no inline protocol, so it is
+    always reported as a file rather than mangled into one."""
+    proto = image_protocol()
+    if not proto or not path:
+        return False
+    p = Path(path)
+    if p.suffix.lower() not in (".png", ".jpg", ".jpeg", ".gif"):
+        return False
+    try:
+        raw = p.read_bytes()
+    except OSError:
+        return False
+    import base64
+    b64 = base64.b64encode(raw).decode("ascii")
+    try:
+        if proto == "kitty":
+            # f=100: the payload is a PNG file; chunked at 4096 as the
+            # protocol requires, m=1 on every chunk but the last
+            first, n = True, 4096
+            for i in range(0, len(b64), n):
+                chunk = b64[i:i + n]
+                more = 1 if i + n < len(b64) else 0
+                ctrl = (f"a=T,f=100,m={more}" if first else f"m={more}")
+                sys.stdout.write(f"\x1b_G{ctrl};{chunk}\x1b\\")
+                first = False
+        else:
+            size = f"size={len(raw)};" if len(raw) else ""
+            width = f"width={max_cols};" if max_cols else ""
+            sys.stdout.write(f"\x1b]1337;File=inline=1;{size}{width}"
+                             f"preserveAspectRatio=1:{b64}\x07")
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def show_images(images, mode: str = "auto", relto=None) -> None:
+    """Render the `images` an MCP result carried, per the workspace setting.
+
+    `mode`: auto (draw when the terminal can, else link) · image (same, but say
+    so when it cannot) · off (always just link). The text chronogram is a
+    separate tool call, so 'off' is not a downgrade — it is a preference for
+    the portable rendering that survives asciinema, SSH and tmux."""
+    for im in images or []:
+        path = im.get("path") if isinstance(im, dict) else str(im)
+        if not path:
+            continue
+        shown = mode != "off" and inline_image(path)
+        if shown:
+            continue
+        try:
+            rel = os.path.relpath(path, relto) if relto else path
+        except ValueError:
+            rel = path
+        note = ""
+        if mode == "image" and not image_protocol():
+            note = " [dim](this terminal has no inline-image protocol)[/]"
+        _console.print(f"  [dim]▪ image[/] {escape(rel)}"
+                       f" [dim]({im.get('bytes', 0)} B)[/]{note}"
+                       if isinstance(im, dict) else f"  [dim]▪ image[/] {rel}")
 
 
 def markdown(text: str) -> None:

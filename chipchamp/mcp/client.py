@@ -5,6 +5,15 @@ Config (``.chipchamp/config.toml``)::
     [mcp.servers.tracker]
     command = ["python", "-m", "my_tracker_mcp"]
 
+    [mcp.servers.wavelets]                     # a terminal waveform viewer
+    command = "python3 /path/to/wavelet.py --mcp"
+
+A server may answer with pictures as well as text. Those are written to
+``<dot>/mcp-images/`` and the result carries their PATHS — never the base64,
+which would cost thousands of context characters per call. ``[ui] mcp_images``
+(auto | image | off) decides whether the REPL draws them inline (kitty /
+iTerm2 / WezTerm) or just links them.
+
 Each server's tools are surfaced to the agent as ``mcp.<server>.<tool>`` with the
 server-provided JSON schema, so the model can call an issue tracker, a docs
 search, or another Chipchamp instance's design DB exactly like a native tool.
@@ -21,10 +30,15 @@ from typing import Optional
 
 class McpClient:
     def __init__(self, name: str, command: list[str], cwd: Optional[str] = None,
-                 timeout: float = 20.0):
+                 timeout: float = 20.0, image_dir: Optional[str] = None):
         self.name = name
         self.command = command
         self.timeout = timeout
+        # where image blocks are spilled; defaults beside the cwd so a picture
+        # outlives the call that produced it and can be reopened later
+        from pathlib import Path
+        self.image_dir = Path(image_dir or ((Path(cwd) if cwd else Path.cwd())
+                                            / ".chipchamp" / "mcp-images"))
         self._proc = subprocess.Popen(
             command, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, text=True, bufsize=1)
@@ -87,15 +101,56 @@ class McpClient:
         return self._request("tools/list").get("tools", [])
 
     def call(self, tool: str, arguments: dict) -> dict:
+        """Unwrap the content envelope into one agent-facing result.
+
+        An MCP reply may carry several blocks — wavelets' image renderers send
+        the picture AND a caption. Returning at the first text block dropped the
+        picture entirely; keeping the picture *inline* would be worse, because a
+        PNG is kilobytes of base64 and the transcript is a budgeted resource
+        (see agent/working_set.py). So an image is spilled to a file and only
+        its PATH travels: the terminal can render it, the model can cite it, and
+        the context pays a few dozen characters instead of a few thousand.
+        """
         result = self._request("tools/call", {"name": tool, "arguments": arguments})
-        # unwrap the standard content envelope
-        for item in result.get("content", []):
+        blocks = result.get("content") or []
+        images = [b for b in blocks if b.get("type") == "image" and b.get("data")]
+        out: Optional[dict] = None
+        for item in blocks:
             if item.get("type") == "text":
                 try:
-                    return json.loads(item["text"])
+                    out = json.loads(item["text"])
                 except json.JSONDecodeError:
-                    return {"text": item["text"]}
-        return result
+                    out = {"text": item["text"]}
+                if not isinstance(out, dict):
+                    out = {"text": item["text"]}
+                break
+        if out is None:
+            out = {} if images else result
+        saved = [self._spill_image(tool, b) for b in images]
+        saved = [s for s in saved if s]
+        if saved:
+            out["images"] = saved
+        return out
+
+    def _spill_image(self, tool: str, block: dict) -> Optional[dict]:
+        """Write one image block beside the workspace and describe it."""
+        import base64
+        import time
+        mime = block.get("mimeType") or "image/png"
+        ext = {"image/png": "png", "image/svg+xml": "svg",
+               "image/jpeg": "jpg", "image/gif": "gif"}.get(mime, "bin")
+        try:
+            raw = base64.b64decode(block["data"], validate=False)
+        except Exception:
+            return None
+        d = self.image_dir
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+            p = d / f"{self.name}-{tool}-{int(time.time() * 1000)}.{ext}"
+            p.write_bytes(raw)
+        except OSError:
+            return None
+        return {"path": str(p), "mime": mime, "bytes": len(raw)}
 
     def close(self) -> None:
         try:
@@ -105,7 +160,8 @@ class McpClient:
             self._proc.kill()
 
 
-def load_mcp_tools(config: dict, cwd: Optional[str] = None) -> tuple[dict, list]:
+def load_mcp_tools(config: dict, cwd: Optional[str] = None,
+                   image_dir: Optional[str] = None) -> tuple[dict, list]:
     """Spawn configured MCP servers and wrap their tools as agent Tool objects.
     Returns (tools_dict, clients) — callers own closing the clients."""
     from ..tools.base import Tool
@@ -119,7 +175,7 @@ def load_mcp_tools(config: dict, cwd: Optional[str] = None) -> tuple[dict, list]
         if not cmd:
             continue
         try:
-            client = McpClient(name, cmd, cwd=cwd)
+            client = McpClient(name, cmd, cwd=cwd, image_dir=image_dir)
         except Exception:
             continue  # unreachable server: skip, don't break the agent
         clients.append(client)
