@@ -52,7 +52,7 @@ from pathlib import Path
 from typing import Optional
 
 from .. import brand
-from ..util.hashing import hash_manifest, sha256_text
+from ..util.hashing import hash_manifest, sha256_file, sha256_text
 from ..util.jsonio import atomic_write, dump_json, load_json
 
 # statuses safe to reuse: a real verdict about the inputs, not about the day
@@ -102,7 +102,15 @@ def cache_key(plan, adapter, *, inputs_hash: str, seed=None,
 
 
 class JobCache:
-    """key -> job id, in one small JSON file beside the run store.
+    """key -> {job, artifacts: {path: sha}}, in one JSON file beside the store.
+
+    The artifact hashes are the teeth behind "a hit must leave the disk
+    indistinguishable from a re-run". Simulators write their waves to a FIXED
+    path in the workspace (``tb_foo.vcd``), not a per-job one, so a later run
+    of a different design silently overwrites the file the cached record still
+    points at. Checking only that the path *exists* let a hit hand back another
+    run\'s waveform — the agent would debug the wrong data and never know.
+    So the bytes are pinned at store time and verified at lookup.
 
     Not an LRU and deliberately not bounded: entries are tiny, and a hit on a
     six-month-old lint is exactly as valid as one from this morning — validity
@@ -125,17 +133,28 @@ class JobCache:
         return self._index
 
     def lookup(self, key: str) -> Optional[str]:
+        """The job id for `key`, or None when the entry cannot be trusted."""
         if not self.enabled:
             return None
         with self._lock:
-            return self._load().get(key)
+            entry = self._load().get(key)
+        if entry is None:
+            return None
+        if isinstance(entry, str):      # pre-artifact-hash entry: cannot verify
+            return None
+        for path, sha in (entry.get("artifacts") or {}).items():
+            if _sha_of(path) != sha:
+                return None             # something rewrote it — re-run
+        return entry.get("job")
 
-    def remember(self, key: str, job_id: str) -> None:
+    def remember(self, key: str, job_id: str, artifacts=None) -> None:
         if not self.enabled:
             return
         with self._lock:
             idx = self._load()
-            idx[key] = job_id
+            idx[key] = {"job": job_id,
+                        "artifacts": {p: _sha_of(p)
+                                      for p in (artifacts or {}).values() if p}}
             try:
                 atomic_write(self.path, dump_json(idx, sort_keys=True))
             except OSError:
@@ -151,6 +170,14 @@ class JobCache:
             except OSError:
                 pass
             return n
+
+
+def _sha_of(path: str) -> Optional[str]:
+    """Content hash of an artifact, or None when it is not there."""
+    try:
+        return sha256_file(path)
+    except OSError:
+        return None
 
 
 def result_from_record(rec) -> Optional["object"]:

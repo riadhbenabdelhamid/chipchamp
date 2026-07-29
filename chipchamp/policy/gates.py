@@ -141,12 +141,19 @@ def _pnr_norm(evidence: Evidence) -> Optional[dict]:
 
 def _latest_sims(evidence: Evidence) -> list:
     """Latest sim per testbench identity — so a test that failed and was then
-    fixed+rerun counts by its most recent result (the fix-then-rerun flow)."""
+    fixed+rerun counts by its most recent result (the fix-then-rerun flow).
+
+    "Latest" is SUBMISSION ORDER, not wall-clock. A job served from the cache
+    is the original record and carries the original `start_ts`, so ordering by
+    timestamp ranked a just-delivered pass *below* the failure that preceded
+    it — and the fix-then-rerun flow this exists for rejected a fix that
+    genuinely worked. That is exactly what happens when a fix restores a file
+    to a state already simulated once. `evidence.jobs` is appended in the order
+    the task submitted them, which is the order that decides.
+    """
     by: dict[str, object] = {}
     for j in evidence.jobs_of("sim"):
-        key = _sim_identity(j)
-        if key not in by or getattr(j, "start_ts", 0) >= getattr(by[key], "start_ts", 0):
-            by[key] = j
+        by[_sim_identity(j)] = j        # later submission wins, unconditionally
     return list(by.values())
 
 

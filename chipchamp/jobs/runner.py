@@ -163,7 +163,7 @@ class JobRunner:
                       "diagnostics": [d.__dict__ for d in result.diagnostics]}
         self._persist(rec)
         if key and reusable(rec, job_dir, plan):
-            self.cache.remember(key, rec.id)
+            self.cache.remember(key, rec.id, rec.artifacts)
         return rec, result
 
     # ---- detached jobs (FR-JOB-04) -----------------------------------------

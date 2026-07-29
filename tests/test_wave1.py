@@ -421,3 +421,64 @@ def test_the_deferred_menu_lists_names_without_schemas():
     assert "[wave]" in menu and "wave.compare" in menu
     assert "properties" not in menu           # names only — that is the trick
     assert len(menu) < 2000
+
+
+def test_a_cached_pass_outranks_the_failure_it_followed(tmp_path):
+    """The fix-then-rerun flow, with the job cache in play.
+
+    A fix that restores a file to a state already simulated once produces a
+    CACHE HIT: the original record comes back, carrying its original start_ts.
+    Ranking sims by wall-clock then put that just-delivered pass *below* the
+    failure that preceded it, and report.done rejected a fix that worked.
+    Caught by demo.py, which the unit suite never runs.
+    """
+    from chipchamp.policy.gates import Evidence, _latest_sims
+    from chipchamp.jobs.record import JobRecord
+
+    def sim(jid, status, start_ts):
+        return JobRecord(id=jid, kind="sim", adapter="icarus", status=status,
+                         start_ts=start_ts, seed=1,
+                         result={"status": "pass" if status == "passed" else "fail"},
+                         artifacts={"waves": "w.vcd"},
+                         defines={}, input_files=["tb.sv"])
+
+    failed = sim("J-0066", "failed", start_ts=9000.0)     # ran just now
+    cached = sim("J-0002", "passed", start_ts=10.0)       # served from cache
+    # submission order: the failure first, then the cached pass after the fix
+    latest = _latest_sims(Evidence(jobs=[failed, cached]))
+    assert [j.id for j in latest] == ["J-0002"], "the cached pass must win"
+
+    # and the ordinary case is unchanged: a later failure still beats an
+    # earlier pass, so a regression cannot hide behind a stale success
+    latest = _latest_sims(Evidence(jobs=[cached, failed]))
+    assert [j.id for j in latest] == ["J-0066"]
+
+
+def test_a_clobbered_artifact_invalidates_the_hit(tmp_path, src):
+    """Simulators write waves to a FIXED workspace path, not a per-job one, so
+    a later run of a different design overwrites the file a cached record still
+    points at. Checking only that the path EXISTS let a hit hand back another
+    run's waveform — the agent debugging the wrong data and never knowing.
+
+    Caught by demo.py: its golden-vs-failing comparison found no divergence at
+    all, because the "golden" copy was really the failing run's waves.
+    """
+    waves = tmp_path / "tb.vcd"
+    waves.write_text("$date golden $end")
+
+    class _WaveAdapter(_Adapter):
+        def parse(self, plan, results):
+            r = super().parse(plan, results)
+            r.artifacts = {"waves": str(waves)}
+            return r
+
+    r = JobRunner(str(tmp_path / "runs"), registry=None)
+    p = Plan(kind="sim", adapter="fake", workdir=str(tmp_path),
+             steps=[Step(argv=["true"], cwd=str(tmp_path))])
+    ad = _WaveAdapter()
+    first, _ = r.submit(p, ad, input_files=src)
+    assert r.submit(p, ad, input_files=src)[0].cached is True   # bytes intact
+
+    waves.write_text("$date SOME OTHER RUN $end")               # clobbered
+    rec, _ = r.submit(p, ad, input_files=src)
+    assert rec.cached is False, "a rewritten artifact must force a re-run"

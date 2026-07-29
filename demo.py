@@ -39,6 +39,20 @@ def main():
     ws.db(rebuild=True)
     ctx = ToolContext(ws)
     clean_src = open(FIFO).read()
+    try:
+        return _run(ws, ctx, clean_src)
+    finally:
+        # ALWAYS put the source back. This used to live at the end of the happy
+        # path, so a crash mid-demo left the injected bug in the tree — and the
+        # next run captured "golden" waves *of the bug*, compared them against
+        # the bug, found no divergence and crashed too. Three runs looked like
+        # three different faults; it was one un-restored file.
+        with open(FIFO, "w") as fh:
+            fh.write(clean_src)
+        print("\n(demo restored the pristine sync_fifo.sv)")
+
+
+def _run(ws, ctx, clean_src):
 
     rule("0. Baseline: index the design")
     db = ctx.db
@@ -112,10 +126,6 @@ def main():
     print(f"    signature: {b['signature'][:40]}…  verify: {b['verify']}  "
           f"gates: {b['all_gates_passed']}")
 
-    # restore pristine source for repeatability
-    with open(FIFO, "w") as fh:
-        fh.write(clean_src)
-    print("\n(demo restored the pristine sync_fifo.sv)")
     return 0 if done["accepted"] else 1
 
 
