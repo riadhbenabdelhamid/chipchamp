@@ -168,3 +168,24 @@ def test_a_cache_hit_is_not_a_second_observation(tmp_path):
     src = inspect.getsource(verif_tools.sim_run)
     assert 'if not getattr(rec, "cached", False):' in src
     assert "ctx.history.record" in src
+
+
+def test_job_log_on_a_nonexistent_job_errors_instead_of_empty_hits(tmp_path):
+    """A live 4B passed the TEST NAME as a job id and got {"hits": []} —
+    indistinguishable from "the job exists and nothing matched" — so it
+    believed it had consulted a log that was never read. A miss must be
+    distinguishable from a match-less grep, and the error should teach the
+    id shape rather than just refuse."""
+    from chipchamp.tools import all_tools
+
+    class _Runner:
+        def get(self, job):
+            return None
+        def list_jobs(self):
+            return [type("R", (), {"id": "J-0007"})()]
+
+    ctx = type("C", (), {"runner": _Runner()})()
+    out = all_tools()["job.log"].handler(ctx, job="fifo_smoke", pattern="FAIL")
+    assert "no job 'fifo_smoke'" in out["error"]
+    assert "J-0249" in out["error"] or "J-0" in out["error"]   # teaches the shape
+    assert "J-0007" in out["error"]                            # and names real ones

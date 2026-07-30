@@ -272,6 +272,16 @@ def regress_failures(ctx: ToolContext, run_id: str = "reg") -> dict:
           "window": {"type": "integer", "default": 3}},
           "required": ["job", "pattern"]})
 def job_log(ctx: ToolContext, job: str, pattern: str, window: int = 3) -> dict:
+    # A miss must be distinguishable from a match-less grep. A live 4B passed
+    # the TEST NAME here ("fifo_smoke") and got {"hits": []} — indistinguishable
+    # from "the job exists and nothing matched" — so it believed it had
+    # consulted a log that was never read. Same trap as the vacuous gates, one
+    # layer down: an empty success for an action that touched nothing.
+    if ctx.runner.get(job) is None:
+        recent = [r.id for r in ctx.runner.list_jobs()[-5:]]
+        return {"error": f"no job '{job}' — job ids look like J-0249, not test "
+                         f"names. Recent jobs: {', '.join(recent) or '(none)'}. "
+                         f"A sim.run result carries its id in 'job'."}
     hits = ctx.runner.grep_log(job, pattern, window=window)
     return truncate({"job": job, "pattern": pattern, "hits": hits}, max_items=20)
 
