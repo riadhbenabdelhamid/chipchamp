@@ -302,8 +302,11 @@ def agentic(ctx, clean: str, model: str, max_steps: int) -> bool:
     # model actually DID, and reserve "closed it" for an accepted report.done,
     # the platform's own definition of done.
     edited = sorted(ctx.edits)
+    # a FAILED call is an attempt, not a consultation — run 7 earned this
+    # check mark with a job.log that errored on a bad job id
     looked = any(t.startswith(("wave.", "mcp.wavelets.", "job.log"))
-                 for t in (m.get("tools") or {}))
+                 and st["calls"] > st["failed"]
+                 for t, st in (m.get("tools") or {}).items())
     passing = any(j.kind == "sim" and j.status == "passed" for j in ctx.task_jobs)
     closed = bool(m.get("reported_done"))
 

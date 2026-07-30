@@ -18,6 +18,11 @@ Hermes/LLaMA and DeepSeek templates):
   D. Mistral-template leaks: ``[TOOL_CALLS]fs_write[ARGS]{…}`` (tekken) and
      ``[TOOL_CALLS][{"name": …, "arguments": …}, …]`` — seen from devstral
      when a router handoff replays another model's transcript
+  E. a BARE top-level JSON object — ``{"name": "sim__list_tests",
+     "arguments": {…}}`` as the whole message, no tag, no fence — seen from
+     nemotron-3-nano recovering after a corrective tool error. Guarded
+     tightly: only when the text IS the object(s), so prose that merely
+     QUOTES a call-shaped example never triggers execution.
 """
 from __future__ import annotations
 
@@ -104,6 +109,31 @@ def _mistral_candidates(payload: str) -> list[tuple]:
     return out
 
 
+def _bare_objects(payload: str) -> list[dict]:
+    """Top-level JSON object(s) when the message IS the call (format E).
+
+    The whole stripped text must decode as consecutive JSON objects — one
+    call, or several stacked. Any non-whitespace remainder means the object
+    sits inside prose, where a call-shaped snippet may be an example being
+    DISCUSSED rather than a call being MADE, so nothing is recovered."""
+    payload = payload.strip()
+    if not payload.startswith("{"):
+        return []
+    dec, out, i = json.JSONDecoder(), [], 0
+    while i < len(payload):
+        try:
+            obj, end = dec.raw_decode(payload, i)
+        except ValueError:
+            return []
+        if not isinstance(obj, dict):
+            return []
+        out.append(obj)
+        i = end
+        while i < len(payload) and payload[i] in " \n\r\t,":
+            i += 1
+    return out
+
+
 def recover_tool_calls(text: str, reasoning: str, known_names) -> list[dict]:
     """Extract tool calls a server-side parser missed. Returns
     ``[{id, name, input}]`` (ids synthesized); empty when nothing safe."""
@@ -147,6 +177,11 @@ def recover_tool_calls(text: str, reasoning: str, known_names) -> list[dict]:
                     got = None
                 if got:
                     calls.append(got)
+        if not calls:
+            for obj in _bare_objects(payload or ""):
+                got = _from_json_obj(obj, known)
+                if got:
+                    calls.append(got)
 
     scan(text)
     if not calls:
@@ -162,4 +197,6 @@ def strip_tool_call_text(text: str) -> str:
     for _name, _obj, span in sorted(_mistral_candidates(out),
                                     key=lambda c: c[2], reverse=True):
         out = out[:span[0]] + out[span[1]:]
+    if _bare_objects(out):
+        return ""                     # the message WAS the call(s)
     return out.strip()

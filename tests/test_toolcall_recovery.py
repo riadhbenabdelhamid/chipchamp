@@ -118,3 +118,31 @@ def test_mistral_prose_mention_never_triggers():
     calls = recover_tool_calls("the template emits [TOOL_CALLS] then args",
                                "", {"fs.write"})
     assert calls == []
+
+
+def test_a_bare_json_object_is_recovered_when_it_is_the_whole_message():
+    """Format E, seen live: after a corrective tool error, nemotron-3-nano
+    chose the right next tool and emitted the call as the entire message —
+    `{"name": "sim__list_tests", "arguments": {"tag": ""}}` — no tag, no
+    fence. The recovery missed it and a sound recovery died as a text turn."""
+    from chipchamp.agent.toolcalls import recover_tool_calls, strip_tool_call_text
+    known = {"sim__list_tests", "sim.list_tests", "fs.list"}
+    text = '{ "name": "sim__list_tests", "arguments": { "tag": "" } }'
+    got = recover_tool_calls(text, "", known)
+    assert [c["name"] for c in got] == ["sim__list_tests"]
+    assert got[0]["input"] == {"tag": ""}
+    assert strip_tool_call_text(text) == ""      # the message WAS the call
+    # stacked objects: several calls in one message
+    two = text + '\n{"name": "fs.list", "arguments": {"dir": "rtl"}}'
+    assert len(recover_tool_calls(two, "", known)) == 2
+
+
+def test_a_call_shaped_example_inside_prose_is_never_executed():
+    """The guard that makes format E safe: any non-whitespace remainder means
+    the object sits inside prose, where it may be an example being DISCUSSED."""
+    from chipchamp.agent.toolcalls import recover_tool_calls
+    known = {"fs.list", "fs__list"}
+    prose = 'You could call {"name": "fs__list", "arguments": {}} to see files.'
+    assert recover_tool_calls(prose, "", known) == []
+    trailing = '{"name": "fs__list", "arguments": {}} — shall I run this?'
+    assert recover_tool_calls(trailing, "", known) == []
