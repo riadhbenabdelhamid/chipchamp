@@ -75,6 +75,28 @@ guessed identifiers (`soc_rtl`, an invented `filter` argument, `fs.list` on
 `/`). That is why the durable fixes are schema-side: enums, `accepts` lists on
 rejection, and errors on misses instead of empty successes.
 
+## Runs 7–8 — rerun with the teaching errors in place
+
+| run | outcome | steps | calls | what changed |
+|---|---|---|---|---|
+| 7 | answered · 41s | 3 | 1 | hit the new job.log error; **chose the right next tool** (`sim.list_tests`) but emitted the call as a bare JSON message the loop read as prose — recovery format E added because of it |
+| 8 | answered · 52s | 10 | 6 (2 failed) | the compounding run: after the job.log teaching error listed real ids, **its next call used one (`J-0311`)** — the hint demonstrably drove recovery. Also ran a real (failing-to-compile) sim and a design.hierarchy |
+
+Run 8 settles the question commits `0176a2e`/`cf946db` left open: a weak
+model DOES use a corrective error, when the correction carries the answer.
+The trajectory across runs 5→7→8 — one blind call, then a right-idea-lost,
+then six calls with mid-run recovery — is the error-side fixes compounding,
+same model, same prompt.
+
+What still fails is now genuinely model-side: run 8 hallucinated test names
+(`fifo_kmwf_smoke`, `fifo_kmwf_original_smoke`) *after* calling
+`sim.list_tests`, which had just returned the real ones — identifier
+corruption, not missing information; asked for permission it already has
+("I need your explicit permission to start probing"); and ended on three
+empty turns of planning prose. 91,912 tokens for 52s of work. No RTL edit,
+no close. That is the honest ceiling of a 3-nano-4B here, and the demo's
+verdict panel states it as such.
+
 ## The finding that matters most
 
 Run 1's demo printed **"it closed the task" for a model that executed zero
