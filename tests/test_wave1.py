@@ -482,3 +482,40 @@ def test_a_clobbered_artifact_invalidates_the_hit(tmp_path, src):
     waves.write_text("$date SOME OTHER RUN $end")               # clobbered
     rec, _ = r.submit(p, ad, input_files=src)
     assert rec.cached is False, "a rewritten artifact must force a re-run"
+
+
+def test_a_window_smaller_than_the_prompt_is_reported_not_endured(tmp_path):
+    """ollama defaults num_ctx to 4096; chipchamp's system prompt plus tool
+    schemas is several times that. The server ACCEPTS such a request and
+    grinds, so the failure looks like a hang and ends as a timeout with zero
+    steps — no error anywhere. The size is knowable before the first token is
+    sent, so say it."""
+    from chipchamp.agent import NullGateway
+    from chipchamp.tools import all_tools
+
+    class _Ctx:
+        pass
+
+    def warn(num_ctx, disclose):
+        gw = NullGateway()
+        gw.options = {"num_ctx": num_ctx} if num_ctx else {}
+        loop = AgentLoop.__new__(AgentLoop)
+        loop.gateway, loop.disclose = gw, disclose
+        loop.on_event = lambda k, d: seen.append(d)
+        t = all_tools()
+        names = disclosure.core_names(t) if disclose else set(t)
+        loop._api_tools = [{"name": n, "description": x.description,
+                            "schema": x.schema}
+                           for n, x in t.items() if n in names]
+        loop._warn_if_window_too_small("S" * 8000)
+        return seen
+
+    seen = []
+    assert "context too small" in warn(4096, False)[0]["message"]
+    assert "tool_disclosure" in seen[0]["message"]      # names the cheaper fix
+
+    seen = []
+    assert warn(262144, False) == []                    # a big window is fine
+
+    seen = []
+    assert warn(0, False) == []      # no declared window: nothing to compare

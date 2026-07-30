@@ -18,33 +18,78 @@ def _rank(name: str) -> int:
     return 4
 
 
+def _never_toggles(data, path: str) -> bool:
+    """Does this signal hold ONE value for the whole trace?
+
+    Filtering on the value history rather than `var_type` is what makes this
+    worth doing: an elaboration parameter (DEPTH, WIDTH) is declared
+    `parameter`, but a testbench's `errors`/`seed` counters are plain integers
+    that merely never move in a passing run. Both are flat lines; only the
+    history tells you so.
+
+    A signal stuck at x/z is NOT filtered — that is a defect, and a picker that
+    hid it would be hiding exactly what someone opened the waveform to find.
+    """
+    code = data.id_for(path)
+    if code is None:
+        return False
+    vals = {v for _, v in (data.changes.get(code) or [])}
+    if len(vals) > 1:
+        return False
+    return not any(c in "xzXZ" for c in "".join(vals))
+
+
 def pick_signals(data, limit: int = 8) -> list[str]:
     """Auto-select the signals a hardware engineer looks at first: the
     top-most scope's ports, clock/reset first, then handshakes (valid/ready),
-    then payload — capped so the view stays one screenful."""
+    then payload — capped so the view stays one screenful.
+
+    Signals that never toggle are dropped. They render as a flat line carrying
+    one value, and on the example SoC three of eight rows went to DEPTH, WIDTH
+    and errors — a third of the view spent on constants, pushing out the
+    handshake signals the bug was actually visible in.
+    """
     paths = [s.path for s in data.signals.values()]
     if not paths:
         return []
     depth = min(p.count(".") for p in paths)
     top = sorted({p for p in paths if p.count(".") == depth},
                  key=lambda p: (_rank(p.rsplit(".", 1)[-1]), p))
-    return top[:limit]
+    live = [p for p in top if not _never_toggles(data, p)]
+    # A trace where nothing moves at all is still worth showing: better a view
+    # of flat lines than an empty panel that looks like a rendering failure.
+    return (live or top)[:limit]
 
 
-def _sample_times(store, paths: list[str], cycles: int) -> tuple[list[int], str]:
+def _sample_times(store, paths: list[str], cycles: int,
+                  around: int | None = None) -> tuple[list[int], str]:
     """One column per clock cycle: sample at each rising edge of the clock
     (the analyzer convention). Without a recognizable clock, fall back to
-    uniform time steps across the tail of the dump."""
+    uniform time steps.
+
+    `around` centres the window on a time instead of taking the tail. A failure
+    is almost never in the last cycles — the testbench keeps running after it
+    gives up — so a tail view shows the aftermath and quietly invites the
+    reader to draw a conclusion about the wrong moment."""
     data = store.data
     for p in paths:
         if _rank(p.rsplit(".", 1)[-1]) == 0:
             code = data.id_for(p)
             rises = [t for t, v in data.changes.get(code, []) if v == "1"]
             if len(rises) >= 2:
-                return rises[-cycles:], p.rsplit(".", 1)[-1]
+                name = p.rsplit(".", 1)[-1]
+                if around is None:
+                    return rises[-cycles:], name
+                # centre on the edge nearest `around`, clamped to the trace
+                i = min(range(len(rises)), key=lambda k: abs(rises[k] - around))
+                lo = max(0, min(i - cycles // 2, len(rises) - cycles))
+                return rises[lo:lo + cycles], name
     end = data.end_time or 1
     step = max(1, end // cycles)
-    return list(range(max(0, end - cycles * step), end + 1, step)), "time"
+    if around is None:
+        return list(range(max(0, end - cycles * step), end + 1, step)), "time"
+    lo = max(0, min(around - (cycles // 2) * step, end - cycles * step))
+    return list(range(lo, min(end, lo + cycles * step) + 1, step)), "time"
 
 
 def _hex(val: str | None) -> str:
@@ -101,7 +146,7 @@ def _bus_row(vals: list) -> str:
 
 
 def analyzer_view(store, paths: list[str] | None = None, cycles: int = 48,
-                  width: int = 100) -> list[str]:
+                  width: int = 100, around: int | None = None) -> list[str]:
     """Render the tail of a wave dump as an inline logic-analyzer view:
     one column per clock cycle, auto-picked top-level signals, rich-markup
     lines ready for a Console. Returns [] when there is nothing to show."""
@@ -109,7 +154,7 @@ def analyzer_view(store, paths: list[str] | None = None, cycles: int = 48,
     paths = paths or pick_signals(data)
     if not paths:
         return []
-    samples, clkname = _sample_times(store, paths, cycles)
+    samples, clkname = _sample_times(store, paths, cycles, around)
     if not samples:
         return []
     if clkname != "time":
@@ -121,8 +166,16 @@ def analyzer_view(store, paths: list[str] | None = None, cycles: int = 48,
     names = {p: p.rsplit(".", 1)[-1] for p in paths}
     name_w = min(max((len(n) for n in names.values()), default=8), 18)
     wave_w = max(8, min(len(samples), (width - name_w - 6) // _CELL))
-    samples = samples[-wave_w:]
-    lines = [f"  [dim]⌁ waves · last {len(samples)} cycles of "
+    if around is None:
+        samples = samples[-wave_w:]
+    else:
+        # keep the moment of interest CENTRED when the terminal forces a trim;
+        # trimming from the left would slide it off the edge it was chosen for
+        i = min(range(len(samples)), key=lambda k: abs(samples[k] - around))
+        lo = max(0, min(i - wave_w // 2, len(samples) - wave_w))
+        samples = samples[lo:lo + wave_w]
+    when = "around t=%d" % around if around is not None else "last"
+    lines = [f"  [dim]⌁ waves · {when} {len(samples)} cycles of "
              f"[/][cyan]{clkname}[/][dim] · t {samples[0]}..{samples[-1]} "
              f"{data.timescale}[/]"]
     for p in paths:

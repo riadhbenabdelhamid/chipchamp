@@ -192,3 +192,49 @@ def test_analyzer_view_empty_store_is_empty(tmp_path):
     p.write_text("$timescale 1ns $end\n$enddefinitions $end\n")
     ws = WaveStore.open(str(p))
     assert analyzer_view(ws) == []
+
+
+def _vcd(tmp_path, body: str):
+    """Minimal two-signal VCD; `body` supplies the value changes."""
+    p = tmp_path / "t.vcd"
+    p.write_text("$timescale 1ns $end\n"
+                 "$scope module tb $end\n"
+                 "$var wire 1 ! toggling $end\n"
+                 "$var parameter 32 @ DEPTH $end\n"
+                 "$var integer 32 # errors $end\n"
+                 "$var wire 1 $ stuck_x $end\n"
+                 "$upscope $end\n$enddefinitions $end\n" + body)
+    return p
+
+
+def test_pick_signals_drops_signals_that_never_toggle(tmp_path):
+    """DEPTH is a parameter and errors a plain integer that merely never moves
+    — filtering on var_type would catch one and miss the other, so the value
+    HISTORY is what decides. On the example SoC three of eight rows went to
+    constants, pushing out the handshakes the bug was visible in."""
+    from chipchamp.waves import WaveStore
+    from chipchamp.waves.render import pick_signals
+    v = _vcd(tmp_path, "#0\n0!\nb1000 @\nb0 #\n0$\n#10\n1!\n#20\n0!\n")
+    picked = [p.rsplit(".", 1)[-1] for p in pick_signals(WaveStore.open(str(v)).data)]
+    assert "toggling" in picked
+    assert "DEPTH" not in picked and "errors" not in picked
+
+
+def test_a_signal_stuck_at_x_is_never_hidden(tmp_path):
+    """It never toggles either — but it is a defect, and a picker that hid it
+    would hide exactly what someone opened the waveform to find."""
+    from chipchamp.waves import WaveStore
+    from chipchamp.waves.render import pick_signals
+    v = _vcd(tmp_path, "#0\n0!\nb1000 @\nb0 #\nx$\n#10\n1!\n")
+    picked = [p.rsplit(".", 1)[-1] for p in pick_signals(WaveStore.open(str(v)).data)]
+    assert "stuck_x" in picked
+    assert "DEPTH" not in picked
+
+
+def test_an_entirely_static_trace_still_renders(tmp_path):
+    """Better a view of flat lines than an empty panel that reads as a
+    rendering failure."""
+    from chipchamp.waves import WaveStore
+    from chipchamp.waves.render import pick_signals
+    v = _vcd(tmp_path, "#0\n0!\nb1000 @\nb0 #\n0$\n")
+    assert pick_signals(WaveStore.open(str(v)).data)     # not empty

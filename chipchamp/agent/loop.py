@@ -139,6 +139,7 @@ class AgentLoop:
         # Providers read only role/content/tool_calls, so the extra key is inert.
         transcript.append({"role": "user", "content": user_prompt, "input": True})
         system = self.system_prompt(task=user_prompt)
+        self._warn_if_window_too_small(system)
         final_text = ""
         step = 0
         empty_turns = 0
@@ -487,6 +488,38 @@ class AgentLoop:
                 "recovered_calls": recovered_calls,
                 "call_retries": call_retries,
                 "jobs": [r.id for r in self.ctx.task_jobs]}
+
+    def _warn_if_window_too_small(self, system: str) -> None:
+        """Say so when the prompt cannot fit the model's declared window.
+
+        A local server defaults to a small context (ollama: 4096 tokens) while
+        chipchamp's system prompt plus tool schemas is several times that. The
+        symptom is not an error — the request is accepted and the server grinds,
+        so the run looks like a hang and then times out having taken zero steps.
+        That cost a whole agentic demo run to diagnose, and the number was
+        knowable before the first token was sent.
+        """
+        try:
+            num_ctx = int((getattr(self.gateway, "options", None) or {})
+                          .get("num_ctx") or 0)
+        except (TypeError, ValueError, AttributeError):
+            return
+        if num_ctx <= 0:
+            return          # no declared window: nothing to compare against
+        import json as _json
+        tools = sum(len(_json.dumps(t.get("schema", {})))
+                    + len(t.get("description", "")) for t in self._api_tools)
+        need = (len(system) + tools) // 4     # ~4 chars/token, provider-neutral
+        if need <= num_ctx * 0.8:             # leave room for the conversation
+            return
+        hint = ("" if self.disclose else
+                "enable [model] tool_disclosure to defer most schemas, or ")
+        self.on_event("error", {"message": (
+            f"context too small: system prompt + tool schemas are ~{need} "
+            f"tokens but this model's num_ctx is {num_ctx}. The server accepts "
+            f"the request and stalls rather than refusing it, so this will "
+            f"look like a hang. {hint}raise it with "
+            f"`/model tune num_ctx={max(8192, need * 2)}`.")})
 
     def _record_telemetry(self, completed: bool) -> None:
         """Append a per-run outcome for the telemetry layer (no-op unless on)."""
