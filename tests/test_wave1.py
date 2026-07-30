@@ -519,3 +519,21 @@ def test_a_window_smaller_than_the_prompt_is_reported_not_endured(tmp_path):
 
     seen = []
     assert warn(0, False) == []      # no declared window: nothing to compare
+
+
+def test_a_bad_argument_error_names_what_is_accepted(tmp_path):
+    """A live run had a model call sim.run(wave=True) — singular — and get back
+    only "got an unexpected keyword". True, unactionable, and it never
+    recovered. The valid names are right there in the schema; withholding them
+    turns a self-correctable slip into a dead end."""
+    from chipchamp.tools import all_tools
+    loop = AgentLoop.__new__(AgentLoop)
+    loop.tools = all_tools()
+    loop.ctx = type("C", (), {"task_jobs": []})()
+    loop.on_event = lambda k, d: None
+    loop.approver = lambda *a: True
+    loop.gate_permissions = set()
+    out = loop._exec("sim.run", {"test": "t", "wave": True})
+    assert "bad arguments" in out["error"]
+    assert "waves" in out["accepts"] and "seed" in out["accepts"]
+    assert out["required"] == ["test"]

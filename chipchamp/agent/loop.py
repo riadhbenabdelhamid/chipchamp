@@ -690,7 +690,17 @@ class AgentLoop:
                               f"of this kind can run. Summarize what the "
                               f"evidence so far supports and stop."}
         except TypeError as e:
-            result = {"error": f"bad arguments for {name}: {e}"}
+            # Name what is accepted, not just what was rejected. A live run had
+            # a model pass `wave=True` for `waves` and get back only "got an
+            # unexpected keyword" — true, unactionable, and it did not recover.
+            # The valid names are right here; withholding them makes a
+            # self-correctable mistake terminal.
+            ok = sorted((tool.schema.get("properties") or {}))
+            result = {"error": f"bad arguments for {name}: {e}",
+                      "accepts": ok,
+                      "required": list(tool.schema.get("required") or []),
+                      "note": "call it again using only the parameter names in "
+                              "'accepts'"}
         except Exception as e:  # a tool crash must not kill the loop
             result = {"error": f"{type(e).__name__}: {e}"}
         # A reused verdict is real evidence but not fresh work: say so in the
