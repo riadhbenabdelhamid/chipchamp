@@ -1,0 +1,259 @@
+[
+  {
+    "id": "E-c94708a93f",
+    "label": "demo-agentic",
+    "task": "The test `fifo_smoke` is failing. Find out why by looking at the waveform, fix the RTL, re-run the test, and close the task properly.\n\nWork from evidence: read the failing job's log for the testbench's own message, query the waveform to see what the signals actually did, and cite the file:line you changed.",
+    "model": "ollama:nemotron-3-nano:4b",
+    "started": 1785446339.8994823,
+    "ended": 1785446390.8424184,
+    "outcome": "answered",
+    "metrics": {
+      "steps": 6,
+      "wall_s": 50.94,
+      "model_calls": 6,
+      "tokens_in": 51785,
+      "tokens_out": 640,
+      "tokens_total": 52425,
+      "context_chars_max": 913,
+      "context_messages_max": 11,
+      "tool_calls": 3,
+      "tool_failures": 2,
+      "tools": {
+        "job.log": {
+          "calls": 1,
+          "failed": 0
+        },
+        "job.status": {
+          "calls": 1,
+          "failed": 1
+        },
+        "sim.run": {
+          "calls": 1,
+          "failed": 1
+        }
+      },
+      "jobs": 1,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [
+        {
+          "tool": "sim.run",
+          "job": "",
+          "status": "?",
+          "cached": false
+        }
+      ],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:nemotron-3-nano:4b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 3,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 137
+    },
+    "timeline": [],
+    "notes": [],
+    "wall_s": 50.94
+  },
+  {
+    "id": "E-82a6c50f92",
+    "label": "demo-agentic",
+    "task": "The test `fifo_smoke` is failing. Find out why by looking at the waveform, fix the RTL, re-run the test, and close the task properly.\n\nWork from evidence: read the failing job's log for the testbench's own message, query the waveform to see what the signals actually did, and cite the file:line you changed.",
+    "model": "ollama:laguna-s-2.1:latest",
+    "started": 1785444285.5406482,
+    "ended": 1785446115.6430483,
+    "outcome": "timeout",
+    "metrics": {
+      "steps": 0,
+      "wall_s": 1830.1,
+      "model_calls": 1,
+      "tokens_in": 0,
+      "tokens_out": 0,
+      "tokens_total": 0,
+      "context_chars_max": 307,
+      "context_messages_max": 1,
+      "tool_calls": 0,
+      "tool_failures": 0,
+      "tools": {},
+      "jobs": 0,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:laguna-s-2.1:latest"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 0,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 183
+    },
+    "timeline": [
+      {
+        "t": 1829.81,
+        "kind": "error",
+        "data": {
+          "message": "model timed out (ollama:laguna-s-2.1:latest): timed out. It's slow for interactive use \u2014 raise its budget with /timeout, pick a faster model with /model, or /router on to auto-switch."
+        }
+      }
+    ],
+    "notes": [],
+    "wall_s": 1830.1
+  },
+  {
+    "id": "E-5c0018390e",
+    "label": "demo-agentic",
+    "task": "The test `fifo_smoke` is failing. Find out why by looking at the waveform, fix the RTL, re-run the test, and close the task properly.\n\nWork from evidence: read the failing job's log for the testbench's own message, query the waveform to see what the signals actually did, and cite the file:line you changed.",
+    "model": "ollama:devstral:24b",
+    "started": 1785410854.9176748,
+    "ended": 1785411445.2169979,
+    "outcome": "timeout",
+    "metrics": {
+      "steps": 0,
+      "wall_s": 590.3,
+      "model_calls": 1,
+      "tokens_in": 0,
+      "tokens_out": 0,
+      "tokens_total": 0,
+      "context_chars_max": 307,
+      "context_messages_max": 1,
+      "tool_calls": 0,
+      "tool_failures": 0,
+      "tools": {},
+      "jobs": 0,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:devstral:24b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 0,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 176
+    },
+    "timeline": [
+      {
+        "t": 589.56,
+        "kind": "error",
+        "data": {
+          "message": "model timed out (ollama:devstral:24b): timed out. It's slow for interactive use \u2014 raise its budget with /timeout, pick a faster model with /model, or /router on to auto-switch."
+        }
+      }
+    ],
+    "notes": [],
+    "wall_s": 590.3
+  },
+  {
+    "id": "E-5c157b102a",
+    "label": "demo-agentic",
+    "task": "The test `fifo_smoke` is failing. Find out why by looking at the waveform, fix the RTL, re-run the test, and close the task properly.\n\nWork from evidence: read the failing job's log for the testbench's own message, query the waveform to see what the signals actually did, and cite the file:line you changed.",
+    "model": "ollama:devstral:24b",
+    "started": 1785409254.8446755,
+    "ended": 1785409843.722907,
+    "outcome": "timeout",
+    "metrics": {
+      "steps": 0,
+      "wall_s": 588.88,
+      "model_calls": 1,
+      "tokens_in": 0,
+      "tokens_out": 0,
+      "tokens_total": 0,
+      "context_chars_max": 307,
+      "context_messages_max": 1,
+      "tool_calls": 0,
+      "tool_failures": 0,
+      "tools": {},
+      "jobs": 0,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:devstral:24b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 0,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 176
+    },
+    "timeline": [
+      {
+        "t": 588.86,
+        "kind": "error",
+        "data": {
+          "message": "model timed out (ollama:devstral:24b): timed out. It's slow for interactive use \u2014 raise its budget with /timeout, pick a faster model with /model, or /router on to auto-switch."
+        }
+      }
+    ],
+    "notes": [],
+    "wall_s": 588.88
+  },
+  {
+    "id": "E-773238901b",
+    "label": "demo-agentic",
+    "task": "The test `fifo_smoke` is failing. Find out why by looking at the waveform, fix the RTL, re-run the test, and close the task properly.\n\nWork from evidence: read the failing job's log for the testbench's own message, query the waveform to see what the signals actually did, and cite the file:line you changed.",
+    "model": "ollama:devstral:24b",
+    "started": 1785408217.7390485,
+    "ended": 1785408867.0694478,
+    "outcome": "timeout",
+    "metrics": {
+      "steps": 0,
+      "wall_s": 649.33,
+      "model_calls": 1,
+      "tokens_in": 0,
+      "tokens_out": 0,
+      "tokens_total": 0,
+      "context_chars_max": 307,
+      "context_messages_max": 1,
+      "tool_calls": 0,
+      "tool_failures": 0,
+      "tools": {},
+      "jobs": 0,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:devstral:24b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 0,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 176
+    },
+    "timeline": [
+      {
+        "t": 648.91,
+        "kind": "error",
+        "data": {
+          "message": "model timed out (ollama:devstral:24b): timed out. It's slow for interactive use \u2014 raise its budget with /timeout, pick a faster model with /model, or /router on to auto-switch."
+        }
+      }
+    ],
+    "notes": [],
+    "wall_s": 649.33
+  }
+]

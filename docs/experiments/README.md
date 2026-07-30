@@ -16,6 +16,14 @@ A feature can be correct and still never be exercised by a model that does not
 call the tool. Conflating those would let a weak model look like a broken
 feature, and it is the mistake that makes local-model evaluation useless.
 
+## Index
+
+- **2026-07-27** — waves 0–4 against local ollama models (below)
+- **[2026-07-31 — the waveform demo, scripted and agentic](2026-07-31-waveform-demo.md)**
+  — one bug driven two ways; seven agentic runs, five eliminated causes, and
+  the vacuous-success trap (`gates green` on an empty change set) caught in
+  the demo's own verdict logic. Records: `2026-07-31-waveform-demo.json`.
+
 ## 2026-07-27 — waves 0–4 against local ollama models
 
 Six scenarios (job cache, tool disclosure, detachable jobs, notebook,
