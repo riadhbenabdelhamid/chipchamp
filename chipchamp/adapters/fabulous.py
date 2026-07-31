@@ -103,6 +103,18 @@ class FabulousAdapter(Adapter):
 
         # success = flow ok AND (bitstream produced if we asked for one)
         ok = ok_flow and (metrics.get("bitstream_bytes", 1) > 0)
+        if plan.meta.get("step") == "bitstream" and not ok:
+            # "FAILED: 0 bytes" without the WHY sent a live agent into a
+            # wild-goose diagnosis while the real reason sat in the log
+            metrics["fail_reason"] = _fail_reason(log)
+        # A known environment incompatibility must be NAMED, not dumped as a
+        # per-tile error storm. Two live agent runs anchored on harden's
+        # yosys crash and built the same false theory — that the tile-macro
+        # flow gates place-and-route — burning their step budget on a flow
+        # that is not even on the bitstream path.
+        if plan.meta.get("step") == "harden" and not ok \
+                and "Option 'y' does not exist" in log:
+            metrics["env_incompatibility"] = "yosys_dash_y"
         diags = []
         if not ok:
             diags.append(NormalizedDiagnostic(
@@ -122,6 +134,22 @@ def _glob_v(d: str) -> list[str]:
     return glob.glob(os.path.join(d, "**", "*.v"), recursive=True) if os.path.isdir(d) else []
 
 
+_DECISIVE = ("Unable to place cell", "no BELs remaining",
+             "Failed to find a route", "Routing design failed",
+             "Re-definition of module", "InvalidFileType",
+             "Option 'y' does not exist")
+
+
+def _fail_reason(log: str) -> str:
+    """The FIRST line matching a known-decisive failure signature — the line
+    a human debugging this flow would quote — falling back to the last
+    error-ish line."""
+    for ln in log.splitlines():
+        if any(sig in ln for sig in _DECISIVE):
+            return ln.strip()[:200]
+    return _tail_error(log)
+
+
 def _tail_error(log: str) -> str:
     for ln in reversed(log.splitlines()):
         if any(w in ln.lower() for w in ("error", "fatal", "failed", "traceback")):
@@ -131,11 +159,21 @@ def _tail_error(log: str) -> str:
 
 def _summary(step: str, m: dict, ok: bool) -> str:
     if step == "bitstream":
-        return (f"bitstream {'ok' if ok else 'FAILED'}: {m.get('bitstream_bytes', 0)} bytes, "
-                f"routed={m.get('routed')}")
+        out = (f"bitstream {'ok' if ok else 'FAILED'}: "
+               f"{m.get('bitstream_bytes', 0)} bytes, routed={m.get('routed')}")
+        if not ok and m.get("fail_reason"):
+            out += f" — {m['fail_reason'][:140]}"
+        return out
     if step == "fabric":
         return f"fabric {'generated' if m.get('fabric_generated') else 'FAILED'} " \
                f"({m.get('fabric_files', '?')} HDL files)"
     if step == "harden":
-        return "fabric hardened to GDSII macro" if ok else "harden FAILED"
+        if ok:
+            return "fabric hardened to GDSII macro"
+        if m.get("env_incompatibility") == "yosys_dash_y":
+            return ("harden UNAVAILABLE in this environment: the installed "
+                    "yosys removed the -y flag FABulous passes. This affects "
+                    "ONLY GDSII hardening — fabric generation and bitstream "
+                    "routing are independent of it and unaffected.")
+        return "harden FAILED"
     return ("ok" if ok else "failed")
