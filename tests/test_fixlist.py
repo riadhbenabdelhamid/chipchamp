@@ -254,3 +254,18 @@ def test_bitstream_failure_summary_names_the_reason():
     # redefinition (the wrapper-as-design crash) outranks the generic tail
     log2 = "a\ntop_wrapper.v:4: ERROR: Re-definition of module `$abstract\\top_wrapper'!\nb\n"
     assert "Re-definition" in _fail_reason(log2)
+
+
+# --- 10. shrinking rewrites warn -------------------------------------------
+
+def test_fs_write_shrink_warns(tmp_path):
+    from chipchamp.config import Workspace
+    from chipchamp.tools.context import ToolContext
+    from chipchamp.tools.fs_tools import fs_write
+    ctx = ToolContext(Workspace(str(tmp_path)))
+    big = "\n".join(f"row{i}" for i in range(40)) + "\n"
+    fs_write(ctx, path="floor.csv", content=big)
+    out = fs_write(ctx, path="floor.csv", content="row0\nrow1\n")
+    assert "fs.edit" in out.get("note", "")          # a live agent lost
+    out = fs_write(ctx, path="floor.csv", content=big)   # growth: no nag
+    assert "note" not in out

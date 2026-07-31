@@ -152,7 +152,18 @@ def fs_write(ctx: ToolContext, path: str, content: str) -> dict:
         fh.write(content)
     ctx.record_edit(path, old, content, status)
     ctx.ws.invalidate(ctx.target_name)  # design DB + live source glob
-    return {"path": path, "status": status, "bytes": len(content)}
+    out = {"path": path, "status": status, "bytes": len(content)}
+    # A rewrite that shrinks a substantial file is usually an EDIT that
+    # went through fs.write from memory — a live agent replaced fabric.csv
+    # with a from-imagination half-length version and lost the Parameters
+    # section it never meant to touch. Say so; do not block.
+    old_n, new_n = old.count("\n"), content.count("\n")
+    if old_n >= 20 and new_n < old_n // 2:
+        out["note"] = (f"overwrote {path}: {old_n} → {new_n} lines. If you "
+                       f"meant to CHANGE part of this file, fs.edit(old=..., "
+                       f"new=...) preserves everything you did not name; a "
+                       f"full rewrite must reproduce the whole file exactly.")
+    return out
 
 
 def _strip_render_prefix(lines: list[str]) -> list[str] | None:
