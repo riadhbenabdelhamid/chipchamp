@@ -1,0 +1,58 @@
+# 2026-07-31 — eFPGA triage: is my program broken, or my chip?
+
+`demo_efpga_triage.py`. A user design that built yesterday fails to route
+today, and the fault is in the *fabric's source*: a "switch-matrix mux
+pruning" commit collapsed 134 LUT4AB muxes to single inputs. Generation
+still validates — every destination keeps a driver — but the routing graph
+quietly drops from 206,424 to 145,104 edges and nextpnr blames the innocent
+design. The deliverable is the DIAGNOSIS, filed as a `note.add(root_cause)`
+and graded against ground truth.
+
+Ten agentic runs, one model (qwen3.6:35b), one injected fault. What makes
+this campaign worth keeping is that **every run's failure was information**:
+seven of the ten failed *because of something the platform, the harness, or
+the grader was doing wrong*, and each of those walls became a committed fix.
+Raw records: `2026-07-31-efpga-triage.json`.
+
+## The campaign, run by run
+
+| # | experiment | setup delta | result | what it actually proved |
+|---|---|---|---|---|
+| v1 | E-8f02a000a2 | generated-artifact fault | "closed" | the model healed the chip by accident (`with_fabric=true`) before observing the failure — clean-rebuild is an escape hatch, so v2 moved the fault into source |
+| 1 | E-b21a35bd20 | v2, unblinded | note filed, **zero jobs** | the notebook digest carried the scripted run's root-cause note into the system prompt; the model paraphrased its own briefing. Blinding was born here |
+| 2 | E-f8adf7ecbc | + notebook blinded | 3/6 capped | honest but stuck: ~10 calls guessing job ids against mute errors, an "unknown tool" storm that was really unlabeled subagent role-denials. The five-fix list came from this run |
+| 3 | E-1ad3ed6239 | + fix list (job.list…) | "closed", wrong | closed on **archaeology**: the cross-campaign job archive held a healthy-era pass and a broken-era fail sharing one (empty-manifest) input hash → "nondeterministic nextpnr". Two real bugs exposed: constant eFPGA input hashes, un-blinded job store |
+| 4 | E-0f7398f32b | + archive blinded | 2/6 | the model *correctly proved* its workspace contained no eFPGA project: `fs.list`/`fs.grep` defaulted to `*.sv` and the whole vertical (.v/.csv/.list) was invisible. Every earlier run had been routed around this hole by the archive |
+| 5 | E-2b1578f68a | + fs defaults fixed | 2/6 capped | my harness bug: blinding renamed `runs/` under a live runner; id allocation crashed every submit. Runner now mkdirs; the demo leaves an empty store |
+| 6 | E-ee5540a55e | + store functional | **4/6 capped** | the honest datapoint: reproduced twice, ruled out stale state, design untouched — ran out of 40 steps mid-localization of the unroutable net |
+| 7 | E-04ec81cd76 | grader v1 | "6/6", wrong | closed on a **wrong mechanism**: probed the (independently broken) harden flow, and its yosys crash satisfied every shape-check — "reproduced" by the wrong failure, "ruled out" by a different flow, note matched on the word "tile". The grader got teeth here: same-flow evidence only, mechanism words only |
+| 8 | E-4257a03757 | sharp grader, 100 steps | 3/6 | stopped by the token guard at 4096 max_tokens, mid-honest-trace; 8192 became the calibration |
+| 9 | E-533b707505 | + 8192 tokens | 3/6, closed wrong | fast static archaeology: the `Global_Clock` red herring (a synth_fabulous-provided primitive with no in-tree definition) became "the fabric lost its clock tile". The sharp grader correctly rejected what grader v1 would have accepted |
+
+## What the campaign banked
+
+Committed fixes (all live before the grow campaign started): lenient
+tool-name resolution, role-aware denials, labeled subagent events, teaching
+errors on every id-taking tool, `job.list`, fabric-state-aware input hashes,
+fs defaults that see the whole vertical, store-dir-proof id allocation, and
+a grader that demands same-flow evidence and mechanism words.
+
+Method lessons now encoded in the demo itself: **blind the notebook** (the
+answer key rides the system prompt), **blind the job archive** (models
+prefer archaeology to science when both are offered), and **grade
+mechanisms, not shapes** (two runs closed by satisfying the letter of the
+axes with the wrong causal story).
+
+Environment discovery: `run_FABulous_eFPGA_macro` (harden) is broken here —
+oss-cad-suite's yosys removed the `-y` flag FABulous passes; all 17 tiles
+die identically. Demo B is blocked on toolchain alignment, and until the
+adapter learned to say so, that loud irrelevant failure captured two runs'
+narratives.
+
+## Where it ends
+
+The walls are gone; runs 8–9 hit nothing but the model. qwen3.6:35b's triage
+judgment is genuinely high-variance: run 6 did flawless science and ran out
+of clock; run 9 had every affordance and skipped the science. A close-rate
+estimate on these now-honest terms needs a small-N campaign — each run is
+~10–35 min.

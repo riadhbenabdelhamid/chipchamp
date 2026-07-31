@@ -25,6 +25,16 @@ feature, and it is the mistake that makes local-model evaluation useless.
   already signed, one completed. Found the `efpga-fabulous` class was
   unreachable from `classify()` and that the install had been dead since the
   autocode rename. Records: `2026-07-31-efpga-demo.json`.
+- **[2026-07-31 — eFPGA triage: program or chip?](2026-07-31-efpga-triage.md)**
+  — a source-level switch-matrix fault, diagnosed under full blinding. Ten
+  runs; seven failed because of a platform, harness, or grader wall, and each
+  wall became a committed fix (job.list, fs defaults, input hashes, the
+  mechanism-word grader). Records: `2026-07-31-efpga-triage.json`.
+- **[2026-07-31 — eFPGA grow (E1): grow the chip](2026-07-31-efpga-grow.md)**
+  — a 512-flop requirement overflows 688 BELs; the fix is +8 rows in
+  `fabric.csv`. Scripted green first try; agentic best 5/7 — every judgment
+  axis demonstrated, the open wall is structured-CSV editing.
+  Records: `2026-07-31-efpga-grow.json`.
 - **[2026-07-31 — the waveform demo, scripted and agentic](2026-07-31-waveform-demo.md)**
   — one bug driven two ways; seven agentic runs, five eliminated causes, and
   the vacuous-success trap (`gates green` on an empty change set) caught in

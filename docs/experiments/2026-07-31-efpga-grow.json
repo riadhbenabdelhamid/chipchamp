@@ -1,0 +1,942 @@
+[
+ {
+  "id": "E-039080fc72",
+  "label": "demo-efpga-grow-e1",
+  "task": "`user_design/lfsr_bank.v` is a hard requirement: 32 independent LFSR channels (512 flops). It must produce a routed bitstream on this workspace's eFPGA project (`efpga-fabulous/`, a FABulous project). The build currently fails.\n\nYou may NOT change the user design in any way \u2014 the design is the requirement. The FABRIC is negotiable: it is generated from source (`fabric.csv` is the floor plan; `Tile/` defines the tile types), and regenerating it after a source edit is a normal, supported flow.\n\nDeliver a routed bitstream for the unchanged design, citing the job evidence, then close the task.",
+  "model": "ollama:qwen3.6:35b",
+  "started": 1785525396.5659657,
+  "ended": 1785527492.3291013,
+  "outcome": "capped",
+  "metrics": {
+   "steps": 60,
+   "wall_s": 2095.76,
+   "model_calls": 60,
+   "tokens_in": 1859332,
+   "tokens_out": 35171,
+   "tokens_total": 1894503,
+   "context_chars_max": 64818,
+   "context_messages_max": 119,
+   "tool_calls": 71,
+   "tool_failures": 5,
+   "tools": {
+    "efpga-fabulous.bitstream": {
+     "calls": 3,
+     "failed": 0
+    },
+    "efpga-fabulous.info": {
+     "calls": 1,
+     "failed": 1
+    },
+    "fs.grep": {
+     "calls": 6,
+     "failed": 0
+    },
+    "fs.list": {
+     "calls": 14,
+     "failed": 2
+    },
+    "fs.read": {
+     "calls": 20,
+     "failed": 2
+    },
+    "job.list": {
+     "calls": 1,
+     "failed": 0
+    },
+    "job.log": {
+     "calls": 15,
+     "failed": 0
+    },
+    "job.status": {
+     "calls": 1,
+     "failed": 0
+    },
+    "plan.update": {
+     "calls": 8,
+     "failed": 0
+    },
+    "repro": {
+     "calls": 1,
+     "failed": 0
+    },
+    "tools.load": {
+     "calls": 1,
+     "failed": 0
+    }
+   },
+   "jobs": 3,
+   "jobs_passed": 0,
+   "jobs_cached": 0,
+   "job_detail": [
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0662",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0663",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0664",
+     "status": "failed",
+     "cached": false
+    }
+   ],
+   "switches": [],
+   "compactions": 19,
+   "context_chars_freed": 179769,
+   "pending_jobs": [],
+   "models_used": [
+    "ollama:qwen3.6:35b"
+   ],
+   "recovered_calls": 0,
+   "empty_turns": 0,
+   "length_stops": 0,
+   "reported_done": false,
+   "answer_chars": 531
+  },
+  "timeline": [
+   {
+    "t": 142.06,
+    "kind": "tools_loaded",
+    "data": {
+     "groups": "['efpga-fabulous']",
+     "added": "['efpga-fabulous.bitstream', 'efpga-fabulous.fabric', 'efpga-fabulous.harden', 'efpga-fabulous.info']"
+    }
+   },
+   {
+    "t": 360.09,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 75918,
+     "after": 61826,
+     "evicted_results": 6,
+     "under_budget": true,
+     "freed": 14092
+    }
+   },
+   {
+    "t": 450.99,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 69730,
+     "after": 54835,
+     "evicted_results": 3,
+     "under_budget": true,
+     "freed": 14895
+    }
+   },
+   {
+    "t": 536.92,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65787,
+     "after": 64502,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 1285
+    }
+   },
+   {
+    "t": 614.77,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65271,
+     "after": 64651,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 620
+    }
+   },
+   {
+    "t": 674.68,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 76758,
+     "after": 63095,
+     "evicted_results": 3,
+     "under_budget": true,
+     "freed": 13663
+    }
+   },
+   {
+    "t": 735.92,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 75294,
+     "after": 63582,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 11712
+    }
+   },
+   {
+    "t": 812.75,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 64920,
+     "after": 53208,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 11712
+    }
+   },
+   {
+    "t": 961.53,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 70241,
+     "after": 63375,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 6866
+    }
+   },
+   {
+    "t": 1019.68,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 75510,
+     "after": 55204,
+     "evicted_results": 4,
+     "under_budget": true,
+     "freed": 20306
+    }
+   },
+   {
+    "t": 1177.85,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65509,
+     "after": 53797,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 11712
+    }
+   },
+   {
+    "t": 1230.9,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65845,
+     "after": 62462,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 3383
+    }
+   },
+   {
+    "t": 1284.86,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 67456,
+     "after": 55241,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 12215
+    }
+   },
+   {
+    "t": 1554.47,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 69258,
+     "after": 57546,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 11712
+    }
+   },
+   {
+    "t": 1613.65,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 69594,
+     "after": 63462,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 6132
+    }
+   },
+   {
+    "t": 1683.8,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 76022,
+     "after": 63129,
+     "evicted_results": 3,
+     "under_budget": true,
+     "freed": 12893
+    }
+   },
+   {
+    "t": 1772.3,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 69748,
+     "after": 64779,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 4969
+    }
+   },
+   {
+    "t": 1838.88,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65631,
+     "after": 64066,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 1565
+    }
+   },
+   {
+    "t": 1900.93,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 69231,
+     "after": 60906,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 8325
+    }
+   },
+   {
+    "t": 2039.75,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 73082,
+     "after": 61370,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 11712
+    }
+   }
+  ],
+  "notes": [],
+  "wall_s": 2095.76
+ },
+ {
+  "id": "E-26335e482d",
+  "label": "demo-efpga-grow-e1",
+  "task": "`user_design/lfsr_bank.v` is a hard requirement: 32 independent LFSR channels (512 flops). It must produce a routed bitstream on this workspace's eFPGA project (`efpga-fabulous/`, a FABulous project). The build currently fails.\n\nYou may NOT change the user design in any way \u2014 the design is the requirement. The FABRIC is negotiable: it is generated from source (`fabric.csv` is the floor plan; `Tile/` defines the tile types), and regenerating it after a source edit is a normal, supported flow.\n\nDeliver a routed bitstream for the unchanged design, citing the job evidence, then close the task.",
+  "model": "ollama:qwen3.6:35b",
+  "started": 1785516069.841479,
+  "ended": 1785519515.5870082,
+  "outcome": "capped",
+  "metrics": {
+   "steps": 60,
+   "wall_s": 3445.75,
+   "model_calls": 60,
+   "tokens_in": 1785809,
+   "tokens_out": 41904,
+   "tokens_total": 1827713,
+   "context_chars_max": 64878,
+   "context_messages_max": 119,
+   "tool_calls": 84,
+   "tool_failures": 18,
+   "tools": {
+    "caps": {
+     "calls": 2,
+     "failed": 0
+    },
+    "design.module": {
+     "calls": 1,
+     "failed": 1
+    },
+    "effpga_fabulous": {
+     "calls": 1,
+     "failed": 1
+    },
+    "efpga-fabulous.bitstream": {
+     "calls": 3,
+     "failed": 1
+    },
+    "efpga-fabulous.fabric": {
+     "calls": 1,
+     "failed": 0
+    },
+    "efpga-fabulous.harden": {
+     "calls": 2,
+     "failed": 0
+    },
+    "efpga-fabulous.info": {
+     "calls": 2,
+     "failed": 2
+    },
+    "efs__list": {
+     "calls": 1,
+     "failed": 1
+    },
+    "fs.list": {
+     "calls": 23,
+     "failed": 10
+    },
+    "fs.read": {
+     "calls": 25,
+     "failed": 1
+    },
+    "job.list": {
+     "calls": 1,
+     "failed": 0
+    },
+    "job.log": {
+     "calls": 19,
+     "failed": 0
+    },
+    "plan.update": {
+     "calls": 1,
+     "failed": 0
+    },
+    "repro": {
+     "calls": 2,
+     "failed": 1
+    }
+   },
+   "jobs": 6,
+   "jobs_passed": 1,
+   "jobs_cached": 0,
+   "job_detail": [
+    {
+     "tool": "efpga-fabulous.harden",
+     "job": "J-0656",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.harden",
+     "job": "J-0657",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "",
+     "status": "?",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0658",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.fabric",
+     "job": "J-0659",
+     "status": "passed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0660",
+     "status": "failed",
+     "cached": false
+    }
+   ],
+   "switches": [],
+   "compactions": 17,
+   "context_chars_freed": 190595,
+   "pending_jobs": [],
+   "models_used": [
+    "ollama:qwen3.6:35b"
+   ],
+   "recovered_calls": 0,
+   "empty_turns": 1,
+   "length_stops": 1,
+   "reported_done": false,
+   "answer_chars": 74
+  },
+  "timeline": [
+   {
+    "t": 328.79,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 72691,
+     "after": 51636,
+     "evicted_results": 8,
+     "under_budget": true,
+     "freed": 21055
+    }
+   },
+   {
+    "t": 763.6,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65008,
+     "after": 60033,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 4975
+    }
+   },
+   {
+    "t": 826.84,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 72135,
+     "after": 63882,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 8253
+    }
+   },
+   {
+    "t": 889.75,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 76527,
+     "after": 60466,
+     "evicted_results": 6,
+     "under_budget": true,
+     "freed": 16061
+    }
+   },
+   {
+    "t": 984.75,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 75332,
+     "after": 58915,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 16417
+    }
+   },
+   {
+    "t": 1103.78,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 69998,
+     "after": 57653,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 12345
+    }
+   },
+   {
+    "t": 1182.93,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 66882,
+     "after": 55170,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 11712
+    }
+   },
+   {
+    "t": 1242.48,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 73345,
+     "after": 61633,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 11712
+    }
+   },
+   {
+    "t": 1297.75,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 69181,
+     "after": 55024,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 14157
+    }
+   },
+   {
+    "t": 1538.79,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65447,
+     "after": 61111,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 4336
+    }
+   },
+   {
+    "t": 1807.74,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65363,
+     "after": 59555,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 5808
+    }
+   },
+   {
+    "t": 1981.26,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 71680,
+     "after": 62887,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 8793
+    }
+   },
+   {
+    "t": 2157.3,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 72580,
+     "after": 55257,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 17323
+    }
+   },
+   {
+    "t": 2344.53,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65322,
+     "after": 58273,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 7049
+    }
+   },
+   {
+    "t": 2512.35,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 70390,
+     "after": 64324,
+     "evicted_results": 3,
+     "under_budget": true,
+     "freed": 6066
+    }
+   },
+   {
+    "t": 2751.74,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 77096,
+     "after": 62106,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 14990
+    }
+   },
+   {
+    "t": 2967.45,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 69085,
+     "after": 59542,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 9543
+    }
+   }
+  ],
+  "notes": [],
+  "wall_s": 3445.75
+ },
+ {
+  "id": "E-f9c24990c5",
+  "label": "demo-efpga-grow-e1",
+  "task": "`user_design/lfsr_bank.v` is a hard requirement: 32 independent LFSR channels (512 flops). It must produce a routed bitstream on this workspace's eFPGA project (`efpga-fabulous/`, a FABulous project). The build currently fails.\n\nYou may NOT change the user design in any way \u2014 the design is the requirement. The FABRIC is negotiable: it is generated from source (`fabric.csv` is the floor plan; `Tile/` defines the tile types), and regenerating it after a source edit is a normal, supported flow.\n\nDeliver a routed bitstream for the unchanged design, citing the job evidence, then close the task.",
+  "model": "ollama:qwen3.6:35b",
+  "started": 1785527745.9756343,
+  "ended": 1785531141.6824677,
+  "outcome": "answered",
+  "metrics": {
+   "steps": 44,
+   "wall_s": 3395.71,
+   "model_calls": 44,
+   "tokens_in": 1250059,
+   "tokens_out": 62882,
+   "tokens_total": 1312941,
+   "context_chars_max": 64846,
+   "context_messages_max": 87,
+   "tool_calls": 50,
+   "tool_failures": 5,
+   "tools": {
+    "caps": {
+     "calls": 1,
+     "failed": 0
+    },
+    "eFPGA-fabric.info": {
+     "calls": 1,
+     "failed": 1
+    },
+    "efpga-fabulous.bitstream": {
+     "calls": 3,
+     "failed": 0
+    },
+    "efpga-fabulous.fabric": {
+     "calls": 2,
+     "failed": 0
+    },
+    "efpga-fabulous.info": {
+     "calls": 1,
+     "failed": 1
+    },
+    "fs.edit": {
+     "calls": 2,
+     "failed": 1
+    },
+    "fs.list": {
+     "calls": 4,
+     "failed": 0
+    },
+    "fs.read": {
+     "calls": 16,
+     "failed": 2
+    },
+    "fs.write": {
+     "calls": 5,
+     "failed": 0
+    },
+    "job.list": {
+     "calls": 1,
+     "failed": 0
+    },
+    "job.log": {
+     "calls": 4,
+     "failed": 0
+    },
+    "plan.update": {
+     "calls": 8,
+     "failed": 0
+    },
+    "repro": {
+     "calls": 1,
+     "failed": 0
+    },
+    "tools.load": {
+     "calls": 1,
+     "failed": 0
+    }
+   },
+   "jobs": 5,
+   "jobs_passed": 1,
+   "jobs_cached": 0,
+   "job_detail": [
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0696",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.fabric",
+     "job": "J-0697",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0698",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0699",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.fabric",
+     "job": "J-0700",
+     "status": "passed",
+     "cached": false
+    }
+   ],
+   "switches": [],
+   "compactions": 10,
+   "context_chars_freed": 60254,
+   "pending_jobs": [],
+   "models_used": [
+    "ollama:qwen3.6:35b"
+   ],
+   "recovered_calls": 0,
+   "empty_turns": 3,
+   "length_stops": 2,
+   "reported_done": false,
+   "answer_chars": 181
+  },
+  "timeline": [
+   {
+    "t": 236.33,
+    "kind": "tools_loaded",
+    "data": {
+     "groups": "['efpga-fabulous']",
+     "added": "['efpga-fabulous.bitstream', 'efpga-fabulous.fabric', 'efpga-fabulous.harden', 'efpga-fabulous.info']"
+    }
+   },
+   {
+    "t": 430.5,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65457,
+     "after": 64846,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 611
+    }
+   },
+   {
+    "t": 536.51,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 66798,
+     "after": 64449,
+     "evicted_results": 3,
+     "under_budget": true,
+     "freed": 2349
+    }
+   },
+   {
+    "t": 600.55,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 66507,
+     "after": 62306,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 4201
+    }
+   },
+   {
+    "t": 1188.09,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 64976,
+     "after": 62574,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 2402
+    }
+   },
+   {
+    "t": 1604.45,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65391,
+     "after": 45683,
+     "evicted_results": 3,
+     "under_budget": true,
+     "freed": 19708
+    }
+   },
+   {
+    "t": 1995.88,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 74234,
+     "after": 59326,
+     "evicted_results": 3,
+     "under_budget": true,
+     "freed": 14908
+    }
+   },
+   {
+    "t": 2668.75,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 68175,
+     "after": 64509,
+     "evicted_results": 3,
+     "under_budget": true,
+     "freed": 3666
+    }
+   },
+   {
+    "t": 2744.88,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65256,
+     "after": 64582,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 674
+    }
+   },
+   {
+    "t": 2827.49,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65024,
+     "after": 55962,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 9062
+    }
+   },
+   {
+    "t": 3088.22,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 66889,
+     "after": 64216,
+     "evicted_results": 3,
+     "under_budget": true,
+     "freed": 2673
+    }
+   }
+  ],
+  "notes": [],
+  "wall_s": 3395.71
+ }
+]
