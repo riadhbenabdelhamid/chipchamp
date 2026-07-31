@@ -203,7 +203,10 @@ def caps(ctx: ToolContext, role: str = "", available_only: bool = False) -> dict
               "required": ["job"]})
 def repro(ctx: ToolContext, job: str) -> dict:
     cmd = ctx.runner.repro_command(job)
-    return {"job": job, "repro": cmd} if cmd else {"error": f"no job {job}"}
+    if cmd:
+        return {"job": job, "repro": cmd}
+    from .verif_tools import no_such_job
+    return no_such_job(ctx, job)
 
 
 @tool("doc.blockdiagram", "ASCII block diagram of a hierarchy scope.", group="meta",

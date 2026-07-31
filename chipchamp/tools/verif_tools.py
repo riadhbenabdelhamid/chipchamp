@@ -265,6 +265,20 @@ def regress_failures(ctx: ToolContext, run_id: str = "reg") -> dict:
     return {"run_id": run_id, "clusters": list(clusters.values())}
 
 
+def no_such_job(ctx: ToolContext, job: str) -> dict:
+    """The teaching error every id-taking tool must share.
+
+    job.log got this treatment first and its guessing loops stopped; repro
+    did not, and a blind run burned ~10 calls enumerating invented job names
+    against its mute "no job X" — one un-taught error path re-opens the whole
+    failure class. One message, every tool."""
+    recent = [r.id for r in ctx.runner.list_jobs()[-5:]]
+    return {"error": f"no job '{job}' — job ids look like J-0249, not test "
+                     f"names. Recent jobs: {', '.join(recent) or '(none)'}. "
+                     f"A sim.run result carries its id in 'job'; job.list "
+                     f"enumerates recent jobs."}
+
+
 @tool("job.log", "Windowed grep over a job's logs (full logs never enter context).",
       group="sim",
       schema={"type": "object", "properties": {
@@ -278,12 +292,30 @@ def job_log(ctx: ToolContext, job: str, pattern: str, window: int = 3) -> dict:
     # consulted a log that was never read. Same trap as the vacuous gates, one
     # layer down: an empty success for an action that touched nothing.
     if ctx.runner.get(job) is None:
-        recent = [r.id for r in ctx.runner.list_jobs()[-5:]]
-        return {"error": f"no job '{job}' — job ids look like J-0249, not test "
-                         f"names. Recent jobs: {', '.join(recent) or '(none)'}. "
-                         f"A sim.run result carries its id in 'job'."}
+        return no_such_job(ctx, job)
     hits = ctx.runner.grep_log(job, pattern, window=window)
     return truncate({"job": job, "pattern": pattern, "hits": hits}, max_items=20)
+
+
+@tool("job.list", "Recent jobs, newest first: id, kind, status, summary. "
+      "The way to FIND a job id — do not guess ids or pass test names.",
+      group="sim",
+      schema={"type": "object", "properties": {
+          "limit": {"type": "integer", "default": 15},
+          "kind": {"type": "string", "description":
+                   "filter: sim | lint | synth | efpga-fabulous | …"}}})
+def job_list(ctx: ToolContext, limit: int = 15, kind: str = "") -> dict:
+    """A blind run proved the gap the hard way: the model KNEW records
+    existed, had three tools demanding an id, and no way to enumerate one —
+    it invented ten names in a row. The teaching errors list five recent ids,
+    but an error is the wrong place to keep a directory."""
+    recs = ctx.runner.list_jobs()
+    if kind:
+        recs = [r for r in recs if r.kind == kind]
+    recs = recs[-max(1, min(int(limit or 15), 50)):]
+    return {"jobs": [{"job": r.id, "kind": r.kind, "status": r.status,
+                      "summary": (r.summary or "")[:60]}
+                     for r in reversed(recs)]}
 
 
 @tool("job.status", "Status and metrics of a job.", group="sim",
@@ -292,7 +324,7 @@ def job_log(ctx: ToolContext, job: str, pattern: str, window: int = 3) -> dict:
 def job_status(ctx: ToolContext, job: str) -> dict:
     rec = ctx.runner.get(job)
     if not rec:
-        return {"error": f"no job {job}"}
+        return no_such_job(ctx, job)
     return {"job": rec.id, "kind": rec.kind, "status": rec.status,
             "summary": rec.summary, "adapter": rec.adapter,
             "cpu_s": round(rec.cpu_seconds, 2), "artifacts": list(rec.artifacts)}

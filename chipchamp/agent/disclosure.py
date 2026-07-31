@@ -30,7 +30,8 @@ CORE_GROUPS = {"workspace", "design", "plan", "meta", "skills"}
 
 # individually-cored tools from otherwise-deferred groups: the bottom of the
 # ladder (§ operating rule 3) plus the two ways to read a job without dumping it
-CORE_TOOLS = {"lint.run", "sim.run", "sim.list_tests", "job.log", "job.status"}
+CORE_TOOLS = {"lint.run", "sim.run", "sim.list_tests", "job.log",
+              "job.status", "job.list"}
 
 
 def core_names(tools: dict) -> set[str]:
