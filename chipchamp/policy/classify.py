@@ -39,10 +39,21 @@ def classify(diff: Diff, generated_globs: list[str] | None = None,
     candidates: list[str] = []
     has_rtl = any(f.is_rtl and not f.in_globs(generated_globs) for f in diff.files)
     for f in diff.files:
+        parts = f.path.replace("\\", "/").split("/")
         if f.path.endswith((".sdc", ".pdn.tcl")) or "floorplan" in f.path.lower():
             candidates.append("physical")  # SDC/floorplan/PDN → needs re-signoff
         elif f.path.endswith((".xdc", ".pcf", ".lpf")):
             candidates.append("fpga")  # FPGA constraints → re-implement
+        elif "user_design" in parts or parts[-1] == "fabric.csv" \
+                or ("Tile" in parts and f.path.endswith((".csv", ".list"))):
+            # FABulous project content: the design mapped ONTO a fabric, or the
+            # fabric's own authoring files. The class existed in TASK_CLASSES
+            # and its rung-E gates were fully implemented, but no branch here
+            # ever produced it — so an eFPGA edit classified rtl_functional,
+            # whose gates (smoke test, regression, coverage baseline) are
+            # unpayable for a fabric-mapped design, and report.done could
+            # never accept eFPGA work at all. Found writing the demo for it.
+            candidates.append("efpga-fabulous")
         elif f.in_globs(generated_globs):
             candidates.append("regmap")
         elif f.is_doc:
