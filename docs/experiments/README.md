@@ -19,6 +19,12 @@ feature, and it is the mistake that makes local-model evaluation useless.
 ## Index
 
 - **2026-07-27** — waves 0–4 against local ollama models (below)
+- **[2026-07-31 — the eFPGA demo: an FPGA from thin air](2026-07-31-efpga-demo.md)**
+  — FABulous fabric → model-authored LFSR → routed bitstream → rung E closed.
+  Two agentic runs: one capped a single step short with the evidence bundle
+  already signed, one completed. Found the `efpga-fabulous` class was
+  unreachable from `classify()` and that the install had been dead since the
+  autocode rename. Records: `2026-07-31-efpga-demo.json`.
 - **[2026-07-31 — the waveform demo, scripted and agentic](2026-07-31-waveform-demo.md)**
   — one bug driven two ways; seven agentic runs, five eliminated causes, and
   the vacuous-success trap (`gates green` on an empty change set) caught in

@@ -1,0 +1,262 @@
+[
+  {
+    "id": "E-61237683a3",
+    "label": "demo-efpga-agentic",
+    "task": "This workspace contains a FABulous eFPGA project at `efpga-fabulous/` (relative to the workspace root).\n\n1. Generate the eFPGA fabric.\n2. Write a NEW user design: a 16-bit maximal-length Fibonacci LFSR (taps 16,15,13,4). It must use exactly the port interface of the existing `efpga-fabulous/user_design/sequential_16bit_en.v` \u2014 read that file first. Save yours as `efpga-fabulous/user_design/<name>.v`.\n   Then update `efpga-fabulous/user_design/top_wrapper.v`: it instantiates the user design by module name (`sequential_16bit_en top_i`), and it must instantiate YOURS instead.\n3. Produce a routed bitstream for YOUR design on the generated fabric (the design path you pass is relative to the FABulous project, e.g. `user_design/<name>.v`).\n4. Verify the result (bitstream bytes, routed, fmax), then close the task properly.",
+    "model": "ollama:qwen3.6:35b",
+    "started": 1785490958.3595679,
+    "ended": 1785491598.9258335,
+    "outcome": "completed",
+    "metrics": {
+      "steps": 29,
+      "wall_s": 640.57,
+      "model_calls": 29,
+      "tokens_in": 486946,
+      "tokens_out": 21055,
+      "tokens_total": 508001,
+      "context_chars_max": 41348,
+      "context_messages_max": 57,
+      "tool_calls": 32,
+      "tool_failures": 1,
+      "tools": {
+        "caps": {
+          "calls": 1,
+          "failed": 0
+        },
+        "efpga-fabulous.bitstream": {
+          "calls": 3,
+          "failed": 0
+        },
+        "efpga-fabulous.fabric": {
+          "calls": 1,
+          "failed": 0
+        },
+        "efpga-fabulous.info": {
+          "calls": 3,
+          "failed": 0
+        },
+        "fs.edit": {
+          "calls": 3,
+          "failed": 1
+        },
+        "fs.list": {
+          "calls": 4,
+          "failed": 0
+        },
+        "fs.read": {
+          "calls": 7,
+          "failed": 0
+        },
+        "fs.write": {
+          "calls": 1,
+          "failed": 0
+        },
+        "plan.update": {
+          "calls": 5,
+          "failed": 0
+        },
+        "policy.check": {
+          "calls": 1,
+          "failed": 0
+        },
+        "report.done": {
+          "calls": 2,
+          "failed": 0
+        },
+        "tools.load": {
+          "calls": 1,
+          "failed": 0
+        }
+      },
+      "jobs": 4,
+      "jobs_passed": 3,
+      "jobs_cached": 0,
+      "job_detail": [
+        {
+          "tool": "efpga-fabulous.fabric",
+          "job": "J-0364",
+          "status": "passed",
+          "cached": false
+        },
+        {
+          "tool": "efpga-fabulous.bitstream",
+          "job": "J-0365",
+          "status": "failed",
+          "cached": false
+        },
+        {
+          "tool": "efpga-fabulous.bitstream",
+          "job": "J-0366",
+          "status": "passed",
+          "cached": false
+        },
+        {
+          "tool": "efpga-fabulous.bitstream",
+          "job": "J-0367",
+          "status": "passed",
+          "cached": false
+        }
+      ],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:qwen3.6:35b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 2,
+      "length_stops": 2,
+      "reported_done": true,
+      "answer_chars": 401
+    },
+    "timeline": [
+      {
+        "t": 56.01,
+        "kind": "tools_loaded",
+        "data": {
+          "groups": "['efpga-fabulous']",
+          "added": "['efpga-fabulous.bitstream', 'efpga-fabulous.fabric', 'efpga-fabulous.harden', 'efpga-fabulous.info']"
+        }
+      }
+    ],
+    "notes": [],
+    "wall_s": 640.57
+  },
+  {
+    "id": "E-62020c5d1c",
+    "label": "demo-efpga-agentic",
+    "task": "This workspace contains a FABulous eFPGA project at `efpga-fabulous/` (relative to the workspace root).\n\n1. Generate the eFPGA fabric.\n2. Write a NEW user design: a 16-bit maximal-length Fibonacci LFSR (taps 16,15,13,4). It must use exactly the port interface of the existing `efpga-fabulous/user_design/sequential_16bit_en.v` \u2014 read that file first. Save yours as `efpga-fabulous/user_design/<name>.v`.\n   Then update `efpga-fabulous/user_design/top_wrapper.v`: it instantiates the user design by module name (`sequential_16bit_en top_i`), and it must instantiate YOURS instead.\n3. Produce a routed bitstream for YOUR design on the generated fabric (the design path you pass is relative to the FABulous project, e.g. `user_design/<name>.v`).\n4. Verify the result (bitstream bytes, routed, fmax), then close the task properly.",
+    "model": "ollama:qwen3.6:35b",
+    "started": 1785489986.4761856,
+    "ended": 1785490705.8453212,
+    "outcome": "capped",
+    "metrics": {
+      "steps": 32,
+      "wall_s": 719.37,
+      "model_calls": 32,
+      "tokens_in": 619549,
+      "tokens_out": 22113,
+      "tokens_total": 641662,
+      "context_chars_max": 48694,
+      "context_messages_max": 63,
+      "tool_calls": 39,
+      "tool_failures": 2,
+      "tools": {
+        "caps": {
+          "calls": 1,
+          "failed": 0
+        },
+        "efpga-fabulous.bitstream": {
+          "calls": 5,
+          "failed": 0
+        },
+        "efpga-fabulous.fabric": {
+          "calls": 1,
+          "failed": 0
+        },
+        "efpga-fabulous.info": {
+          "calls": 3,
+          "failed": 1
+        },
+        "evidence.bundle": {
+          "calls": 1,
+          "failed": 0
+        },
+        "fs.edit": {
+          "calls": 4,
+          "failed": 0
+        },
+        "fs.grep": {
+          "calls": 3,
+          "failed": 0
+        },
+        "fs.list": {
+          "calls": 5,
+          "failed": 0
+        },
+        "fs.read": {
+          "calls": 7,
+          "failed": 1
+        },
+        "fs.write": {
+          "calls": 2,
+          "failed": 0
+        },
+        "plan.update": {
+          "calls": 6,
+          "failed": 0
+        },
+        "tools.load": {
+          "calls": 1,
+          "failed": 0
+        }
+      },
+      "jobs": 6,
+      "jobs_passed": 6,
+      "jobs_cached": 0,
+      "job_detail": [
+        {
+          "tool": "efpga-fabulous.fabric",
+          "job": "J-0358",
+          "status": "passed",
+          "cached": false
+        },
+        {
+          "tool": "efpga-fabulous.bitstream",
+          "job": "J-0359",
+          "status": "passed",
+          "cached": false
+        },
+        {
+          "tool": "efpga-fabulous.bitstream",
+          "job": "J-0360",
+          "status": "passed",
+          "cached": false
+        },
+        {
+          "tool": "efpga-fabulous.bitstream",
+          "job": "J-0361",
+          "status": "passed",
+          "cached": false
+        },
+        {
+          "tool": "efpga-fabulous.bitstream",
+          "job": "J-0362",
+          "status": "passed",
+          "cached": false
+        },
+        {
+          "tool": "efpga-fabulous.bitstream",
+          "job": "J-0363",
+          "status": "passed",
+          "cached": false
+        }
+      ],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:qwen3.6:35b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 2,
+      "length_stops": 2,
+      "reported_done": false,
+      "answer_chars": 259
+    },
+    "timeline": [
+      {
+        "t": 79.02,
+        "kind": "tools_loaded",
+        "data": {
+          "groups": "['efpga-fabulous', 'fpga', 'synth', 'wave', 'formal']",
+          "added": "['efpga-fabulous.bitstream', 'efpga-fabulous.fabric', 'efpga-fabulous.harden', 'efpga-fabulous.info', 'fpga.bitstream', 'fpga.checkpoints', 'fpga.critical', 'fpga.pins', 'fpga.ppa', 'fpga.run', 'sta.paths', 'sta.run', 'synth.run', 'wave.changes', 'wave.compare', 'wave.find_signals', 'wave.open', 'wa\u2026"
+        }
+      }
+    ],
+    "notes": [],
+    "wall_s": 719.37
+  }
+]
