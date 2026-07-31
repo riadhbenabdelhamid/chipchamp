@@ -90,6 +90,11 @@ class JobRunner:
     def _next_id(self) -> str:
         with self._lock:
             self._seq += 1
+            # the store dir can vanish mid-process (an experiment harness
+            # sequestering the archive, a cleanup script) — id allocation is
+            # the first write of every submit, so it must not be the thing
+            # that turns a missing directory into a failed job
+            self.store_dir.mkdir(parents=True, exist_ok=True)
             (self.store_dir / "seq.txt").write_text(str(self._seq))
             return new_job_id(self._seq)
 
