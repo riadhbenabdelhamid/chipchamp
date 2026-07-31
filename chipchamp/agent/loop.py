@@ -76,6 +76,12 @@ class AgentLoop:
         # that names an unloaded tool correctly should have it work, not be
         # told it does not exist. Only the schemas sent are narrowed.
         self._name_map = {n.replace(".", "__"): n for n in self.tools}
+        # separator-free slugs for lenient resolution; only unambiguous ones
+        slugs: dict = {}
+        for n in self.tools:
+            k = re.sub(r"[-_.]", "", n.lower())
+            slugs[k] = None if k in slugs else n
+        self._slug_map = {k: v for k, v in slugs.items() if v}
         self.disclose = bool(disclose)
         self._loaded = (disclosure.core_names(self.tools) if self.disclose
                         else set(self.tools))
@@ -377,7 +383,7 @@ class AgentLoop:
             job_failed = job_passed = False
             sim_fail_sig = None    # signature of a sim failure seen this step
             for call in resp.tool_calls:
-                real = self._name_map.get(call["name"], call["name"])
+                real = self._resolve_tool_name(call["name"])
                 tool_obj = self.tools.get(real)
                 self.on_event("tool_call", {"name": real, "input": call["input"]})
                 result = self._exec(real, call["input"])
@@ -650,10 +656,52 @@ class AgentLoop:
             pass
         return self.gateway.complete(system, transcript, self._api_tools, **kw)
 
+    def _resolve_tool_name(self, name: str) -> str:
+        """Resolve a model-emitted tool name to a catalog key, leniently.
+
+        Local models mangle names in ways an exact lookup punishes for no
+        gain: a live run emitted `efpga__fabulous.bitstream` — the separator
+        convention applied to the wrong separator (the wire form is
+        `efpga-fabulous__bitstream`). Names differing only in separators or
+        stray whitespace are unambiguous; refusing them converts a cosmetic
+        slip into a lost step.
+        """
+        name = (name or "").strip()
+        if name in self.tools:
+            return name
+        mapped = self._name_map.get(name)
+        if mapped:
+            return mapped
+        # unicode dashes fold to ASCII before the slug comparison
+        for d in ("\u2010", "\u2011", "\u2012", "\u2013", "\u2014"):
+            name = name.replace(d, "-")
+        if name in self.tools:
+            return name
+        slug = re.sub(r"[-_.]", "", name.lower())
+        hit = self._slug_map.get(slug)
+        return hit if hit else name
+
     def _exec(self, name: str, args: dict) -> dict:
         tool = self.tools.get(name)
         if not tool:
-            return {"error": f"unknown tool {name}"}
+            # The distinction matters to whoever reads the error. A tool that
+            # EXISTS but is outside this loop's set is least-privilege doing
+            # its job (a subagent role, FR-MA-01) — telling that agent the
+            # tool is "unknown" says the capability does not exist anywhere,
+            # which is false and, rendered in a shared event stream, reads as
+            # platform breakage to the human watching. Say which case it is.
+            from ..tools import all_tools as _all
+            if name in _all():
+                return {"error": f"'{name}' exists but is not available in "
+                                 f"this agent's tool set (least-privilege "
+                                 f"role). Work with the tools you have, or "
+                                 f"report the need back instead of retrying.",
+                        "your_tools": sorted(self.tools)[:40]}
+            import difflib
+            close = difflib.get_close_matches(name, list(self.tools), n=3,
+                                              cutoff=0.6)
+            hint = f" Did you mean: {', '.join(close)}?" if close else ""
+            return {"error": f"unknown tool {name}.{hint}"}
         # destructive ops (delete/overwrite) ALWAYS require explicit human
         # confirmation, independent of autonomy mode (never auto-approved). A
         # destructive tool that clears this confirm is NOT then gated again by
