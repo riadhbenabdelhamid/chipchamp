@@ -97,6 +97,44 @@ empty turns of planning prose. 91,912 tokens for 52s of work. No RTL edit,
 no close. That is the honest ceiling of a 3-nano-4B here, and the demo's
 verdict panel states it as such.
 
+## Runs 9–12 — laguna-xs, then the close
+
+**Run 9 (laguna-xs.2, 23 GB): three warm-up attempts, no agent step.** The
+load alone exceeded the 900s warm budget; a second attempt queued behind the
+first's still-running generation; a third was killed by the operator. Two
+demo defects fixed as a result: `warm_up` now skips when the model is already
+resident (`/api/ps`) instead of queueing, and caps its reply with
+`num_predict` — an uncapped "ok" invites a reasoning model to write an essay
+at local-inference speeds, which is what both "warm timeouts" actually were.
+No capability datapoint for this model exists yet; what is established is
+that its *load* is ~20× slower than qwen3.6:35b's at the same file size.
+
+**Runs 10–12 (qwen3.6:35b-a3b): the walls come down one per run, then it
+closes.**
+
+| run | outcome | steps | calls | what stopped it |
+|---|---|---|---|---|
+| 10 | capped · 607s | 16 | 22 | our bug: `wave.value` with `time` as a digit-STRING hit a raw `'<' not supported` TypeError; the accepts hint could not help (names were right) and six identical retries ate the budget → schema-driven scalar coercion added at the exec boundary |
+| 11 | capped · 266s | 16 | 15 (3 failed, all recovered) | nothing but the step budget — a thorough investigator at ~1 productive call per step, capped mid-signal-hunt |
+| 12 | **completed** · 334s | 30 | 34 | **nothing. First autonomous close of the campaign.** |
+
+Run 12, end to end: reproduced the failure (served from the job cache — the
+same record as run 11's sim, so the baseline cost nothing), read the log by
+real job id, read testbench then RTL, recovered a doubled path via `fs.grep`,
+**loaded the wave group via `tools.load` when it noticed it lacked schemas**,
+diagnosed the flag, edited `sync_fifo.sv`, watched the gate ladder fire at
+1/5, re-simmed to green, ran lint, **loaded the cov group after reading
+`coverage_baseline` off its own ladder**, ran coverage, and had `report.done`
+ACCEPTED at 5/5. Its fix was `count >= DEPTH` — a different correct repair
+than the original `count == DEPTH` (equivalent in reachable state, arguably
+more defensive), which the gates accepted on evidence rather than spelling.
+
+Two design claims this run substantiates beyond the fixes themselves: the
+disclosure menu is actionable mid-task (the model pulled in `wave` and `cov`
+groups exactly when it discovered the need), and the live gate ladder is not
+decoration — the model read its remaining obligations off it and paid them in
+order.
+
 ## The finding that matters most
 
 Run 1's demo printed **"it closed the task" for a model that executed zero

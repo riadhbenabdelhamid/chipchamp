@@ -1,5 +1,483 @@
 [
   {
+    "id": "E-a7acc0d34b",
+    "label": "demo-agentic",
+    "task": "The test `fifo_smoke` is failing. Find out why by looking at the waveform, fix the RTL, re-run the test, and close the task properly.\n\nWork from evidence: read the failing job's log for the testbench's own message, query the waveform to see what the signals actually did, and cite the file:line you changed.",
+    "model": "ollama:qwen3.6:35b",
+    "started": 1785456376.6693912,
+    "ended": 1785456710.9048853,
+    "outcome": "completed",
+    "metrics": {
+      "steps": 30,
+      "wall_s": 334.24,
+      "model_calls": 30,
+      "tokens_in": 503372,
+      "tokens_out": 10571,
+      "tokens_total": 513943,
+      "context_chars_max": 38364,
+      "context_messages_max": 59,
+      "tool_calls": 34,
+      "tool_failures": 0,
+      "tools": {
+        "cov.run": {
+          "calls": 1,
+          "failed": 0
+        },
+        "design.find_instances": {
+          "calls": 1,
+          "failed": 0
+        },
+        "evidence.bundle": {
+          "calls": 1,
+          "failed": 0
+        },
+        "fs.edit": {
+          "calls": 1,
+          "failed": 0
+        },
+        "fs.read": {
+          "calls": 2,
+          "failed": 0
+        },
+        "job.log": {
+          "calls": 2,
+          "failed": 0
+        },
+        "lint.run": {
+          "calls": 1,
+          "failed": 0
+        },
+        "plan.update": {
+          "calls": 6,
+          "failed": 0
+        },
+        "policy.check": {
+          "calls": 1,
+          "failed": 0
+        },
+        "regress.run": {
+          "calls": 1,
+          "failed": 0
+        },
+        "report.done": {
+          "calls": 1,
+          "failed": 0
+        },
+        "sim.list_tests": {
+          "calls": 2,
+          "failed": 0
+        },
+        "sim.run": {
+          "calls": 2,
+          "failed": 0
+        },
+        "test.select": {
+          "calls": 1,
+          "failed": 0
+        },
+        "tools.load": {
+          "calls": 2,
+          "failed": 0
+        },
+        "wave.find_signals": {
+          "calls": 4,
+          "failed": 0
+        },
+        "wave.open": {
+          "calls": 1,
+          "failed": 0
+        },
+        "wave.snapshot": {
+          "calls": 1,
+          "failed": 0
+        },
+        "wave.value": {
+          "calls": 2,
+          "failed": 0
+        },
+        "wave.when": {
+          "calls": 1,
+          "failed": 0
+        }
+      },
+      "jobs": 4,
+      "jobs_passed": 1,
+      "jobs_cached": 2,
+      "job_detail": [
+        {
+          "tool": "sim.run",
+          "job": "J-0345",
+          "status": "failed",
+          "cached": true
+        },
+        {
+          "tool": "sim.run",
+          "job": "J-0346",
+          "status": "passed",
+          "cached": false
+        },
+        {
+          "tool": "regress.run",
+          "job": "",
+          "status": "?",
+          "cached": true
+        },
+        {
+          "tool": "cov.run",
+          "job": "J-0350",
+          "status": "?",
+          "cached": false
+        }
+      ],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:qwen3.6:35b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 0,
+      "length_stops": 0,
+      "reported_done": true,
+      "answer_chars": 1259
+    },
+    "timeline": [
+      {
+        "t": 47.48,
+        "kind": "tools_loaded",
+        "data": {
+          "groups": "['wave']",
+          "added": "['wave.changes', 'wave.compare', 'wave.find_signals', 'wave.open', 'wave.snapshot', 'wave.trace_x', 'wave.value', 'wave.when']"
+        }
+      },
+      {
+        "t": 223.22,
+        "kind": "tools_loaded",
+        "data": {
+          "groups": "['cov', 'sim']",
+          "added": "['cov.attribution', 'cov.exclude', 'cov.holes', 'cov.load', 'cov.run', 'cov.summary', 'job.wait', 'regress.failures', 'regress.run', 'test.select']"
+        }
+      }
+    ],
+    "notes": [],
+    "wall_s": 334.24
+  },
+  {
+    "id": "E-f9a71c8ceb",
+    "label": "demo-agentic",
+    "task": "The test `fifo_smoke` is failing. Find out why by looking at the waveform, fix the RTL, re-run the test, and close the task properly.\n\nWork from evidence: read the failing job's log for the testbench's own message, query the waveform to see what the signals actually did, and cite the file:line you changed.",
+    "model": "ollama:qwen3.6:35b",
+    "started": 1785456065.0885353,
+    "ended": 1785456331.376852,
+    "outcome": "capped",
+    "metrics": {
+      "steps": 16,
+      "wall_s": 266.29,
+      "model_calls": 16,
+      "tokens_in": 157837,
+      "tokens_out": 9629,
+      "tokens_total": 167466,
+      "context_chars_max": 14224,
+      "context_messages_max": 31,
+      "tool_calls": 15,
+      "tool_failures": 3,
+      "tools": {
+        "design.module": {
+          "calls": 1,
+          "failed": 0
+        },
+        "fs.grep": {
+          "calls": 1,
+          "failed": 0
+        },
+        "fs.list": {
+          "calls": 1,
+          "failed": 0
+        },
+        "fs.read": {
+          "calls": 3,
+          "failed": 1
+        },
+        "job.log": {
+          "calls": 2,
+          "failed": 1
+        },
+        "plan.update": {
+          "calls": 1,
+          "failed": 0
+        },
+        "sim.list_tests": {
+          "calls": 1,
+          "failed": 0
+        },
+        "sim.run": {
+          "calls": 1,
+          "failed": 0
+        },
+        "tools.load": {
+          "calls": 1,
+          "failed": 0
+        },
+        "wave.find_signals": {
+          "calls": 2,
+          "failed": 1
+        },
+        "wave.open": {
+          "calls": 1,
+          "failed": 0
+        }
+      },
+      "jobs": 1,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [
+        {
+          "tool": "sim.run",
+          "job": "J-0345",
+          "status": "failed",
+          "cached": false
+        }
+      ],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:qwen3.6:35b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 1,
+      "length_stops": 1,
+      "reported_done": false,
+      "answer_chars": 55
+    },
+    "timeline": [
+      {
+        "t": 89.27,
+        "kind": "tools_loaded",
+        "data": {
+          "groups": "['wave']",
+          "added": "['wave.changes', 'wave.compare', 'wave.find_signals', 'wave.open', 'wave.snapshot', 'wave.trace_x', 'wave.value', 'wave.when']"
+        }
+      }
+    ],
+    "notes": [],
+    "wall_s": 266.29
+  },
+  {
+    "id": "E-8577a76724",
+    "label": "demo-agentic",
+    "task": "The test `fifo_smoke` is failing. Find out why by looking at the waveform, fix the RTL, re-run the test, and close the task properly.\n\nWork from evidence: read the failing job's log for the testbench's own message, query the waveform to see what the signals actually did, and cite the file:line you changed.",
+    "model": "ollama:qwen3.6:35b",
+    "started": 1785455230.2894368,
+    "ended": 1785455836.9784496,
+    "outcome": "capped",
+    "metrics": {
+      "steps": 16,
+      "wall_s": 606.69,
+      "model_calls": 16,
+      "tokens_in": 190348,
+      "tokens_out": 14568,
+      "tokens_total": 204916,
+      "context_chars_max": 28150,
+      "context_messages_max": 31,
+      "tool_calls": 22,
+      "tool_failures": 9,
+      "tools": {
+        "fs.list": {
+          "calls": 1,
+          "failed": 0
+        },
+        "fs.read": {
+          "calls": 2,
+          "failed": 0
+        },
+        "job.log": {
+          "calls": 1,
+          "failed": 0
+        },
+        "job.status": {
+          "calls": 1,
+          "failed": 1
+        },
+        "lib.list": {
+          "calls": 1,
+          "failed": 0
+        },
+        "lib.search": {
+          "calls": 1,
+          "failed": 1
+        },
+        "plan.update": {
+          "calls": 2,
+          "failed": 0
+        },
+        "sim.list_tests": {
+          "calls": 2,
+          "failed": 0
+        },
+        "sim.run": {
+          "calls": 1,
+          "failed": 0
+        },
+        "wave.find_signals": {
+          "calls": 3,
+          "failed": 0
+        },
+        "wave.open": {
+          "calls": 1,
+          "failed": 1
+        },
+        "wave.value": {
+          "calls": 6,
+          "failed": 6
+        }
+      },
+      "jobs": 1,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [
+        {
+          "tool": "sim.run",
+          "job": "J-0313",
+          "status": "failed",
+          "cached": false
+        }
+      ],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:qwen3.6:35b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 0,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 120
+    },
+    "timeline": [],
+    "notes": [],
+    "wall_s": 606.69
+  },
+  {
+    "id": "E-b60975fd41",
+    "label": "demo-agentic",
+    "task": "The test `fifo_smoke` is failing. Find out why by looking at the waveform, fix the RTL, re-run the test, and close the task properly.\n\nWork from evidence: read the failing job's log for the testbench's own message, query the waveform to see what the signals actually did, and cite the file:line you changed.",
+    "model": "ollama:nemotron-3-nano:4b",
+    "started": 1785452412.4466016,
+    "ended": 1785452464.3640335,
+    "outcome": "answered",
+    "metrics": {
+      "steps": 10,
+      "wall_s": 51.92,
+      "model_calls": 10,
+      "tokens_in": 90968,
+      "tokens_out": 944,
+      "tokens_total": 91912,
+      "context_chars_max": 2615,
+      "context_messages_max": 19,
+      "tool_calls": 6,
+      "tool_failures": 2,
+      "tools": {
+        "design.hierarchy": {
+          "calls": 1,
+          "failed": 0
+        },
+        "job.log": {
+          "calls": 2,
+          "failed": 1
+        },
+        "job.status": {
+          "calls": 1,
+          "failed": 1
+        },
+        "sim.list_tests": {
+          "calls": 1,
+          "failed": 0
+        },
+        "sim.run": {
+          "calls": 1,
+          "failed": 0
+        }
+      },
+      "jobs": 1,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [
+        {
+          "tool": "sim.run",
+          "job": "J-0312",
+          "status": "error",
+          "cached": false
+        }
+      ],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:nemotron-3-nano:4b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 3,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 387
+    },
+    "timeline": [],
+    "notes": [],
+    "wall_s": 51.92
+  },
+  {
+    "id": "E-0595b58839",
+    "label": "demo-agentic",
+    "task": "The test `fifo_smoke` is failing. Find out why by looking at the waveform, fix the RTL, re-run the test, and close the task properly.\n\nWork from evidence: read the failing job's log for the testbench's own message, query the waveform to see what the signals actually did, and cite the file:line you changed.",
+    "model": "ollama:nemotron-3-nano:4b",
+    "started": 1785452121.3766959,
+    "ended": 1785452162.1628985,
+    "outcome": "answered",
+    "metrics": {
+      "steps": 3,
+      "wall_s": 40.79,
+      "model_calls": 3,
+      "tokens_in": 25692,
+      "tokens_out": 1045,
+      "tokens_total": 26737,
+      "context_chars_max": 694,
+      "context_messages_max": 5,
+      "tool_calls": 1,
+      "tool_failures": 1,
+      "tools": {
+        "job.log": {
+          "calls": 1,
+          "failed": 1
+        }
+      },
+      "jobs": 0,
+      "jobs_passed": 0,
+      "jobs_cached": 0,
+      "job_detail": [],
+      "switches": [],
+      "compactions": 0,
+      "context_chars_freed": 0,
+      "pending_jobs": [],
+      "models_used": [
+        "ollama:nemotron-3-nano:4b"
+      ],
+      "recovered_calls": 0,
+      "empty_turns": 1,
+      "length_stops": 0,
+      "reported_done": false,
+      "answer_chars": 67
+    },
+    "timeline": [],
+    "notes": [],
+    "wall_s": 40.79
+  },
+  {
     "id": "E-c94708a93f",
     "label": "demo-agentic",
     "task": "The test `fifo_smoke` is failing. Find out why by looking at the waveform, fix the RTL, re-run the test, and close the task properly.\n\nWork from evidence: read the failing job's log for the testbench's own message, query the waveform to see what the signals actually did, and cite the file:line you changed.",
