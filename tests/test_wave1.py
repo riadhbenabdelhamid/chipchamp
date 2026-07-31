@@ -537,3 +537,51 @@ def test_a_bad_argument_error_names_what_is_accepted(tmp_path):
     assert "bad arguments" in out["error"]
     assert "waves" in out["accepts"] and "seed" in out["accepts"]
     assert out["required"] == ["test"]
+
+
+def test_quoted_scalars_are_coerced_to_what_the_schema_declares():
+    """The best agentic run of the campaign burned its final six steps calling
+    wave.value with time as a digit-STRING: the handler compared it to an int,
+    raised a raw '< not supported' TypeError, and the accepts hint could not
+    help because the parameter names were already right. Local models quote
+    scalars constantly; the exec boundary now coerces the unambiguous cases."""
+    from chipchamp.agent.loop import coerce_args
+    sc = {"properties": {"time": {"type": "integer"},
+                         "waves": {"type": "boolean"},
+                         "seed": {"type": "integer"},
+                         "ratio": {"type": "number"},
+                         "name": {"type": "string"}}}
+    out = coerce_args({"time": "825000", "waves": "True", "seed": 8.0,
+                       "ratio": "1.5", "name": "42"}, sc)
+    assert out == {"time": 825000, "waves": True, "seed": 8,
+                   "ratio": 1.5, "name": "42"}      # "42" stays a string
+    # ambiguity passes through untouched — the tool's own validation speaks
+    keep = coerce_args({"time": "not-a-number", "waves": "yes"}, sc)
+    assert keep == {"time": "not-a-number", "waves": "yes"}
+    assert coerce_args({}, sc) == {}
+    assert coerce_args({"x": "1"}, {}) == {"x": "1"}   # no schema, no guessing
+
+
+def test_the_exec_boundary_applies_the_coercion():
+    """wave.value('...','sig', time='825000') must reach the handler as an int
+    — the whole point is that the tool never sees the quoted scalar."""
+    from chipchamp.agent.loop import AgentLoop
+    seen = {}
+
+    from chipchamp.tools.base import Tool
+    def handler(ctx, time=0):
+        seen["time"] = time
+        return {"ok": True}
+    t = Tool(name="t.probe", description="", cost="free", permission="read",
+             handler=handler, group="x",
+             schema={"type": "object",
+                     "properties": {"time": {"type": "integer"}}})
+    loop = AgentLoop.__new__(AgentLoop)
+    loop.tools = {"t.probe": t}
+    loop.ctx = type("C", (), {"task_jobs": []})()
+    loop.on_event = lambda k, d: None
+    loop.approver = lambda *a: True
+    loop.gate_permissions = set()
+    out = loop._exec("t.probe", {"time": "825000"})
+    assert out == {"ok": True}
+    assert seen["time"] == 825000 and isinstance(seen["time"], int)

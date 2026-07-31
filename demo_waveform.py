@@ -124,7 +124,7 @@ def first_overrun(ctx, job: str):
     return t if isinstance(t, int) else None
 
 
-def warm_up(ref: str, budget: float = 900.0) -> bool:
+def warm_up(ref: str, budget: float = 1800.0) -> bool:
     """Make the model resident BEFORE anything is timed.
 
     A cold load happens inside the first request, and on this class of machine
@@ -133,6 +133,11 @@ def warm_up(ref: str, budget: float = 900.0) -> bool:
     like the model being incapable rather than merely absent. Three runs of
     this demo died that way (0 steps, ~590s, no output) with a 75 GB model
     holding the accelerator.
+
+    The budget is generous because a 23 GB model measured >900s to load here —
+    and note that a TIMED-OUT warm is not a failed one: ollama finishes the
+    load anyway and holds the model for keep_alive, so simply re-running the
+    demo then skips warming via the residency check.
     """
     import json as _json
     import time
@@ -140,11 +145,29 @@ def warm_up(ref: str, budget: float = 900.0) -> bool:
     if not ref.startswith("ollama:"):
         return True                     # only ollama is handled here
     model = ref.partition(":")[2]
+    # already resident? then there is nothing to warm — and sending another
+    # generate would QUEUE behind whatever is running (ollama serves one
+    # request per model), which is how two warm attempts in a row both timed
+    # out against a model that was sitting loaded the whole time
+    try:
+        with urllib.request.urlopen("http://localhost:11434/api/ps",
+                                    timeout=10) as fh:
+            resident = [m.get("name", "") for m in
+                        _json.load(fh).get("models", [])]
+        if model in resident:
+            C.print(f"[dim]  {model} already resident — skipping warm-up[/]\n")
+            return True
+    except Exception:
+        pass
     C.print(f"[dim]  warming [/][bold]{model}[/][dim] — a cold load inside the "
             f"first request would time out and look like failure…[/]")
+    # num_predict caps the reply: an uncapped "ok" invites a reasoning model
+    # to write an essay at local-inference speeds, and the warm-up then times
+    # out against a model that loaded fine
     body = _json.dumps({"model": model, "prompt": "ok", "stream": False,
                         "keep_alive": "30m",
-                        "options": {"num_ctx": 32768}}).encode()
+                        "options": {"num_ctx": 32768,
+                                    "num_predict": 8}}).encode()
     req = urllib.request.Request("http://localhost:11434/api/generate",
                                  data=body,
                                  headers={"Content-Type": "application/json"})

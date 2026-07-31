@@ -9,6 +9,7 @@ should be used instead.
 """
 from __future__ import annotations
 
+import re
 from typing import Callable, Optional
 
 from ..policy.budgets import BudgetExceeded
@@ -679,7 +680,7 @@ class AgentLoop:
             self.on_event("job_start", {"name": name, "input": args or {}})
         before = len(self.ctx.task_jobs)
         try:
-            result = tool.handler(self.ctx, **(args or {}))
+            result = tool.handler(self.ctx, **coerce_args(args, tool.schema))
         except BudgetExceeded as e:
             # FR-BUDG-01: a ceiling pauses the task and asks the human. The
             # model is told plainly that retrying cannot help, so it reports
@@ -733,6 +734,40 @@ class AgentLoop:
             items.append({"source": "user_prompt",
                           "bytes": len(c) if isinstance(c, str) else 0})
         return items
+
+
+def coerce_args(args: dict, schema: dict) -> dict:
+    """Coerce JSON-quoted scalars to what the tool's schema declares.
+
+    Local models constantly quote scalars — `"time": "825000"`,
+    `"waves": "True"` — and a handler comparing that string to an int raises a
+    raw TypeError from somewhere deep ('< not supported…'), which the
+    bad-argument path then mislabels: the parameter NAMES are right, so the
+    `accepts` hint cannot help, and a model retries the same call verbatim.
+    The best run of the demo campaign burned its last six steps exactly there.
+
+    Only unambiguous coercions happen: digit-strings to int, numeric strings
+    to float, true/false spellings to bool, and integral floats to int where
+    the schema says integer. Anything else passes through untouched so the
+    tool's own validation still speaks."""
+    props = (schema or {}).get("properties") or {}
+    out = dict(args or {})
+    for k, v in out.items():
+        want = (props.get(k) or {}).get("type")
+        try:
+            if want == "integer":
+                if isinstance(v, str) and re.fullmatch(r"[+-]?\d+", v.strip()):
+                    out[k] = int(v)
+                elif isinstance(v, float) and v.is_integer():
+                    out[k] = int(v)
+            elif want == "number" and isinstance(v, str):
+                out[k] = float(v.strip())
+            elif want == "boolean" and isinstance(v, str) \
+                    and v.strip().lower() in ("true", "false"):
+                out[k] = v.strip().lower() == "true"
+        except (ValueError, TypeError):
+            continue
+    return out
 
 
 def transcript_size(transcript: list[dict]) -> dict:
