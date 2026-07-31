@@ -18,6 +18,44 @@ def _abs(ctx: ToolContext, path: str) -> str:
     return path if os.path.isabs(path) else os.path.join(ctx.ws.root, path)
 
 
+# What "source files" means when no pattern is given. The old default was
+# *.sv alone — on a workspace whose own RTL is all SystemVerilog that looks
+# fine forever, but it made the entire eFPGA vertical (Verilog .v, fabric
+# .csv/.list, generated .txt graphs) INVISIBLE: a live agent swept the tree
+# with default fs.list/fs.grep, got clean empty results, and concluded the
+# project it was asked to debug did not exist.
+_SOURCE_EXTS = (".sv", ".svh", ".v", ".vh", ".vhd", ".vhdl", ".csv", ".list",
+                ".f", ".core", ".tcl", ".sdc", ".xdc", ".pcf", ".lpf",
+                ".yaml", ".yml", ".toml", ".md", ".txt")
+
+
+def _source_files(root: str) -> list[str]:
+    import glob as _g
+    hits: list[str] = []
+    for ext in _SOURCE_EXTS:
+        hits.extend(_g.glob(os.path.join(root, "**", "*" + ext),
+                            recursive=True))
+    return hits
+
+
+def _near_paths(ctx: ToolContext, path: str, limit: int = 3) -> list[str]:
+    """Readable workspace files sharing the missing path's basename — the
+    fs.read teaching hint (same class as job.log's: a mute miss on a tool
+    that takes an identifier feeds a guessing loop; a miss that names the
+    real candidates ends it)."""
+    want = os.path.basename(path)
+    out = []
+    for cur, dirs, files in os.walk(ctx.ws.root):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        if want in files:
+            rel = ctx.rel(os.path.join(cur, want))
+            if ctx.policy.can_read(rel):
+                out.append(rel)
+                if len(out) >= limit:
+                    break
+    return out
+
+
 @tool("fs.read", "Read a source file (ACL-enforced).", group="workspace",
       schema={"type": "object", "properties": {
           "path": {"type": "string"},
@@ -28,7 +66,9 @@ def fs_read(ctx: ToolContext, path: str, start: int = 1, end: int = 0) -> dict:
         return {"error": f"read denied: {ctx.policy.acl.reason(path)}"}
     ap = _abs(ctx, path)
     if not os.path.exists(ap):
-        return {"error": f"no such file: {path}",
+        near = _near_paths(ctx, path)
+        return {"error": f"no such file: {path}"
+                + (f" — did you mean: {', '.join(near)}?" if near else ""),
                 "hint": "paths are relative to the workspace root "
                         "(e.g. rtl/soc_top.sv); fs.list shows the tree"}
     lines = open(ap, errors="replace").read().splitlines()
@@ -43,24 +83,45 @@ def fs_read(ctx: ToolContext, path: str, start: int = 1, end: int = 0) -> dict:
       group="workspace",
       schema={"type": "object", "properties": {
           "dir": {"type": "string", "default": "."},
-          "pattern": {"type": "string", "default": "*.sv"}}})
-def fs_list(ctx: ToolContext, dir: str = ".", pattern: str = "*.sv") -> dict:
+          "pattern": {"type": "string", "description":
+                      "glob filename pattern (e.g. *.v); default: every "
+                      "source/fabric file type"}}})
+def fs_list(ctx: ToolContext, dir: str = ".", pattern: str = "") -> dict:
     import glob
     base = _abs(ctx, dir)
-    hits = glob.glob(os.path.join(base, "**", pattern), recursive=True)
+    if not os.path.isdir(base):
+        return {"error": f"no such directory: {dir}"}
+    if pattern:
+        hits = glob.glob(os.path.join(base, "**", pattern), recursive=True)
+    else:
+        hits = _source_files(base)
     rels = [ctx.rel(h) for h in hits if ctx.policy.can_read(ctx.rel(h))]
-    return truncate({"dir": dir, "files": sorted(rels)})
+    out = {"dir": dir, "files": sorted(rels)}
+    if not rels:
+        # an empty listing of a NON-empty directory must say so — "[]" reads
+        # as "nothing here" when the truth is "your filter excluded it"
+        n = sum(len(fs) for _, _, fs in os.walk(base))
+        if n:
+            out["note"] = (f"directory holds {n} file(s), but none matched "
+                           + (f"pattern {pattern!r}" if pattern
+                              else "the default source-file extensions")
+                           + " — pass pattern='*' to list everything")
+    return truncate(out)
 
 
 @tool("fs.grep", "Regex search across source files (ACL-filtered).", group="workspace",
       schema={"type": "object", "properties": {
-          "pattern": {"type": "string"}, "glob": {"type": "string", "default": "**/*.sv"}},
+          "pattern": {"type": "string"}, "glob": {"type": "string", "description":
+              "glob to restrict the file set (e.g. **/*.v); default: every "
+              "source/fabric file type"}},
           "required": ["pattern"]})
-def fs_grep(ctx: ToolContext, pattern: str, glob: str = "**/*.sv") -> dict:
+def fs_grep(ctx: ToolContext, pattern: str, glob: str = "") -> dict:
     import glob as _g
     rx = re.compile(pattern)
+    files = (_g.glob(os.path.join(ctx.ws.root, glob), recursive=True)
+             if glob else _source_files(ctx.ws.root))
     hits = []
-    for f in _g.glob(os.path.join(ctx.ws.root, glob), recursive=True):
+    for f in files:
         rel = ctx.rel(f)
         if not ctx.policy.can_read(rel):
             continue
