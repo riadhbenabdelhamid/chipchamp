@@ -1637,6 +1637,41 @@ def _agent_events(c):
         ui.console().print("  " + ui.gate_ladder(rep))
 
     def on_event(kind, data):
+        sub = data.get("subagent")
+        if sub:
+            # Subagent traffic gets its own compact, LABELED path. Unlabeled,
+            # a role-denied tool call renders exactly like a parent failure —
+            # in the blind eFPGA triage run a burst of least-privilege
+            # denials read as a platform-wide tool lockout to the human
+            # watching. And a subagent's thinking_start must never spawn a
+            # StreamView: it would fight the parent's live spinner.
+            tag = f"  [dim]{sub} ▸[/]"
+            if kind == "tool_call":
+                ui.console().print(
+                    f"{tag} [dim]→ {data['name']}"
+                    f" {_action_desc(data['name'], data.get('input', {}))}[/]")
+            elif kind == "tool_result":
+                res = data.get("result", {})
+                if isinstance(res, dict):
+                    if res.get("denied"):
+                        ui.console().print(f"{tag} [yellow]⊘ "
+                                           f"{data.get('name', '')}[/]")
+                    elif "error" in res:
+                        ui.console().print(
+                            f"{tag} [red]✗ {data.get('name', '')}: "
+                            f"{str(res['error'])[:80]}[/]")
+            elif kind == "job_done":
+                res = data.get("result", {})
+                if isinstance(res, dict) and res.get("job"):
+                    ui.console().print(
+                        f"{tag} [dim]▪ {res['job']} {data.get('name', '')} "
+                        f"{res.get('status', 'done')}[/]")
+            elif kind == "model_switch":
+                ui.console().print(f"{tag} [dim]{data['from']} → "
+                                   f"{data['to']} ({data.get('reason', '')})[/]")
+            elif kind == "error":
+                ui.console().print(f"{tag} [red]{data.get('message', '')}[/]")
+            return
         if kind == "thinking_start":
             state["streamed"] = 0
             state["think"] = ui.StreamView(data.get("model", ""),
