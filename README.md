@@ -588,4 +588,4 @@ Three agent tools let the loop *read* external information — never download or
   Without any model, the platform still runs its scripted playbooks fully offline.
 - Commercial EDA, farm connectors, and the IDE/CI/web surfaces are M2+ per the roadmap.
 
-Licensed under Apache-2.0.
+Licensed under AGPL-3.0.
