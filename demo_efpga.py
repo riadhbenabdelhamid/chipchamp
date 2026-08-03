@@ -199,26 +199,36 @@ def scripted(ctx) -> bool:
 
 # ---- mode 2: agentic --------------------------------------------------------
 
-PROMPT = (
-    "This workspace contains a FABulous eFPGA project at `efpga-fabulous/` "
-    "(relative to the workspace root).\n\n"
-    "1. Generate the eFPGA fabric.\n"
-    "2. Write a NEW user design: a 16-bit maximal-length Fibonacci LFSR "
-    "(taps 16,15,13,4). It must use exactly the port interface of the "
-    "existing `efpga-fabulous/user_design/sequential_16bit_en.v` — read that "
-    "file first. Save yours as `efpga-fabulous/user_design/<name>.v`.\n"
-    "   Then update `efpga-fabulous/user_design/top_wrapper.v`: it "
-    "instantiates the user design by module name (`sequential_16bit_en "
-    "top_i`), and it must instantiate YOURS instead.\n"
-    "3. Produce a routed bitstream for YOUR design on the generated fabric "
-    "(the design path you pass is relative to the FABulous project, e.g. "
-    "`user_design/<name>.v`).\n"
-    "4. Verify the result (bitstream bytes, routed, fmax), then close the "
-    "task properly."
-)
+def build_prompt(request: str = "") -> str:
+    """The task arc is fixed scaffolding — fabric, interface contract,
+    wrapper retarget, bitstream, close — and only the WHAT-to-build sentence
+    varies. That is what makes `--prompt` honest as a live, audience-driven
+    demo: the rails are identical no matter whose design is requested, so
+    nothing about their request was rehearsed."""
+    design = (request or "").strip() or \
+        "a 16-bit maximal-length Fibonacci LFSR (taps 16,15,13,4)"
+    return (
+        "This workspace contains a FABulous eFPGA project at `efpga-fabulous/` "
+        "(relative to the workspace root).\n\n"
+        "1. Generate the eFPGA fabric.\n"
+        f"2. Write a NEW user design: {design}. Keep it small — a few "
+        "hundred flops at most, or it will not route on this fabric. It "
+        "must use exactly the port interface of the existing "
+        "`efpga-fabulous/user_design/sequential_16bit_en.v` — read that "
+        "file first. Save yours as `efpga-fabulous/user_design/<name>.v`.\n"
+        "   Then update `efpga-fabulous/user_design/top_wrapper.v`: it "
+        "instantiates the user design by module name (`sequential_16bit_en "
+        "top_i`), and it must instantiate YOURS instead.\n"
+        "3. Produce a routed bitstream for YOUR design on the generated "
+        "fabric (the design path you pass is relative to the FABulous "
+        "project, e.g. `user_design/<name>.v`).\n"
+        "4. Verify the result (bitstream bytes, routed, fmax), then close "
+        "the task properly."
+    )
 
 
-def agentic(ctx, model: str, max_steps: int) -> bool:
+def agentic(ctx, model: str, max_steps: int,
+            request: str = "") -> bool:
     from chipchamp.agent import AgentLoop, Session
     from chipchamp.agent.working_set import budget_for
     from chipchamp.bench.experiment import ExperimentRecorder
@@ -234,7 +244,10 @@ def agentic(ctx, model: str, max_steps: int) -> bool:
         gw.options = {**(gw.options or {}), "num_ctx": 32768}
 
     scene("0 ·", "Hand the whole flow to the model")
-    C.print(f"  [cyan]»[/] {PROMPT.splitlines()[0]}")
+    prompt = build_prompt(request)
+    if request.strip():
+        C.print(f"  [bold cyan]the request:[/] [bold]{request.strip()}[/]")
+    C.print(f"  [cyan]»[/] {prompt.splitlines()[0]}")
     before = set(os.listdir(os.path.join(PROJECT, "user_design")))
 
     sess = Session.new(str(ctx.ws.dot / "sessions"))
@@ -242,9 +255,9 @@ def agentic(ctx, model: str, max_steps: int) -> bool:
                      on_event=_agent_events(ctx), disclose=local,
                      context_budget=budget_for(gw, ctx.ws.config))
     rec = ExperimentRecorder(ctx.ws.dot, label="demo-efpga-agentic",
-                             task=PROMPT, model=gw.ref)
+                             task=prompt, model=gw.ref)
     rec.attach(loop)
-    out = loop.run(PROMPT)
+    out = loop.run(prompt)
     exp = rec.finish(out, max_steps=max_steps)
 
     scene("·", "What the model actually did")
@@ -268,6 +281,8 @@ def agentic(ctx, model: str, max_steps: int) -> bool:
                 for j in efpga_jobs), default=0)
     routed = any((j.result.get("metrics") or {}).get("routed")
                  for j in efpga_jobs)
+    fmax = max((float((j.result.get("metrics") or {}).get("fmax_mhz") or 0)
+                for j in efpga_jobs), default=0.0)
     closed = bool(m.get("reported_done"))
 
     def mark(ok):
@@ -279,7 +294,9 @@ def agentic(ctx, model: str, max_steps: int) -> bool:
     C.print(f"  {mark(bool(wrote))} wrote a user design"
             + (f" [dim]({', '.join(wrote)})[/]" if wrote else ""))
     C.print(f"  {mark(bits > 0 and routed)} produced a routed bitstream"
-            + (f" [dim]({bits:,} B)[/]" if bits else ""))
+            + (f" [dim]({bits:,} B"
+               + (f" · fmax {fmax:.1f} MHz" if fmax else "") + ")[/]"
+               if bits else ""))
     C.print(f"  {mark(closed)} closed it with an accepted report.done")
     C.print(f"\n  [dim]recorded as experiment[/] [bold]{exp.id}[/] "
             f"[dim](outcome: {exp.outcome})[/]")
@@ -304,6 +321,10 @@ def main() -> int:
     ap.add_argument("--max-steps", type=int, default=32)
     ap.add_argument("--keep", action="store_true",
                     help="keep the written user design(s) instead of cleaning")
+    ap.add_argument("--prompt", default="",
+                    help="agentic mode: WHAT to build, in your words (e.g. "
+                         "'a PWM generator with a breathing duty cycle'); "
+                         "default is the 16-bit LFSR")
     a = ap.parse_args()
 
     from chipchamp.adapters.fabulous import FabulousAdapter
@@ -322,7 +343,8 @@ def main() -> int:
     banner(a.agent, a.model)
     closed = False
     try:
-        closed = agentic(ctx, a.model, a.max_steps) if a.agent else scripted(ctx)
+        closed = agentic(ctx, a.model, a.max_steps,
+                         request=a.prompt) if a.agent else scripted(ctx)
     finally:
         # remove what the demo (or the model) wrote, so reruns start clean —
         # the fabric and its generation artifacts stay: they are per-machine
@@ -330,18 +352,22 @@ def main() -> int:
         if not a.keep:
             with open(wrapper, "w") as fh:      # un-retarget the pad ring
                 fh.write(wrapper_src)
-            victims = {DESIGN_REL.split("/")[-1]} \
-                | getattr(agentic, "new_files", set())
-            for name in victims:
-                p = os.path.join(PROJECT, "user_design", name)
-                base = os.path.splitext(p)[0]
-                # FABulous emits sibling collateral next to a design (.vh,
-                # .vhd, .csv) — sweep the whole family or reruns inherit it
-                for ext in (".v", ".vh", ".vhd", ".csv", ".bin", ".fasm",
-                            "_npnr_log.txt", ".json"):
-                    q = base + ext if not name.endswith(ext) else p
-                    if os.path.exists(q):
-                        os.unlink(q)
+            # Family-sweep ONLY the scripted demo's own design. Agentic new
+            # files are deleted exactly as listed: expanding a new file to
+            # its whole family once deleted the STOCK design's source —
+            # the model had built sequential_16bit_en as a baseline, its
+            # .json build product landed in new_files, and the family sweep
+            # took the .v with it.
+            for name in getattr(agentic, "new_files", set()):
+                q = os.path.join(PROJECT, "user_design", name)
+                if os.path.exists(q):
+                    os.unlink(q)
+            base = os.path.join(PROJECT, "user_design",
+                                os.path.splitext(DESIGN_REL.split("/")[-1])[0])
+            for ext in (".v", ".vh", ".vhd", ".csv", ".bin", ".fasm",
+                        "_npnr_log.txt", ".json"):
+                if os.path.exists(base + ext):
+                    os.unlink(base + ext)
         footer(a.agent, closed)
     return 0 if closed else 1
 

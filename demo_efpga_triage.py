@@ -112,6 +112,35 @@ def regen_fabric_quietly() -> bool:
     return "executed successfully" in (r.stdout + r.stderr)
 
 
+def merge_runs_back(runs: str, snap: str) -> None:
+    """Fold the campaign store into the archive without ever crashing the
+    restore: colliding J-dirs keep the ARCHIVE's copy (a collision means the
+    campaign record's id was a lie), and seq.txt keeps the higher counter.
+    A colliding os.replace once threw mid-finally and left the workspace
+    stranded between stores."""
+    if not os.path.isdir(runs):
+        os.rename(snap, runs)
+        return
+    for d in os.listdir(runs):
+        src, dst = os.path.join(runs, d), os.path.join(snap, d)
+        if d == "seq.txt":
+            try:
+                hi = max(int(open(src).read() or 0),
+                         int(open(dst).read() or 0)
+                         if os.path.exists(dst) else 0)
+                with open(dst, "w") as fh:
+                    fh.write(str(hi))
+            except ValueError:
+                pass
+        elif d.startswith("J-"):
+            if os.path.exists(dst):
+                shutil.rmtree(src, ignore_errors=True)
+            else:
+                os.replace(src, dst)
+    shutil.rmtree(runs)
+    os.rename(snap, runs)
+
+
 def recover_stale_state() -> None:
     """A killed run leaves its disk snapshots behind; put them back before
     starting (the grow demo lost a notebook to in-memory-only snapshots)."""
@@ -128,13 +157,7 @@ def recover_stale_state() -> None:
         stale = True
     runs = os.path.join(ROOT, ".chipchamp", "runs")
     if os.path.isdir(runs + ".preblind"):
-        if os.path.isdir(runs):
-            for d in os.listdir(runs):
-                if d.startswith("J-") or d == "seq.txt":
-                    os.replace(os.path.join(runs, d),
-                               os.path.join(runs + ".preblind", d))
-            shutil.rmtree(runs)
-        os.rename(runs + ".preblind", runs)
+        merge_runs_back(runs, runs + ".preblind")
         stale = True
     if stale:
         C.print("[yellow]  recovered state left by a run that died "
@@ -465,18 +488,8 @@ def main() -> int:
             os.rename(nb + ".preblind", nb)
         runs_snap = getattr(agentic, "runs_snapshot", None)
         if runs_snap and os.path.isdir(runs_snap):
-            runs = os.path.join(ROOT, ".chipchamp", "runs")
-            if os.path.isdir(runs):
-                # merge the campaign's fresh records into the restored archive
-                # (ids never collide: seq stayed above the high-water mark).
-                # ONLY J-* and seq.txt: the campaign's near-empty cache.json
-                # must not clobber the archive's index.
-                for d in os.listdir(runs):
-                    if d.startswith("J-") or d == "seq.txt":
-                        os.replace(os.path.join(runs, d),
-                                   os.path.join(runs_snap, d))
-                shutil.rmtree(runs)
-            os.rename(runs_snap, runs)
+            merge_runs_back(os.path.join(ROOT, ".chipchamp", "runs"),
+                            runs_snap)
         for pth in (MATRIX, CONFIGMEM):
             if os.path.exists(pth + ".presnap"):
                 os.replace(pth + ".presnap", pth)
