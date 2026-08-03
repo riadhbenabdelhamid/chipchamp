@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 
 # FABulous + oss-cad-suite must be on PATH before the adapter probes for them.
@@ -164,10 +165,18 @@ def scripted(ctx) -> bool:
     # workflow, and skipping it fails synthesis on an unresolved instance.
     wrap_rel = os.path.join(os.path.relpath(PROJECT, ROOT),
                             "user_design", "top_wrapper.v")
-    T["fs.edit"].handler(ctx, path=wrap_rel,
-                         old="sequential_16bit_en top_i (",
-                         new="lfsr16 top_i (")
-    C.print(f"  [green]✓[/] retargeted top_wrapper.v at [bold]lfsr16[/]")
+    # retarget WHATEVER top_i currently instantiates — a REPL demo run may
+    # have left the wrapper pointing at its own design (a hardcoded old=
+    # string failed silently here and the build blamed a ghost module)
+    cur = re.search(r"(\w+)\s+top_i\s*\(", open(os.path.join(PROJECT,
+                    "user_design", "top_wrapper.v")).read())
+    r = T["fs.edit"].handler(ctx, path=wrap_rel,
+                             old=f"{cur.group(1)} top_i (",
+                             new="lfsr16 top_i (")
+    if "error" in r:
+        raise RuntimeError(f"wrapper retarget failed: {r['error']}")
+    C.print(f"  [green]✓[/] retargeted top_wrapper.v at [bold]lfsr16[/] "
+            f"[dim](was {cur.group(1)})[/]")
     ladder(ctx)
 
     scene("3 ·", "Program the fabric with it — synth, place, route, bitstream")
