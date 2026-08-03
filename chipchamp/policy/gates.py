@@ -121,9 +121,18 @@ def _sim_identity(j) -> str:
     return os.path.basename(waves) or (j.input_files[-1] if getattr(j, "input_files", None) else j.id)
 
 
-def _efpga_metrics(evidence: Evidence) -> Optional[dict]:
-    """Metrics from the latest eFPGA-FABulous job (fabric/bitstream)."""
-    jobs = evidence.jobs_of("efpga-fabulous")
+def _efpga_metrics(evidence: Evidence,
+                   steps: tuple = ("fabric", "bitstream")) -> Optional[dict]:
+    """Metrics from the latest eFPGA-FABulous job of a RELEVANT step.
+
+    "Latest job" alone broke the moment a third flow joined the vertical: a
+    cosimulation run after the bitstream became the newest record, its
+    metrics carry no bitstream_bytes, and both E gates went red on a task
+    whose fabric and bitstream jobs had passed. The newest job of the step
+    the gate is about is the evidence; other steps are other stories."""
+    jobs = [j for j in evidence.jobs_of("efpga-fabulous")
+            if (j.result.get("metrics") or {}).get("step") in steps
+            or (j.result.get("metrics") or {}).get("step") is None]
     if not jobs:
         return None
     latest = max(jobs, key=lambda j: getattr(j, "start_ts", 0))
