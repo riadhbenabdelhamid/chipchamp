@@ -35,7 +35,7 @@ module_card_tokens = 220
 v3_submissions_per_task = 8
 license_hours = 24
 cpu_hours = 200
-model_tokens = 2000000
+model_tokens = 5000000
 
 [waves]
 prefer = "vcd"
@@ -97,3 +97,6 @@ retention_days = 14
 # base_url = "https://llm.corp.internal/v1"
 # api_key_env = "CORP_LLM_KEY"
 # default_model = "llama-3.1-70b-instruct"
+
+[mcp.servers.wavelets]
+command = "python3 /home/riadh/wavelet/alwavelets.py --mcp"
