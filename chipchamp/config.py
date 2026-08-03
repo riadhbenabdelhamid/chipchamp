@@ -398,14 +398,21 @@ class Workspace:
         real consequences (one person's flaky run becomes everyone's cached
         verdict), never something a workspace falls into."""
         from .jobs.farm import FarmConfig
+        # Memoized: a second JobRunner on the same store is a second id
+        # authority — if the store's seq.txt is momentarily absent (an
+        # experiment harness blinding the archive), the newcomer restarts
+        # numbering at J-0001 and its records collide with history.
+        if getattr(self, "_runner", None) is not None:
+            return self._runner
         shared = (self.config.get("jobs", {}) or {}).get("store", "")
         store = os.path.expanduser(shared) if shared else str(self.dot / "runs")
         licenses = self.config.get("licenses", {})
         env_modules = self.config.get("tools", {}).get("env_modules", {})
-        return JobRunner(store, self.registry(), env_modules=env_modules,
-                         licenses=licenses,
-                         farm=FarmConfig.from_config(self.config),
-                         cache=self.config.get("jobs", {}).get("cache", True))
+        self._runner = JobRunner(store, self.registry(),
+                                 env_modules=env_modules, licenses=licenses,
+                                 farm=FarmConfig.from_config(self.config),
+                                 cache=self.config.get("jobs", {}).get("cache", True))
+        return self._runner
 
     def context_acl(self) -> ContextACL:
         ctx = self.config.get("context", {})
