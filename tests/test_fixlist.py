@@ -269,3 +269,43 @@ def test_fs_write_shrink_warns(tmp_path):
     assert "fs.edit" in out.get("note", "")          # a live agent lost
     out = fs_write(ctx, path="floor.csv", content=big)   # growth: no nag
     assert "note" not in out
+
+
+# --- 11. one workspace, one id authority -----------------------------------
+
+def test_workspace_runner_is_memoized(tmp_path):
+    from chipchamp.config import Workspace
+    ws = Workspace(str(tmp_path))
+    assert ws.runner() is ws.runner()
+
+
+# --- 12. a registered dir may BE a skill -----------------------------------
+
+def test_skill_dir_with_root_manifest(tmp_path, monkeypatch):
+    # `chipchamp skills add ~/wavelet` where the repo root carries SKILL.md:
+    # a live user did this and got "0 skill(s) found"
+    from chipchamp.config import Workspace
+    from chipchamp import skills as sk
+    root = tmp_path / "toolrepo"
+    root.mkdir()
+    (root / "SKILL.md").write_text(
+        "---\nname: tool-driver\ndescription: drives the tool\n---\nbody\n")
+    ws = Workspace(str(tmp_path / "ws"))
+    monkeypatch.setattr(sk, "skill_dirs", lambda ws: [(root, "registry")])
+    rep = sk.discover_report(ws) if hasattr(sk, "discover_report") else None
+    found = sk.discover(ws)
+    assert "tool-driver" in found
+
+
+# --- 13. streamed markdown commits only completed blocks -------------------
+
+def test_streamview_stable_boundary():
+    from chipchamp.ui import StreamView
+    # a growing table has no blank lines after the intro — nothing beyond
+    # the intro may be committed, or re-padded rows duplicate in scrollback
+    lines = ["intro paragraph", "", "| a | b |", "| 1 | 2 |", "| 3 | 4 |"]
+    assert StreamView._stable_boundary(lines) == 1
+    # ANSI-styled blank lines still count as boundaries
+    lines = ["para", "\x1b[2m\x1b[0m", "| t |"]
+    assert StreamView._stable_boundary(lines) == 1
+    assert StreamView._stable_boundary(["| only | table |"]) == 0
