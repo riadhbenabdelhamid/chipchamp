@@ -190,6 +190,12 @@ def discover_report(ws) -> DiscoveryReport:
             subdirs = sorted(p for p in base.iterdir() if p.is_dir())
         except OSError:
             continue
+        # A registered directory may BE a skill rather than contain skills:
+        # `skills add ~/wavelet` where wavelet/ carries its own SKILL.md is
+        # the natural way to point at a tool repo that ships one skill —
+        # a live user did exactly that and got "0 skill(s) found".
+        if (base / "SKILL.md").is_file():
+            subdirs = [base] + subdirs
         for d in subdirs:
             manifest = d / "SKILL.md"
             if not manifest.is_file():
@@ -203,7 +209,9 @@ def discover_report(ws) -> DiscoveryReport:
                                     f"(need name + description) — skipped")
                 continue
             name = str(fm["name"]).strip()
-            if name != d.name:
+            if name != d.name and d != base:
+                # a root skill's directory is a repo name, not a skill name —
+                # the mismatch is structural there, not a mistake
                 rep.warnings.append(f"{manifest}: frontmatter name '{name}' != "
                                     f"directory '{d.name}' (frontmatter wins)")
             if name in rep.skills:
