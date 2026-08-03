@@ -561,6 +561,22 @@ class StreamView:
 
     # -- rendering (own thread only) -------------------------------------------
 
+    @staticmethod
+    def _stable_boundary(lines: list[str]) -> int:
+        """Index up to which rendered lines can never change again.
+
+        Committing at a fixed tail depth assumed only the last lines mutate —
+        true for greedy-wrapped paragraphs, FALSE for tables: every new row
+        can change all column widths, so rows committed to scrollback were
+        re-emitted re-padded each frame (the repeated-text-while-streaming
+        bug). A rendered line is immutable only once its BLOCK is complete;
+        the last blank rendered line marks that boundary."""
+        import re as _re
+        for j in range(len(lines) - 1, -1, -1):
+            if not _re.sub(r"\x1b\[[0-9;]*m", "", lines[j]).strip():
+                return j
+        return 0
+
     def _render(self, content: str) -> list[str]:
         con = self._render_console
         with con.capture() as cap:
@@ -629,7 +645,16 @@ class StreamView:
             volatile = 0
             if content.strip():
                 lines = self._render(content)
-                stable = max(self._committed, len(lines) - self.TAIL)
+                stable = max(self._committed,
+                             min(self._stable_boundary(lines),
+                                 max(0, len(lines) - self.TAIL)))
+                # a single block taller than the screen cannot stay volatile:
+                # the cursor cannot repaint above the top row, which leaves
+                # residue — commit the overflow (bounded re-wrap risk beats
+                # unbounded repaint corruption)
+                max_tail = max(self.TAIL, _console.size.height - 3)
+                if len(lines) - stable > max_tail:
+                    stable = len(lines) - max_tail
                 commit = lines[self._committed:stable]
                 tail = lines[stable:]
                 out.extend(commit)
