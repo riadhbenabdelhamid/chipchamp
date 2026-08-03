@@ -2151,8 +2151,8 @@ def _interactive(ctx_obj, prompt=None, model=None, provider=None, max_steps=40,
             exp = rec.finish(out, max_steps=max_steps)
             echo(f"[dim]— experiment [bold]{exp.id}[/] ({exp.outcome}) "
                  f"recorded under {c.rel(rec.dir)}[/]")
-        if out.get("text"):
-            echo(out["text"])
+        # final text already rendered by the event stream (assistant events,
+        # incl. synthesized stop notes) — re-echoing printed every answer twice
         extras = "".join(
             f", {out[k]} {lbl}" for k, lbl in
             (("recovered_calls", "recovered-calls"),
@@ -3027,8 +3027,6 @@ def wake(ctx, session_id, timeout, model, provider, max_steps):
                    + "\n".join(lines)
                    + f"\n\nContinue the task from here: {task}")
     sess.save()
-    if out.get("text"):
-        echo(out["text"])
 
 
 def _latest_parked(store: str):

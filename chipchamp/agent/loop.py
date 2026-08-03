@@ -350,6 +350,12 @@ class AgentLoop:
                         final_text = ("(recovered from the model's reasoning "
                                       "channel — it never emitted a final "
                                       "message)\n" + last_reasoning[-2000:])
+                        # synthesized here, not model-emitted: no assistant
+                        # event has carried it, so fire one — every surface
+                        # renders events, and re-echoing out["text"] on top
+                        # duplicated whole answers
+                        self.on_event("assistant", {"text": final_text,
+                                                    "synthetic": True})
                     else:
                         note = ("(stopped: the model kept hitting the token "
                                 "limit before finishing"
@@ -359,6 +365,8 @@ class AgentLoop:
                         # — never let a truncated fragment pose as the answer.
                         final_text = (final_text + "\n\n" + note
                                       if final_text else note)
+                        self.on_event("assistant", {"text": note,
+                                                    "synthetic": True})
                     break
                 if truncated:
                     nudge = ("Your previous message was cut off at the token "
