@@ -309,3 +309,62 @@ def test_streamview_stable_boundary():
     lines = ["para", "\x1b[2m\x1b[0m", "| t |"]
     assert StreamView._stable_boundary(lines) == 1
     assert StreamView._stable_boundary(["| only | table |"]) == 0
+
+
+# --- 14. bitstream-vs-RTL cosim tool ---------------------------------------
+
+def test_simulate_tool_teaches_and_generates_tb(tmp_path, ctx):
+    import os
+    from chipchamp.tools.efpga_tools import _ensure_tb, efpga_simulate
+    # missing bitstream: teach the order of operations, name the exact path
+    out = efpga_simulate(ctx, design="user_design/ghost.v",
+                         project=str(tmp_path))
+    assert "no bitstream at user_design/ghost.bin" in out["error"]
+    assert "efpga-fabulous.bitstream" in out["error"]
+    # TB generation is name substitution from the template
+    os.makedirs(tmp_path / "Test")
+    (tmp_path / "Test" / "sequential_16bit_en_tb.v").write_text(
+        "module sequential_16bit_en_tb;\n"
+        "sequential_16bit_en dut_i ();\nendmodule\n")
+    tb = _ensure_tb(str(tmp_path), "mydsp")
+    body = open(tb).read()
+    assert "mydsp dut_i" in body and "sequential_16bit_en" not in body
+    # an existing TB is never overwritten
+    (tmp_path / "Test" / "custom_tb.v").write_text("handwritten\n")
+    assert open(_ensure_tb(str(tmp_path), "custom")).read() == "handwritten\n"
+
+
+def test_simulate_adapter_plan_and_summary():
+    from chipchamp.adapters.fabulous import FabulousAdapter, _summary
+    plan = FabulousAdapter().simulate("/p", fmt="vcd",
+                                      bitstream="user_design/d.bin")
+    assert "run_simulation vcd user_design/d.bin" in " ".join(
+        plan.steps[0].argv)
+    assert plan.meta["step"] == "simulate"
+    assert plan.artifacts["waveform"].endswith("Test/build/d.vcd")
+    assert "PASSED" in _summary("simulate", {"sim_passed": True}, ok=True)
+    assert "FAILED" in _summary("simulate", {"fail_reason": "x"}, ok=False)
+
+
+# --- 15. a cosim job must not shadow the E-gate evidence -------------------
+
+def test_efpga_gates_survive_a_later_simulate_job():
+    from chipchamp.policy.gates import _efpga_metrics
+
+    class J(SimpleNamespace):
+        pass
+
+    def job(ts, **metrics):
+        return J(start_ts=ts, result={"metrics": metrics},
+                 kind="efpga-fabulous")
+
+    class Ev:
+        def __init__(self, jobs): self._j = jobs
+        def jobs_of(self, kind): return self._j
+
+    ev = Ev([job(1, step="fabric", fabric_generated=True, fabric_files=55),
+             job(2, step="bitstream", bitstream_bytes=12024, routed=True),
+             job(3, step="simulate", sim_passed=True)])
+    m = _efpga_metrics(ev)
+    # the simulate job is newest — the gate must still see the bitstream
+    assert m.get("bitstream_bytes") == 12024
