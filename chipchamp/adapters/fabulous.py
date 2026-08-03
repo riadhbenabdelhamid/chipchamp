@@ -65,8 +65,18 @@ class FabulousAdapter(Adapter):
         return self.flow(project, ["run_FABulous_eFPGA_macro"],
                          meta={"step": "harden"})
 
-    def simulate(self, project: str) -> Plan:
-        return self.flow(project, ["run_simulation"], meta={"step": "simulate"})
+    def simulate(self, project: str, fmt: str = "vcd",
+                 bitstream: str = "") -> Plan:
+        """Simulate the PROGRAMMED fabric: the generated eFPGA netlist with
+        the bitstream loaded into its config chain, against the raw user
+        design as a cycle-by-cycle gold model (the template testbench's own
+        structure). A pass IS bitstream-vs-RTL equivalence, behaviorally."""
+        cmd = f"run_simulation {fmt} {bitstream}".strip()
+        base = os.path.splitext(bitstream)[0].split("/")[-1] if bitstream else ""
+        arts = {"waveform": os.path.join(project, "Test", "build",
+                                         f"{base}.{fmt}")} if base else {}
+        return self.flow(project, [cmd], artifacts=arts,
+                         meta={"step": "simulate", "design": base})
 
     # ---- parse ---------------------------------------------------------------
 
@@ -103,6 +113,10 @@ class FabulousAdapter(Adapter):
 
         # success = flow ok AND (bitstream produced if we asked for one)
         ok = ok_flow and (metrics.get("bitstream_bytes", 1) > 0)
+        if plan.meta.get("step") == "simulate":
+            metrics["sim_passed"] = ok
+            if not ok:
+                metrics["fail_reason"] = _fail_reason(log)
         if plan.meta.get("step") == "bitstream" and not ok:
             # "FAILED: 0 bytes" without the WHY sent a live agent into a
             # wild-goose diagnosis while the real reason sat in the log
@@ -167,6 +181,12 @@ def _summary(step: str, m: dict, ok: bool) -> str:
     if step == "fabric":
         return f"fabric {'generated' if m.get('fabric_generated') else 'FAILED'} " \
                f"({m.get('fabric_files', '?')} HDL files)"
+    if step == "simulate":
+        if ok:
+            return "fabric-vs-RTL cosim PASSED: the programmed fabric matched " \
+                   "the RTL gold model cycle-for-cycle"
+        return "fabric-vs-RTL cosim FAILED" + \
+               (f" — {m['fail_reason'][:140]}" if m.get("fail_reason") else "")
     if step == "harden":
         if ok:
             return "fabric hardened to GDSII macro"
