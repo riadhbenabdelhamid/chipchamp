@@ -64,3 +64,20 @@ absolute — three runs rewrote fabric.csv correctly — but it remains the
 execution bottleneck in both caps. A machine reboot killed run 3's first
 attempt mid-experiment; `recover_stale_state()` healed the workspace on the
 next launch exactly as designed.
+
+
+## 2026-08-08 — multi-model close rates (same instrument, same faults)
+
+| model | triage | grow | dominant failure mode |
+|---|---|---|---|
+| qwen3.6:35b (MoE, ~3B active) | **5/5 closed** (3× full 6/6) | **3/5 closed** (judgment 5/5) | CSV execution in the two caps |
+| nemotron-3-nano:4b | 0/5 | 0/5 | turns never complete: truncation-guard stop at ~10 steps, 0 jobs — at BOTH 8192 and 16384 output tokens |
+| lfm2.5:8b | 0/5 | 0/5 | protocol failure: emits tool-call-shaped JSON as prose, never drives the tool API; 0 jobs, seconds per run |
+
+Twenty comparison runs, zero gaming, zero design violations, and three
+cleanly distinguishable failure classes: the 35B fails on *execution
+mechanics*, the 4B on *turn economics*, the 8B on *tool protocol*. These are
+router-profile facts now, not vibes. One boundary showed up statistically:
+models that do nothing can still close investigation-class tasks (no edits →
+no gates owed) — the case for requiring a cited failing job on any
+root_cause close. gpt-oss-120b's leg awaits an LM Studio session.
