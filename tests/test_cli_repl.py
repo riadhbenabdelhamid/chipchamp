@@ -225,3 +225,18 @@ def test_skills_cli_add_list_remove(tmp_path):
     assert "design.domains" in r3.stdout
     r4 = _run(["--root", str(ws), "skills", "remove", "--all"])
     assert "cleared" in r4.stdout
+
+
+def test_bang_runs_shell_passthrough_without_session_noise(tmp_path):
+    """`!<cmd>` is a plain terminal passthrough: the command's own output
+    appears, and nothing about it enters the session transcript."""
+    import json
+    import pathlib
+    r = _run(["--root", str(EXAMPLE)],
+             stdin="!echo PASSTHROUGH_MARKER_42\n/exit\n")
+    assert "PASSTHROUGH_MARKER_42" in r.stdout
+    # newest session file must contain no trace of the shell line
+    sessions = sorted(pathlib.Path(EXAMPLE, ".chipchamp", "sessions").glob("S-*.json"),
+                      key=lambda p: p.stat().st_mtime)
+    if sessions:
+        assert "PASSTHROUGH_MARKER_42" not in sessions[-1].read_text()

@@ -2189,6 +2189,20 @@ def _interactive(ctx_obj, prompt=None, model=None, provider=None, max_steps=40,
             break
         if not line:
             continue
+        if line.startswith("!"):
+            # Shell passthrough: run it exactly as a terminal would — stdio
+            # inherited (interactive commands work), cwd = workspace root —
+            # and leave NO trace in the session: not in the transcript, not
+            # in the model's context, not in the audit. The user talking to
+            # their own shell is not part of the agent's conversation.
+            cmd = line[1:].strip()
+            if cmd:
+                import subprocess
+                try:
+                    subprocess.run(cmd, shell=True, cwd=c.ws.root)
+                except KeyboardInterrupt:
+                    echo("")
+            continue
         if line.startswith("/"):
             if _dispatch_slash(ctx_obj, c, loop, line,
                                pending if has_model else None, mode=mode,
@@ -2628,6 +2642,9 @@ def _repl_help(c=None):
 
     line("[bold]Talk to the agent[/] — just type a task, e.g. "
          "[dim]“why does fifo_smoke fail on seed 3?”[/]")
+    line("[bold]![/][dim]<command>[/] — run a shell command directly "
+         "(plain terminal passthrough; never enters the session or the "
+         "model's context)")
     shown = set()
     for g, names in _HELP_GROUPS.items():
         here = [n for n in names if n in cmds]
