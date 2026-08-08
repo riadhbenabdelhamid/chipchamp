@@ -56,3 +56,23 @@ judgment is genuinely high-variance: run 6 did flawless science and ran out
 of clock; run 9 had every affordance and skipped the science. A close-rate
 estimate on these now-honest terms needs a small-N campaign — each run is
 ~10–35 min.
+
+
+## 2026-08-04/05 — the close-rate campaign (5 runs, 100-step guard)
+
+Five blind runs against the unchanged fault, sharp grader, 8192-token
+turns. The step guard at 100 — far above the old 40 — is the variable that
+mattered; nothing else changed.
+
+| run | experiment | verdict |
+|---|---|---|
+| 1 | E-570664ed24 | closed, 51 steps (axis panel lost to a machine reboot) |
+| 2 | E-0f90eaa6a1 | **6/6** — full ladder, mechanism-naming note |
+| 3 | E-3e966c5272 | **6/6** in 29 min — staged elimination table (synth ✓ place ✓ route ✗, "no PIP paths connect any placed LC tile") |
+| 4 | (rc=0) | **6/6** |
+| 5 | E-e7402bca5a | 5/6 — right note, right attribution, skipped the rebuild-elimination beat |
+
+**Close rate 5/5; full-ladder 3/4 of verdict-known runs.** Zero
+wrong-mechanism closes, zero archaeology, zero design edits. The variance
+the 40-step campaigns attributed to the model was substantially the budget:
+given room, the same model runs the same honest arc almost every time.

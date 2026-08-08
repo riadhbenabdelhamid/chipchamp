@@ -46,3 +46,21 @@ remaining wall is qwen3.6:35b's structured-CSV editing under a token budget:
 surgical `fs.edit` inserts beat full-file rewrites, and the model reached
 for the rewrite. E1 has not yet been closed 7/7 by a model; the scripted
 close and run 3's 5/7 bound the gap tightly.
+
+
+## 2026-08-04/05 — the close-rate campaign (5 runs, 100-step guard)
+
+| run | experiment | verdict |
+|---|---|---|
+| 1 | E-311d7578b9 | **closed**, 48 steps — one correct full fabric.csv rewrite; its own floor plan choice routed the design at 21,624 B (bigger than the scripted +8 rows) |
+| 2 | E-3d31c5c6e8 | **closed**, 69 steps |
+| 3 | E-87fac2e1ca | 5/7 capped — right arc through regen, under-provisioned the growth (~784 LC for a 512-flop design) and ran out iterating |
+| 4 | E-2f48d00991 | **7/7** in 33 min — recovered from its own repeated tool-name mangles (`efs__list`), two clean fabric edits |
+| 5 | E-94b4c18e69 | 4/7 capped at 100 — edited the fabric but never landed a valid regen |
+
+**Close rate 3/5; judgment axes (design untouched + fabric edited) 5/5.**
+The structured-CSV editing wall from the original campaign is no longer
+absolute — three runs rewrote fabric.csv correctly — but it remains the
+execution bottleneck in both caps. A machine reboot killed run 3's first
+attempt mid-experiment; `recover_stale_state()` healed the workspace on the
+next launch exactly as designed.

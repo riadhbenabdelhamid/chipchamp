@@ -222,6 +222,55 @@
   "wall_s": 1270.67
  },
  {
+  "id": "E-05229aba53",
+  "label": "demo-efpga-triage-v2",
+  "task": "Until recently, `user_design/sequential_16bit_en.v` produced a routed bitstream on this workspace's eFPGA project (`efpga-fabulous/`, a FABulous project). Now the build fails.\n\nFind out what is actually at fault \u2014 the user design, or the fabric it is being mapped onto \u2014 and prove it by elimination rather than assumption.\n\nYou may not be able to repair what you find. The deliverable is the DIAGNOSIS: record your conclusion with note.add (kind root_cause), citing the job ids and files that support it, then close the task. If the evidence shows a fix within your reach, make it \u2014 but a wrong fix is worse than a right diagnosis.",
+  "model": "ollama:qwen3.6:35b",
+  "started": 1785803239.7236567,
+  "ended": 1785804377.777091,
+  "outcome": "timeout",
+  "metrics": {
+   "steps": 0,
+   "wall_s": 1138.05,
+   "model_calls": 1,
+   "tokens_in": 0,
+   "tokens_out": 0,
+   "tokens_total": 0,
+   "context_chars_max": 631,
+   "context_messages_max": 1,
+   "tool_calls": 0,
+   "tool_failures": 0,
+   "tools": {},
+   "jobs": 0,
+   "jobs_passed": 0,
+   "jobs_cached": 0,
+   "job_detail": [],
+   "switches": [],
+   "compactions": 0,
+   "context_chars_freed": 0,
+   "pending_jobs": [],
+   "models_used": [
+    "ollama:qwen3.6:35b"
+   ],
+   "recovered_calls": 0,
+   "empty_turns": 0,
+   "length_stops": 0,
+   "reported_done": false,
+   "answer_chars": 175
+  },
+  "timeline": [
+   {
+    "t": 1137.59,
+    "kind": "error",
+    "data": {
+     "message": "model timed out (ollama:qwen3.6:35b): timed out. It's slow for interactive use \u2014 raise its budget with /timeout, pick a faster model with /model, or /router on to auto-switch."
+    }
+   }
+  ],
+  "notes": [],
+  "wall_s": 1138.05
+ },
+ {
   "id": "E-0f7398f32b",
   "label": "demo-efpga-triage-v2",
   "task": "Until recently, `user_design/sequential_16bit_en.v` produced a routed bitstream on this workspace's eFPGA project (`efpga-fabulous/`, a FABulous project). Now the build fails.\n\nFind out what is actually at fault \u2014 the user design, or the fabric it is being mapped onto \u2014 and prove it by elimination rather than assumption.\n\nYou may not be able to repair what you find. The deliverable is the DIAGNOSIS: record your conclusion with note.add (kind root_cause), citing the job ids and files that support it, then close the task. If the evidence shows a fix within your reach, make it \u2014 but a wrong fix is worse than a right diagnosis.",
@@ -323,6 +372,200 @@
   ],
   "notes": [],
   "wall_s": 509.02
+ },
+ {
+  "id": "E-0f90eaa6a1",
+  "label": "demo-efpga-triage-v2",
+  "task": "Until recently, `user_design/sequential_16bit_en.v` produced a routed bitstream on this workspace's eFPGA project (`efpga-fabulous/`, a FABulous project). Now the build fails.\n\nFind out what is actually at fault \u2014 the user design, or the fabric it is being mapped onto \u2014 and prove it by elimination rather than assumption.\n\nYou may not be able to repair what you find. The deliverable is the DIAGNOSIS: record your conclusion with note.add (kind root_cause), citing the job ids and files that support it, then close the task. If the evidence shows a fix within your reach, make it \u2014 but a wrong fix is worse than a right diagnosis.",
+  "model": "ollama:qwen3.6:35b",
+  "started": 1785876274.0929425,
+  "ended": 1785878356.4868367,
+  "outcome": "completed",
+  "metrics": {
+   "steps": 44,
+   "wall_s": 2082.39,
+   "model_calls": 44,
+   "tokens_in": 1206415,
+   "tokens_out": 34670,
+   "tokens_total": 1241085,
+   "context_chars_max": 64871,
+   "context_messages_max": 87,
+   "tool_calls": 52,
+   "tool_failures": 6,
+   "tools": {
+    "design.module": {
+     "calls": 1,
+     "failed": 1
+    },
+    "efpga-fabulous.bitstream": {
+     "calls": 7,
+     "failed": 1
+    },
+    "efpga-fabulous.info": {
+     "calls": 1,
+     "failed": 0
+    },
+    "fs.grep": {
+     "calls": 6,
+     "failed": 1
+    },
+    "fs.list": {
+     "calls": 10,
+     "failed": 1
+    },
+    "fs.read": {
+     "calls": 11,
+     "failed": 2
+    },
+    "job.list": {
+     "calls": 3,
+     "failed": 0
+    },
+    "job.log": {
+     "calls": 3,
+     "failed": 0
+    },
+    "note.add": {
+     "calls": 2,
+     "failed": 0
+    },
+    "plan.clear": {
+     "calls": 1,
+     "failed": 0
+    },
+    "plan.update": {
+     "calls": 5,
+     "failed": 0
+    },
+    "report.done": {
+     "calls": 1,
+     "failed": 0
+    },
+    "tools.load": {
+     "calls": 1,
+     "failed": 0
+    }
+   },
+   "jobs": 7,
+   "jobs_passed": 0,
+   "jobs_cached": 0,
+   "job_detail": [
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "",
+     "status": "?",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0858",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0859",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0860",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0861",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0862",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0863",
+     "status": "failed",
+     "cached": false
+    }
+   ],
+   "switches": [],
+   "compactions": 4,
+   "context_chars_freed": 41713,
+   "pending_jobs": [],
+   "models_used": [
+    "ollama:qwen3.6:35b"
+   ],
+   "recovered_calls": 0,
+   "empty_turns": 0,
+   "length_stops": 0,
+   "reported_done": true,
+   "answer_chars": 238
+  },
+  "timeline": [
+   {
+    "t": 106.03,
+    "kind": "tools_loaded",
+    "data": {
+     "groups": "['efpga-fabulous']",
+     "added": "['efpga-fabulous.bitstream', 'efpga-fabulous.fabric', 'efpga-fabulous.harden', 'efpga-fabulous.info', 'efpga-fabulous.simulate']"
+    }
+   },
+   {
+    "t": 684.9,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 70481,
+     "after": 52045,
+     "evicted_results": 5,
+     "under_budget": true,
+     "freed": 18436
+    }
+   },
+   {
+    "t": 917.93,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 70951,
+     "after": 58129,
+     "evicted_results": 3,
+     "under_budget": true,
+     "freed": 12822
+    }
+   },
+   {
+    "t": 1670.9,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 68614,
+     "after": 64823,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 3791
+    }
+   },
+   {
+    "t": 1903.66,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 67776,
+     "after": 61112,
+     "evicted_results": 4,
+     "under_budget": true,
+     "freed": 6664
+    }
+   }
+  ],
+  "notes": [],
+  "wall_s": 2082.39
  },
  {
   "id": "E-1ad3ed6239",
@@ -581,6 +824,300 @@
   "timeline": [],
   "notes": [],
   "wall_s": 582.16
+ },
+ {
+  "id": "E-3e966c5272",
+  "label": "demo-efpga-triage-v2",
+  "task": "Until recently, `user_design/sequential_16bit_en.v` produced a routed bitstream on this workspace's eFPGA project (`efpga-fabulous/`, a FABulous project). Now the build fails.\n\nFind out what is actually at fault \u2014 the user design, or the fabric it is being mapped onto \u2014 and prove it by elimination rather than assumption.\n\nYou may not be able to repair what you find. The deliverable is the DIAGNOSIS: record your conclusion with note.add (kind root_cause), citing the job ids and files that support it, then close the task. If the evidence shows a fix within your reach, make it \u2014 but a wrong fix is worse than a right diagnosis.",
+  "model": "ollama:qwen3.6:35b",
+  "started": 1785878372.6450794,
+  "ended": 1785880088.166052,
+  "outcome": "completed",
+  "metrics": {
+   "steps": 88,
+   "wall_s": 1715.52,
+   "model_calls": 88,
+   "tokens_in": 2659439,
+   "tokens_out": 36169,
+   "tokens_total": 2695608,
+   "context_chars_max": 64832,
+   "context_messages_max": 175,
+   "tool_calls": 110,
+   "tool_failures": 9,
+   "tools": {
+    "caps": {
+     "calls": 1,
+     "failed": 0
+    },
+    "design.hierarchy": {
+     "calls": 2,
+     "failed": 0
+    },
+    "design.module": {
+     "calls": 2,
+     "failed": 2
+    },
+    "efpga-fabulous.bitstream": {
+     "calls": 4,
+     "failed": 3
+    },
+    "efpga-fabulous.fabric": {
+     "calls": 1,
+     "failed": 0
+    },
+    "fs.grep": {
+     "calls": 46,
+     "failed": 0
+    },
+    "fs.list": {
+     "calls": 13,
+     "failed": 1
+    },
+    "fs.read": {
+     "calls": 19,
+     "failed": 2
+    },
+    "job.list": {
+     "calls": 2,
+     "failed": 0
+    },
+    "job.log": {
+     "calls": 5,
+     "failed": 0
+    },
+    "note.add": {
+     "calls": 1,
+     "failed": 0
+    },
+    "note.list": {
+     "calls": 1,
+     "failed": 0
+    },
+    "plan.clear": {
+     "calls": 1,
+     "failed": 0
+    },
+    "plan.update": {
+     "calls": 10,
+     "failed": 0
+    },
+    "report.done": {
+     "calls": 1,
+     "failed": 0
+    },
+    "tool__load": {
+     "calls": 1,
+     "failed": 1
+    }
+   },
+   "jobs": 5,
+   "jobs_passed": 1,
+   "jobs_cached": 0,
+   "job_detail": [
+    {
+     "tool": "efpga-fabulous.fabric",
+     "job": "J-0864",
+     "status": "passed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "",
+     "status": "?",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "",
+     "status": "?",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0865",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "",
+     "status": "?",
+     "cached": false
+    }
+   ],
+   "switches": [],
+   "compactions": 13,
+   "context_chars_freed": 115295,
+   "pending_jobs": [],
+   "models_used": [
+    "ollama:qwen3.6:35b"
+   ],
+   "recovered_calls": 0,
+   "empty_turns": 1,
+   "length_stops": 0,
+   "reported_done": true,
+   "answer_chars": 905
+  },
+  "timeline": [
+   {
+    "t": 252.17,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 72388,
+     "after": 63835,
+     "evicted_results": 5,
+     "under_budget": true,
+     "freed": 8553
+    }
+   },
+   {
+    "t": 319.0,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65148,
+     "after": 54459,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 10689
+    }
+   },
+   {
+    "t": 434.38,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65546,
+     "after": 59483,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 6063
+    }
+   },
+   {
+    "t": 666.4,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 66523,
+     "after": 62467,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 4056
+    }
+   },
+   {
+    "t": 791.38,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 66306,
+     "after": 62979,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 3327
+    }
+   },
+   {
+    "t": 856.11,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 71913,
+     "after": 59747,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 12166
+    }
+   },
+   {
+    "t": 1077.24,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 68780,
+     "after": 61966,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 6814
+    }
+   },
+   {
+    "t": 1175.7,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 66680,
+     "after": 57716,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 8964
+    }
+   },
+   {
+    "t": 1323.91,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 68036,
+     "after": 59167,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 8869
+    }
+   },
+   {
+    "t": 1374.03,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 72747,
+     "after": 58610,
+     "evicted_results": 8,
+     "under_budget": true,
+     "freed": 14137
+    }
+   },
+   {
+    "t": 1438.0,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 69236,
+     "after": 62238,
+     "evicted_results": 3,
+     "under_budget": true,
+     "freed": 6998
+    }
+   },
+   {
+    "t": 1514.13,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 74973,
+     "after": 63408,
+     "evicted_results": 5,
+     "under_budget": true,
+     "freed": 11565
+    }
+   },
+   {
+    "t": 1639.24,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 67969,
+     "after": 54875,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 13094
+    }
+   }
+  ],
+  "notes": [],
+  "wall_s": 1715.52
  },
  {
   "id": "E-4257a03757",
@@ -911,63 +1448,361 @@
   "wall_s": 473.57
  },
  {
-  "id": "E-8f02a000a2",
-  "label": "demo-efpga-triage",
-  "task": "Until recently, `user_design/sequential_16bit_en.v` produced a routed bitstream on this workspace's eFPGA project (`efpga-fabulous/`, a FABulous project). Now the build fails.\n\nFind out what is actually at fault \u2014 the user design, or the fabric it is being mapped onto \u2014 fix it at the level the evidence points to, prove a routed bitstream builds again, and close the task properly.",
+  "id": "E-570664ed24",
+  "label": "demo-efpga-triage-v2",
+  "task": "Until recently, `user_design/sequential_16bit_en.v` produced a routed bitstream on this workspace's eFPGA project (`efpga-fabulous/`, a FABulous project). Now the build fails.\n\nFind out what is actually at fault \u2014 the user design, or the fabric it is being mapped onto \u2014 and prove it by elimination rather than assumption.\n\nYou may not be able to repair what you find. The deliverable is the DIAGNOSIS: record your conclusion with note.add (kind root_cause), citing the job ids and files that support it, then close the task. If the evidence shows a fix within your reach, make it \u2014 but a wrong fix is worse than a right diagnosis.",
   "model": "ollama:qwen3.6:35b",
-  "started": 1785493245.3228264,
-  "ended": 1785494963.0480394,
+  "started": 1785805565.212532,
+  "ended": 1785819506.9324522,
   "outcome": "completed",
   "metrics": {
-   "steps": 24,
-   "wall_s": 1717.73,
-   "model_calls": 24,
-   "tokens_in": 377602,
-   "tokens_out": 17751,
-   "tokens_total": 395353,
-   "context_chars_max": 42792,
-   "context_messages_max": 47,
-   "tool_calls": 33,
-   "tool_failures": 1,
+   "steps": 51,
+   "wall_s": 13941.72,
+   "model_calls": 51,
+   "tokens_in": 1413704,
+   "tokens_out": 27794,
+   "tokens_total": 1441498,
+   "context_chars_max": 64506,
+   "context_messages_max": 101,
+   "tool_calls": 59,
+   "tool_failures": 3,
    "tools": {
     "caps": {
-     "calls": 1,
-     "failed": 0
-    },
-    "design.xref": {
-     "calls": 1,
+     "calls": 2,
      "failed": 0
     },
     "efpga-fabulous.bitstream": {
-     "calls": 3,
+     "calls": 4,
+     "failed": 0
+    },
+    "efpga-fabulous.fabric": {
+     "calls": 1,
      "failed": 0
     },
     "efpga-fabulous.info": {
-     "calls": 2,
+     "calls": 1,
      "failed": 1
     },
     "fs.grep": {
-     "calls": 3,
+     "calls": 14,
      "failed": 0
     },
     "fs.list": {
-     "calls": 8,
+     "calls": 4,
      "failed": 0
     },
     "fs.read": {
+     "calls": 14,
+     "failed": 2
+    },
+    "job.list": {
      "calls": 3,
      "failed": 0
     },
     "job.log": {
-     "calls": 2,
+     "calls": 7,
      "failed": 0
     },
-    "lint.run": {
-     "calls": 2,
+    "note.add": {
+     "calls": 1,
      "failed": 0
     },
     "plan.update": {
-     "calls": 4,
+     "calls": 6,
+     "failed": 0
+    },
+    "report.done": {
+     "calls": 1,
+     "failed": 0
+    },
+    "tools.load": {
+     "calls": 1,
+     "failed": 0
+    }
+   },
+   "jobs": 5,
+   "jobs_passed": 1,
+   "jobs_cached": 0,
+   "job_detail": [
+    {
+     "tool": "efpga-fabulous.fabric",
+     "job": "J-0844",
+     "status": "passed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0845",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0846",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0847",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0848",
+     "status": "failed",
+     "cached": false
+    }
+   ],
+   "switches": [],
+   "compactions": 12,
+   "context_chars_freed": 120841,
+   "pending_jobs": [],
+   "models_used": [
+    "ollama:qwen3.6:35b"
+   ],
+   "recovered_calls": 0,
+   "empty_turns": 1,
+   "length_stops": 1,
+   "reported_done": true,
+   "answer_chars": 470
+  },
+  "timeline": [
+   {
+    "t": 6669.22,
+    "kind": "tools_loaded",
+    "data": {
+     "groups": "['efpga-fabulous']",
+     "added": "['efpga-fabulous.bitstream', 'efpga-fabulous.fabric', 'efpga-fabulous.harden', 'efpga-fabulous.info', 'efpga-fabulous.simulate']"
+    }
+   },
+   {
+    "t": 9709.11,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 74228,
+     "after": 58881,
+     "evicted_results": 6,
+     "under_budget": true,
+     "freed": 15347
+    }
+   },
+   {
+    "t": 9881.29,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 71035,
+     "after": 59758,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 11277
+    }
+   },
+   {
+    "t": 10155.39,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 70843,
+     "after": 55669,
+     "evicted_results": 5,
+     "under_budget": true,
+     "freed": 15174
+    }
+   },
+   {
+    "t": 11317.59,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 71071,
+     "after": 59359,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 11712
+    }
+   },
+   {
+    "t": 11546.98,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 72206,
+     "after": 60494,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 11712
+    }
+   },
+   {
+    "t": 11778.22,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 70336,
+     "after": 58624,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 11712
+    }
+   },
+   {
+    "t": 12185.83,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 68406,
+     "after": 59286,
+     "evicted_results": 4,
+     "under_budget": true,
+     "freed": 9120
+    }
+   },
+   {
+    "t": 12422.35,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 66192,
+     "after": 60129,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 6063
+    }
+   },
+   {
+    "t": 12707.25,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 67603,
+     "after": 59476,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 8127
+    }
+   },
+   {
+    "t": 12989.08,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65255,
+     "after": 53543,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 11712
+    }
+   },
+   {
+    "t": 13492.17,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65013,
+     "after": 64506,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 507
+    }
+   },
+   {
+    "t": 13743.45,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65831,
+     "after": 57453,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 8378
+    }
+   }
+  ],
+  "notes": [],
+  "wall_s": 13941.72
+ },
+ {
+  "id": "E-68b6aaa124",
+  "label": "demo-efpga-triage-v2",
+  "task": "Until recently, `user_design/sequential_16bit_en.v` produced a routed bitstream on this workspace's eFPGA project (`efpga-fabulous/`, a FABulous project). Now the build fails.\n\nFind out what is actually at fault \u2014 the user design, or the fabric it is being mapped onto \u2014 and prove it by elimination rather than assumption.\n\nYou may not be able to repair what you find. The deliverable is the DIAGNOSIS: record your conclusion with note.add (kind root_cause), citing the job ids and files that support it, then close the task. If the evidence shows a fix within your reach, make it \u2014 but a wrong fix is worse than a right diagnosis.",
+  "model": "ollama:qwen3.6:35b",
+  "started": 1785880099.3032312,
+  "ended": 1785882598.2353477,
+  "outcome": "completed",
+  "metrics": {
+   "steps": 91,
+   "wall_s": 2498.93,
+   "model_calls": 91,
+   "tokens_in": 2812776,
+   "tokens_out": 44962,
+   "tokens_total": 2857738,
+   "context_chars_max": 64760,
+   "context_messages_max": 181,
+   "tool_calls": 114,
+   "tool_failures": 27,
+   "tools": {
+    "add": {
+     "calls": 1,
+     "failed": 1
+    },
+    "caps": {
+     "calls": 2,
+     "failed": 0
+    },
+    "design.cone": {
+     "calls": 1,
+     "failed": 1
+    },
+    "design.find_instances": {
+     "calls": 1,
+     "failed": 0
+    },
+    "efpga-fabulous.bitstream": {
+     "calls": 5,
+     "failed": 1
+    },
+    "efpga-fabulous.fabric": {
+     "calls": 1,
+     "failed": 0
+    },
+    "efpga-fabulous.info": {
+     "calls": 3,
+     "failed": 2
+    },
+    "fs.grep": {
+     "calls": 18,
+     "failed": 1
+    },
+    "fs.list": {
+     "calls": 18,
+     "failed": 10
+    },
+    "fs.read": {
+     "calls": 35,
+     "failed": 9
+    },
+    "job.list": {
+     "calls": 2,
+     "failed": 0
+    },
+    "job.log": {
+     "calls": 12,
+     "failed": 1
+    },
+    "job.status": {
+     "calls": 1,
+     "failed": 0
+    },
+    "note.add": {
+     "calls": 1,
+     "failed": 0
+    },
+    "plan.update": {
+     "calls": 8,
      "failed": 0
     },
     "policy.check": {
@@ -978,63 +1813,321 @@
      "calls": 1,
      "failed": 0
     },
-    "repro": {
+    "tool__load": {
      "calls": 1,
-     "failed": 0
+     "failed": 1
     },
     "tools.load": {
-     "calls": 1,
+     "calls": 2,
      "failed": 0
     }
    },
-   "jobs": 3,
-   "jobs_passed": 3,
+   "jobs": 6,
+   "jobs_passed": 1,
    "jobs_cached": 0,
    "job_detail": [
     {
      "tool": "efpga-fabulous.bitstream",
-     "job": "J-0408",
+     "job": "J-0866",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0867",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0868",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.fabric",
+     "job": "J-0869",
      "status": "passed",
      "cached": false
     },
     {
      "tool": "efpga-fabulous.bitstream",
-     "job": "J-0410",
-     "status": "passed",
+     "job": "J-0870",
+     "status": "failed",
      "cached": false
     },
     {
      "tool": "efpga-fabulous.bitstream",
-     "job": "J-0411",
-     "status": "passed",
+     "job": "",
+     "status": "?",
      "cached": false
     }
    ],
    "switches": [],
-   "compactions": 0,
-   "context_chars_freed": 0,
+   "compactions": 20,
+   "context_chars_freed": 153309,
    "pending_jobs": [],
    "models_used": [
     "ollama:qwen3.6:35b"
    ],
    "recovered_calls": 0,
-   "empty_turns": 0,
+   "empty_turns": 1,
    "length_stops": 0,
    "reported_done": true,
-   "answer_chars": 550
+   "answer_chars": 6
   },
   "timeline": [
    {
-    "t": 94.92,
+    "t": 116.75,
     "kind": "tools_loaded",
     "data": {
      "groups": "['efpga-fabulous']",
-     "added": "['efpga-fabulous.bitstream', 'efpga-fabulous.fabric', 'efpga-fabulous.harden', 'efpga-fabulous.info']"
+     "added": "['efpga-fabulous.bitstream', 'efpga-fabulous.fabric', 'efpga-fabulous.harden', 'efpga-fabulous.info', 'efpga-fabulous.simulate']"
+    }
+   },
+   {
+    "t": 211.34,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65985,
+     "after": 64451,
+     "evicted_results": 3,
+     "under_budget": true,
+     "freed": 1534
+    }
+   },
+   {
+    "t": 298.13,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65084,
+     "after": 64658,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 426
+    }
+   },
+   {
+    "t": 383.33,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65490,
+     "after": 62114,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 3376
+    }
+   },
+   {
+    "t": 565.2,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 76246,
+     "after": 51144,
+     "evicted_results": 6,
+     "under_budget": true,
+     "freed": 25102
+    }
+   },
+   {
+    "t": 868.0,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 74298,
+     "after": 64720,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 9578
+    }
+   },
+   {
+    "t": 917.84,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 64916,
+     "after": 64235,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 681
+    }
+   },
+   {
+    "t": 988.54,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65051,
+     "after": 64323,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 728
+    }
+   },
+   {
+    "t": 1044.77,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 64910,
+     "after": 53261,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 11649
+    }
+   },
+   {
+    "t": 1122.68,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 67728,
+     "after": 64160,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 3568
+    }
+   },
+   {
+    "t": 1182.63,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 66462,
+     "after": 54278,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 12184
+    }
+   },
+   {
+    "t": 1311.35,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65334,
+     "after": 64669,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 665
+    }
+   },
+   {
+    "t": 1379.7,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 78443,
+     "after": 60234,
+     "evicted_results": 3,
+     "under_budget": true,
+     "freed": 18209
+    }
+   },
+   {
+    "t": 1494.33,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65295,
+     "after": 60338,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 4957
+    }
+   },
+   {
+    "t": 1589.51,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 68419,
+     "after": 60258,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 8161
+    }
+   },
+   {
+    "t": 1773.32,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65133,
+     "after": 62938,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 2195
+    }
+   },
+   {
+    "t": 1846.54,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 72740,
+     "after": 63869,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 8871
+    }
+   },
+   {
+    "t": 1933.82,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65044,
+     "after": 51650,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 13394
+    }
+   },
+   {
+    "t": 2128.74,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 69089,
+     "after": 57323,
+     "evicted_results": 3,
+     "under_budget": true,
+     "freed": 11766
+    }
+   },
+   {
+    "t": 2279.72,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 72892,
+     "after": 60126,
+     "evicted_results": 5,
+     "under_budget": true,
+     "freed": 12766
+    }
+   },
+   {
+    "t": 2421.59,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65103,
+     "after": 61604,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 3499
     }
    }
   ],
   "notes": [],
-  "wall_s": 1717.73
+  "wall_s": 2498.93
  },
  {
   "id": "E-b21a35bd20",
@@ -1158,6 +2251,622 @@
   ],
   "notes": [],
   "wall_s": 436.43
+ },
+ {
+  "id": "E-c39dc8e806",
+  "label": "demo-efpga-triage-v2",
+  "task": "Until recently, `user_design/sequential_16bit_en.v` produced a routed bitstream on this workspace's eFPGA project (`efpga-fabulous/`, a FABulous project). Now the build fails.\n\nFind out what is actually at fault \u2014 the user design, or the fabric it is being mapped onto \u2014 and prove it by elimination rather than assumption.\n\nYou may not be able to repair what you find. The deliverable is the DIAGNOSIS: record your conclusion with note.add (kind root_cause), citing the job ids and files that support it, then close the task. If the evidence shows a fix within your reach, make it \u2014 but a wrong fix is worse than a right diagnosis.",
+  "model": "ollama:qwen3.6:35b",
+  "started": 1785799362.642558,
+  "ended": 1785803217.6357462,
+  "outcome": "timeout",
+  "metrics": {
+   "steps": 36,
+   "wall_s": 3854.99,
+   "model_calls": 37,
+   "tokens_in": 844616,
+   "tokens_out": 27980,
+   "tokens_total": 872596,
+   "context_chars_max": 64827,
+   "context_messages_max": 73,
+   "tool_calls": 43,
+   "tool_failures": 2,
+   "tools": {
+    "caps": {
+     "calls": 1,
+     "failed": 0
+    },
+    "efpga-fabulous.bitstream": {
+     "calls": 4,
+     "failed": 1
+    },
+    "fs.grep": {
+     "calls": 1,
+     "failed": 0
+    },
+    "fs.list": {
+     "calls": 4,
+     "failed": 1
+    },
+    "fs.read": {
+     "calls": 11,
+     "failed": 0
+    },
+    "fs.write": {
+     "calls": 3,
+     "failed": 0
+    },
+    "job.list": {
+     "calls": 4,
+     "failed": 0
+    },
+    "job.log": {
+     "calls": 10,
+     "failed": 0
+    },
+    "note.add": {
+     "calls": 1,
+     "failed": 0
+    },
+    "plan.update": {
+     "calls": 4,
+     "failed": 0
+    }
+   },
+   "jobs": 4,
+   "jobs_passed": 0,
+   "jobs_cached": 0,
+   "job_detail": [
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "",
+     "status": "?",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0841",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0842",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0843",
+     "status": "failed",
+     "cached": false
+    }
+   ],
+   "switches": [],
+   "compactions": 9,
+   "context_chars_freed": 59770,
+   "pending_jobs": [],
+   "models_used": [
+    "ollama:qwen3.6:35b"
+   ],
+   "recovered_calls": 0,
+   "empty_turns": 0,
+   "length_stops": 0,
+   "reported_done": false,
+   "answer_chars": 175
+  },
+  "timeline": [
+   {
+    "t": 195.54,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 68162,
+     "after": 63977,
+     "evicted_results": 3,
+     "under_budget": true,
+     "freed": 4185
+    }
+   },
+   {
+    "t": 242.58,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 66663,
+     "after": 63448,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 3215
+    }
+   },
+   {
+    "t": 334.81,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 66765,
+     "after": 60091,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 6674
+    }
+   },
+   {
+    "t": 403.85,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65061,
+     "after": 60369,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 4692
+    }
+   },
+   {
+    "t": 600.63,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 68649,
+     "after": 63957,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 4692
+    }
+   },
+   {
+    "t": 649.49,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65392,
+     "after": 64827,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 565
+    }
+   },
+   {
+    "t": 1376.3,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65806,
+     "after": 53483,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 12323
+    }
+   },
+   {
+    "t": 2197.48,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 66510,
+     "after": 54798,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 11712
+    }
+   },
+   {
+    "t": 2546.49,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 67529,
+     "after": 55817,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 11712
+    }
+   },
+   {
+    "t": 3854.28,
+    "kind": "error",
+    "data": {
+     "message": "model timed out (ollama:qwen3.6:35b): timed out. It's slow for interactive use \u2014 raise its budget with /timeout, pick a faster model with /model, or /router on to auto-switch."
+    }
+   }
+  ],
+  "notes": [],
+  "wall_s": 3854.99
+ },
+ {
+  "id": "E-e7402bca5a",
+  "label": "demo-efpga-triage-v2",
+  "task": "Until recently, `user_design/sequential_16bit_en.v` produced a routed bitstream on this workspace's eFPGA project (`efpga-fabulous/`, a FABulous project). Now the build fails.\n\nFind out what is actually at fault \u2014 the user design, or the fabric it is being mapped onto \u2014 and prove it by elimination rather than assumption.\n\nYou may not be able to repair what you find. The deliverable is the DIAGNOSIS: record your conclusion with note.add (kind root_cause), citing the job ids and files that support it, then close the task. If the evidence shows a fix within your reach, make it \u2014 but a wrong fix is worse than a right diagnosis.",
+  "model": "ollama:qwen3.6:35b",
+  "started": 1785882609.0379796,
+  "ended": 1785884558.9459157,
+  "outcome": "completed",
+  "metrics": {
+   "steps": 70,
+   "wall_s": 1949.91,
+   "model_calls": 70,
+   "tokens_in": 1899854,
+   "tokens_out": 48403,
+   "tokens_total": 1948257,
+   "context_chars_max": 64791,
+   "context_messages_max": 139,
+   "tool_calls": 78,
+   "tool_failures": 8,
+   "tools": {
+    "caps": {
+     "calls": 1,
+     "failed": 0
+    },
+    "efpga-fabulous.bitstream": {
+     "calls": 6,
+     "failed": 1
+    },
+    "efpga-fabulous.info": {
+     "calls": 1,
+     "failed": 1
+    },
+    "efpga-fabulous.simulate": {
+     "calls": 2,
+     "failed": 2
+    },
+    "fs.grep": {
+     "calls": 9,
+     "failed": 0
+    },
+    "fs.list": {
+     "calls": 11,
+     "failed": 4
+    },
+    "fs.read": {
+     "calls": 18,
+     "failed": 0
+    },
+    "job.list": {
+     "calls": 1,
+     "failed": 0
+    },
+    "job.log": {
+     "calls": 11,
+     "failed": 0
+    },
+    "job.status": {
+     "calls": 1,
+     "failed": 0
+    },
+    "note.add": {
+     "calls": 1,
+     "failed": 0
+    },
+    "plan.clear": {
+     "calls": 1,
+     "failed": 0
+    },
+    "plan.update": {
+     "calls": 13,
+     "failed": 0
+    },
+    "policy.check": {
+     "calls": 1,
+     "failed": 0
+    },
+    "report.done": {
+     "calls": 1,
+     "failed": 0
+    }
+   },
+   "jobs": 8,
+   "jobs_passed": 0,
+   "jobs_cached": 0,
+   "job_detail": [
+    {
+     "tool": "efpga-fabulous.simulate",
+     "job": "",
+     "status": "?",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.simulate",
+     "job": "",
+     "status": "?",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "",
+     "status": "?",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0871",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0872",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0873",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0874",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0875",
+     "status": "failed",
+     "cached": false
+    }
+   ],
+   "switches": [],
+   "compactions": 16,
+   "context_chars_freed": 180796,
+   "pending_jobs": [],
+   "models_used": [
+    "ollama:qwen3.6:35b"
+   ],
+   "recovered_calls": 0,
+   "empty_turns": 0,
+   "length_stops": 0,
+   "reported_done": true,
+   "answer_chars": 2066
+  },
+  "timeline": [
+   {
+    "t": 211.2,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 76576,
+     "after": 59697,
+     "evicted_results": 7,
+     "under_budget": true,
+     "freed": 16879
+    }
+   },
+   {
+    "t": 250.86,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 71897,
+     "after": 62301,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 9596
+    }
+   },
+   {
+    "t": 298.87,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 72100,
+     "after": 55672,
+     "evicted_results": 6,
+     "under_budget": true,
+     "freed": 16428
+    }
+   },
+   {
+    "t": 355.91,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65848,
+     "after": 54136,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 11712
+    }
+   },
+   {
+    "t": 536.36,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 66701,
+     "after": 54989,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 11712
+    }
+   },
+   {
+    "t": 725.03,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 70410,
+     "after": 58698,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 11712
+    }
+   },
+   {
+    "t": 766.57,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 68471,
+     "after": 58901,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 9570
+    }
+   },
+   {
+    "t": 820.24,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 68857,
+     "after": 59261,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 9596
+    }
+   },
+   {
+    "t": 863.77,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 69268,
+     "after": 64274,
+     "evicted_results": 4,
+     "under_budget": true,
+     "freed": 4994
+    }
+   },
+   {
+    "t": 912.75,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 74164,
+     "after": 57926,
+     "evicted_results": 4,
+     "under_budget": true,
+     "freed": 16238
+    }
+   },
+   {
+    "t": 1026.52,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 66008,
+     "after": 56485,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 9523
+    }
+   },
+   {
+    "t": 1072.21,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65041,
+     "after": 55444,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 9597
+    }
+   },
+   {
+    "t": 1165.3,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 68952,
+     "after": 59337,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 9615
+    }
+   },
+   {
+    "t": 1477.28,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 69495,
+     "after": 59903,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 9592
+    }
+   },
+   {
+    "t": 1646.11,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 70995,
+     "after": 58852,
+     "evicted_results": 3,
+     "under_budget": true,
+     "freed": 12143
+    }
+   },
+   {
+    "t": 1874.23,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 66821,
+     "after": 54932,
+     "evicted_results": 3,
+     "under_budget": true,
+     "freed": 11889
+    }
+   }
+  ],
+  "notes": [],
+  "wall_s": 1949.91
+ },
+ {
+  "id": "E-ec9cf12bc4",
+  "label": "demo-efpga-triage-v2",
+  "task": "Until recently, `user_design/sequential_16bit_en.v` produced a routed bitstream on this workspace's eFPGA project (`efpga-fabulous/`, a FABulous project). Now the build fails.\n\nFind out what is actually at fault \u2014 the user design, or the fabric it is being mapped onto \u2014 and prove it by elimination rather than assumption.\n\nYou may not be able to repair what you find. The deliverable is the DIAGNOSIS: record your conclusion with note.add (kind root_cause), citing the job ids and files that support it, then close the task. If the evidence shows a fix within your reach, make it \u2014 but a wrong fix is worse than a right diagnosis.",
+  "model": "ollama:qwen3.6:35b",
+  "started": 1785804404.2213917,
+  "ended": 1785805542.3134518,
+  "outcome": "timeout",
+  "metrics": {
+   "steps": 0,
+   "wall_s": 1138.09,
+   "model_calls": 1,
+   "tokens_in": 0,
+   "tokens_out": 0,
+   "tokens_total": 0,
+   "context_chars_max": 631,
+   "context_messages_max": 1,
+   "tool_calls": 0,
+   "tool_failures": 0,
+   "tools": {},
+   "jobs": 0,
+   "jobs_passed": 0,
+   "jobs_cached": 0,
+   "job_detail": [],
+   "switches": [],
+   "compactions": 0,
+   "context_chars_freed": 0,
+   "pending_jobs": [],
+   "models_used": [
+    "ollama:qwen3.6:35b"
+   ],
+   "recovered_calls": 0,
+   "empty_turns": 0,
+   "length_stops": 0,
+   "reported_done": false,
+   "answer_chars": 175
+  },
+  "timeline": [
+   {
+    "t": 1137.88,
+    "kind": "error",
+    "data": {
+     "message": "model timed out (ollama:qwen3.6:35b): timed out. It's slow for interactive use \u2014 raise its budget with /timeout, pick a faster model with /model, or /router on to auto-switch."
+    }
+   }
+  ],
+  "notes": [],
+  "wall_s": 1138.09
  },
  {
   "id": "E-ee5540a55e",
@@ -1694,5 +3403,209 @@
   ],
   "notes": [],
   "wall_s": 2017.51
+ },
+ {
+  "id": "E-fad97dfefd",
+  "label": "demo-efpga-triage-v2",
+  "task": "Until recently, `user_design/sequential_16bit_en.v` produced a routed bitstream on this workspace's eFPGA project (`efpga-fabulous/`, a FABulous project). Now the build fails.\n\nFind out what is actually at fault \u2014 the user design, or the fabric it is being mapped onto \u2014 and prove it by elimination rather than assumption.\n\nYou may not be able to repair what you find. The deliverable is the DIAGNOSIS: record your conclusion with note.add (kind root_cause), citing the job ids and files that support it, then close the task. If the evidence shows a fix within your reach, make it \u2014 but a wrong fix is worse than a right diagnosis.",
+  "model": "ollama:qwen3.6:35b",
+  "started": 1785798480.8476417,
+  "ended": 1785799350.102859,
+  "outcome": "completed",
+  "metrics": {
+   "steps": 38,
+   "wall_s": 869.26,
+   "model_calls": 38,
+   "tokens_in": 1022706,
+   "tokens_out": 11623,
+   "tokens_total": 1034329,
+   "context_chars_max": 64873,
+   "context_messages_max": 75,
+   "tool_calls": 55,
+   "tool_failures": 8,
+   "tools": {
+    "caps": {
+     "calls": 1,
+     "failed": 0
+    },
+    "efpga-fabulous.bitstream": {
+     "calls": 2,
+     "failed": 1
+    },
+    "efpga-fabulous.fabric": {
+     "calls": 1,
+     "failed": 0
+    },
+    "efpga-fabulous.harden": {
+     "calls": 1,
+     "failed": 0
+    },
+    "efpga-fabulous.info": {
+     "calls": 1,
+     "failed": 1
+    },
+    "efpga-fabulous.run": {
+     "calls": 2,
+     "failed": 2
+    },
+    "fs.grep": {
+     "calls": 8,
+     "failed": 0
+    },
+    "fs.list": {
+     "calls": 9,
+     "failed": 1
+    },
+    "fs.read": {
+     "calls": 15,
+     "failed": 0
+    },
+    "job.list": {
+     "calls": 2,
+     "failed": 0
+    },
+    "job.log": {
+     "calls": 3,
+     "failed": 1
+    },
+    "job.status": {
+     "calls": 2,
+     "failed": 2
+    },
+    "note.add": {
+     "calls": 1,
+     "failed": 0
+    },
+    "plan.update": {
+     "calls": 5,
+     "failed": 0
+    },
+    "policy.check": {
+     "calls": 1,
+     "failed": 0
+    },
+    "report.done": {
+     "calls": 1,
+     "failed": 0
+    }
+   },
+   "jobs": 4,
+   "jobs_passed": 1,
+   "jobs_cached": 0,
+   "job_detail": [
+    {
+     "tool": "efpga-fabulous.fabric",
+     "job": "J-0838",
+     "status": "passed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.harden",
+     "job": "J-0839",
+     "status": "failed",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "",
+     "status": "?",
+     "cached": false
+    },
+    {
+     "tool": "efpga-fabulous.bitstream",
+     "job": "J-0840",
+     "status": "failed",
+     "cached": false
+    }
+   ],
+   "switches": [],
+   "compactions": 6,
+   "context_chars_freed": 41186,
+   "pending_jobs": [],
+   "models_used": [
+    "ollama:qwen3.6:35b"
+   ],
+   "recovered_calls": 0,
+   "empty_turns": 0,
+   "length_stops": 0,
+   "reported_done": true,
+   "answer_chars": 480
+  },
+  "timeline": [
+   {
+    "t": 275.94,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65317,
+     "after": 64858,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 459
+    }
+   },
+   {
+    "t": 342.2,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 76907,
+     "after": 63979,
+     "evicted_results": 5,
+     "under_budget": true,
+     "freed": 12928
+    }
+   },
+   {
+    "t": 458.63,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 64946,
+     "after": 56438,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 8508
+    }
+   },
+   {
+    "t": 531.76,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65512,
+     "after": 56919,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 8593
+    }
+   },
+   {
+    "t": 615.45,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 66872,
+     "after": 58563,
+     "evicted_results": 1,
+     "under_budget": true,
+     "freed": 8309
+    }
+   },
+   {
+    "t": 812.75,
+    "kind": "compacted",
+    "data": {
+     "compacted": true,
+     "before": 65943,
+     "after": 63554,
+     "evicted_results": 2,
+     "under_budget": true,
+     "freed": 2389
+    }
+   }
+  ],
+  "notes": [],
+  "wall_s": 869.26
  }
 ]
