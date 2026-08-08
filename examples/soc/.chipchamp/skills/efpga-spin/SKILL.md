@@ -29,6 +29,9 @@ properly through `report.done`.
        );
 
    Drive every bit of `io_out` and `io_oeb` (`io_oeb = 28'd0` for outputs).
+   The ports are `wire`s: drive them with continuous `assign` only — if your
+   logic wants `always` blocks, compute into internal `reg`s and assign
+   those to the ports (a live run burned its budget re-learning this).
    Save as `efpga-fabulous/user_design/<name>.v`.
 
 3. **Retarget the pad ring.** `efpga-fabulous/user_design/top_wrapper.v`
