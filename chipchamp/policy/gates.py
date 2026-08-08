@@ -63,6 +63,8 @@ class Evidence:
     # RISC-V: set by riscv.cosim / riscv.compliance via the tool context
     riscv_cosim: Optional[dict] = None
     riscv_compliance: Optional[dict] = None
+    # root_cause notes filed during THIS task (the diagnosis_cited gate)
+    root_cause_notes: list = field(default_factory=list)
 
     def jobs_of(self, kind: str) -> list:
         return [j for j in self.jobs if j.kind == kind]
@@ -171,6 +173,13 @@ def evaluate(task_class: str, evidence: Evidence) -> GateReport:
     report = GateReport(task_class=task_class, min_rung=rung)
     for name in gates:
         report.gates.append(_eval_one(name, evidence))
+    # A DIAGNOSIS is a claim too. Investigation-class tasks owe no class
+    # gates (no edits, nothing to verify) — and a close-rate campaign showed
+    # models closing with a root_cause note and ZERO jobs: an unfalsifiable
+    # story wearing the notebook's authority. Filing a root_cause note is
+    # therefore what creates this obligation, whatever the task class.
+    if evidence.root_cause_notes:
+        report.gates.append(_eval_one("diagnosis_cited", evidence))
     return report
 
 
@@ -361,6 +370,31 @@ def _eval_one(name: str, ev: Evidence) -> GateResult:
             ok = n > 0 and routed is not False
             return GateResult(name, "pass" if ok else "fail", jid,
                               f"{n} byte bitstream, routed={routed}")
+    if name == "diagnosis_cited":
+        import re as _re
+        task_ids = {j.id for j in ev.jobs}
+        failing = {j.id for j in ev.jobs if j.status != "passed"}
+        cited = set()
+        for n in ev.root_cause_notes:
+            text = " ".join(str(n.get(k, "")) for k in
+                            ("subject", "detail", "evidence"))
+            cited |= set(_re.findall(r"J-[0-9a-f]{4,}|J-\d{4}", text))
+        want = failing or task_ids
+        hit = cited & want
+        if hit:
+            return GateResult(name, "pass", ", ".join(sorted(hit)[:3]),
+                              "root-cause note cites this task's evidence")
+        note_ids = ", ".join(n.get("id", "?") for n in ev.root_cause_notes)
+        if not task_ids:
+            return GateResult(name, "fail", note_ids or "root_cause",
+                              "a root_cause note was filed but this task ran "
+                              "NO jobs — a diagnosis must cite the failing "
+                              "job it explains (run the failure, then cite "
+                              "its id in the note)")
+        return GateResult(name, "fail", note_ids or "root_cause",
+                          f"no root_cause note cites this task's "
+                          f"{'failing ' if failing else ''}jobs — cite one "
+                          f"of: {', '.join(sorted(want)[:5])}")
     if name == "regmap_regen":
         if ev.regmap_regenerated is None:
             return GateResult(name, "missing", "", "regmap regeneration not verified")

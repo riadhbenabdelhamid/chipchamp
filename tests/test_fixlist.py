@@ -368,3 +368,54 @@ def test_efpga_gates_survive_a_later_simulate_job():
     m = _efpga_metrics(ev)
     # the simulate job is newest — the gate must still see the bitstream
     assert m.get("bitstream_bytes") == 12024
+
+
+# --- 16. a diagnosis is a claim: root_cause closes must cite evidence ------
+
+def _ev_with_notes(jobs, notes):
+    from chipchamp.policy.gates import Evidence
+    return Evidence(jobs=jobs, root_cause_notes=notes)
+
+
+def _job(jid, status):
+    return SimpleNamespace(id=jid, kind="efpga-fabulous", status=status,
+                           result={"metrics": {}})
+
+
+def test_root_cause_close_with_zero_jobs_is_rejected():
+    from chipchamp.policy.gates import evaluate
+    ev = _ev_with_notes([], [{"id": "N-1", "kind": "root_cause",
+                              "subject": "the fabric broke",
+                              "detail": "trust me", "evidence": ""}])
+    rep = evaluate("investigation", ev)
+    g = next(x for x in rep.gates if x.name == "diagnosis_cited")
+    assert g.status == "fail" and "NO jobs" in g.detail
+
+
+def test_root_cause_citing_failing_job_passes():
+    from chipchamp.policy.gates import evaluate
+    ev = _ev_with_notes(
+        [_job("J-0425", "failed"), _job("J-0427", "passed")],
+        [{"id": "N-2", "kind": "root_cause", "subject": "routing starvation",
+          "detail": "muxes collapsed", "evidence": "J-0425"}])
+    g = next(x for x in evaluate("investigation", ev).gates
+             if x.name == "diagnosis_cited")
+    assert g.status == "pass"
+
+
+def test_root_cause_citing_only_passing_when_failures_exist_fails():
+    from chipchamp.policy.gates import evaluate
+    ev = _ev_with_notes(
+        [_job("J-0425", "failed"), _job("J-0427", "passed")],
+        [{"id": "N-3", "kind": "root_cause", "subject": "s",
+          "detail": "see J-0427", "evidence": ""}])
+    g = next(x for x in evaluate("investigation", ev).gates
+             if x.name == "diagnosis_cited")
+    assert g.status == "fail" and "J-0425" in g.detail
+
+
+def test_no_root_cause_notes_no_gate():
+    from chipchamp.policy.gates import evaluate
+    ev = _ev_with_notes([_job("J-1", "passed")], [])
+    assert not any(x.name == "diagnosis_cited"
+                   for x in evaluate("investigation", ev).gates)

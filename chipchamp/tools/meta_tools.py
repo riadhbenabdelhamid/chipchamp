@@ -236,6 +236,8 @@ def doc_blockdiagram(ctx: ToolContext, top: str = "", depth: int = 2) -> dict:
 
 def _collect_evidence(ctx: ToolContext, acknowledge: list[str]) -> Evidence:
     ev = Evidence(jobs=list(ctx.task_jobs))
+    ev.root_cause_notes = [n for n in getattr(ctx, "task_notes", [])
+                           if n.get("kind") == "root_cause"]
     ev.riscv_cosim = getattr(ctx, "riscv_cosim", None)
     ev.riscv_compliance = getattr(ctx, "riscv_compliance", None)
     # fpga_fits headroom budget: [fpga] max_utilization (default 1.0 = must fit)
@@ -466,8 +468,12 @@ def _wrap_children(orch, mark):
           "required": ["kind", "subject", "detail"]})
 def note_add(ctx: ToolContext, kind: str, subject: str, detail: str,
              evidence: str = "") -> dict:
-    return ctx.notebook.add(kind, subject, detail, evidence=evidence,
-                            source="agent")
+    out = ctx.notebook.add(kind, subject, detail, evidence=evidence,
+                           source="agent")
+    ctx.task_notes.append({"id": out.get("id", ""), "kind": kind,
+                           "subject": subject, "detail": detail,
+                           "evidence": evidence})
+    return out
 
 
 @tool("note.list", "What this project has already learned (the notebook).",

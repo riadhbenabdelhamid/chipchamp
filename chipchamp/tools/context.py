@@ -33,6 +33,7 @@ class ToolContext:
         self.target = ws.target(self.target_name)
         # per-task state
         self.task_jobs: list = []
+        self.task_notes: list = []  # notes filed DURING this task
         self.open_waves: dict[str, WaveStore] = {}
         self.coverage_sets: dict[str, CoverageService] = {}
         self.log_lines: list[str] = []
