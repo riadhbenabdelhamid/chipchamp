@@ -201,12 +201,17 @@ def riscv_refrun(ctx: ToolContext, elf: str, max_steps: int = 20000,
     try:
         # bounded: a spin-loop ending would otherwise run until killed, and a
         # plain capture would then throw away every line it printed
+        # the capture bound must mirror the multi-hart instruction budget:
+        # spike schedules harts in ~5000-instruction quanta, so a per-hart
+        # budget's worth of lines would end inside hart 0's first quantum
+        # and harts 1..N-1 would silently vanish from the trace
+        _budget = harts * (max_steps + 5000) if harts > 1 else max_steps
         raw, hit_limit, timed_out = run_iss_bounded(
-            argv, max_lines=max(64, max_steps * 2), timeout=float(timeout))
+            argv, max_lines=max(64, _budget * 2 + 64), timeout=float(timeout))
     except (OSError, subprocess.SubprocessError) as e:
         return {"error": f"reference model failed to launch: {e}"}
     steps, kind = parse_trace(raw, "spike" if backend == "spike" else "gdbsim",
-                              limit=max_steps)
+                              limit=0 if harts > 1 else max_steps)
     out: dict = {"backend": backend, "steps": len(steps), "trace_kind": kind,
                  "isa": march or None,
                  "bounded": bool(hit_limit or timed_out)}
@@ -318,7 +323,8 @@ def riscv_cosim(ctx: ToolContext, core_trace: str, elf: str = "",
         if not os.path.isfile(rpath):
             return {"error": f"reference trace not found: {ctx.rel(rpath)}"}
         with open(rpath, "r", errors="replace") as fh:
-            ref_steps, ref_kind = parse_trace(fh.read(), "auto", limit=max_steps)
+            ref_steps, ref_kind = parse_trace(fh.read(), "auto",
+                                              limit=0 if harts > 1 else max_steps)
         backend = ref_kind
     else:
         if not elf:
@@ -331,7 +337,8 @@ def riscv_cosim(ctx: ToolContext, core_trace: str, elf: str = "",
                     **{k: run[k] for k in ("hint", "backend") if k in run}}
         rpath = _abs(ctx, run["trace_file"]) if run.get("trace_file") else ""
         with open(rpath, "r", errors="replace") as fh:
-            ref_steps, ref_kind = parse_trace(fh.read(), "auto", limit=max_steps)
+            ref_steps, ref_kind = parse_trace(fh.read(), "auto",
+                                              limit=0 if harts > 1 else max_steps)
         backend = run["backend"]
     if not ref_steps:
         return {"error": "the reference produced no trace"}
@@ -358,8 +365,11 @@ def riscv_cosim(ctx: ToolContext, core_trace: str, elf: str = "",
         # core's first PC unless the caller pinned the offsets — dropping the
         # same count from both streams would compare nothing at all.
         _sd = skip if skip_dut is None else skip_dut
+        # align on the stream AS COMPARED: anchoring on a PC that skip_dut
+        # is about to drop mis-aligns the reference by exactly that skip
+        # (found pairing a barrel core's warmup-trimmed trace with spike)
         _sr = skip_ref if skip_ref is not None else (
-            skip if skip else align_traces(stream, ref_stream,
+            skip if skip else align_traces(stream[_sd:], ref_stream,
                                            pc_offset=pc_offset))
         _div = diff_traces(stream, ref_stream, skip_dut=_sd, skip_ref=_sr,
                            pc_offset=pc_offset)

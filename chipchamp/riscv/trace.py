@@ -32,6 +32,10 @@ class TraceStep:
     # architectural writeback, when the producer reports it (spike does)
     reg: str = ""
     value: int | None = None
+    # memory access, when the producer reports it: address for loads and
+    # stores, data for stores only (a load's value arrives via reg/value)
+    mem_addr: int | None = None
+    mem_wdata: int | None = None
     # Which hardware thread retired it. A BARREL-MULTITHREADED core interleaves
     # T threads round-robin, so its retired stream is T independent streams
     # multiplexed together — comparing it as one against a single-hart model
@@ -53,7 +57,8 @@ _SPIKE = re.compile(
 # `core   0: 3 0x0000000080000004 (0x00500093) x1  0x0000000000000005`
 _SPIKE_WB = re.compile(
     r"^core\s+(?P<hart>\d+):\s+\d+\s+0x(?P<pc>[0-9a-fA-F]+)\s+\((?P<insn>0x[0-9a-fA-F]+)\)"
-    r"(?:\s+(?P<reg>[xf]\d+|\w+)\s+0x(?P<val>[0-9a-fA-F]+))?")
+    r"(?:\s+(?P<reg>[xf]\d+|(?!mem\b)\w+)\s+0x(?P<val>[0-9a-fA-F]+))?"
+    r"(?:\s+mem\s+0x(?P<maddr>[0-9a-fA-F]+)(?:\s+0x(?P<mdata>[0-9a-fA-F]+))?)?")
 # `insn:     0x010000                       -addi ra, zero, 0x5;  // ra = …`
 _GDBSIM = re.compile(
     r"^insn:\s+0x(?P<pc>[0-9a-fA-F]+)\s+-(?P<dis>[^;]*)")
@@ -67,6 +72,11 @@ _RTL_INSN = re.compile(r"\b(?:instr|insn|inst)\s*[=:]\s*(?:0x)?(?P<insn>[0-9a-fA
 _RTL_HART = re.compile(
     r"\b(?:hart|thread|tid|thread_index|th)\s*[=:]\s*"
     r"(?P<pfx>0x)?(?P<hart>[0-9a-fA-F]+)", re.I)
+_RTL_RD = re.compile(r"\brd=(?P<rd>\d+)\b")
+# architectural writeback value; wdata= and data= both accepted
+_RTL_WDATA = re.compile(r"\bdata=0x(?P<v>[0-9a-fA-F]+)\b")
+_RTL_MEM = re.compile(r"\bmem=0x(?P<a>[0-9a-fA-F]+)\b")
+_RTL_MWD = re.compile(r"\bwdata=0x(?P<w>[0-9a-fA-F]+)\b")
 
 
 def parse_spike_trace(text: str, limit: int = 0) -> list[TraceStep]:
@@ -88,14 +98,22 @@ def parse_spike_trace(text: str, limit: int = 0) -> list[TraceStep]:
             insn = int(g["insn"], 16) if g.get("insn") else None
             prev = steps[-1] if steps else None
             if prev is not None and prev.pc == pc and prev.insn == insn \
-                    and prev.hart == int(g.get("hart") or 0) and not prev.reg:
+                    and prev.hart == int(g.get("hart") or 0) and not prev.reg \
+                    and prev.mem_addr is None:
                 if g.get("reg"):                    # fold into the open step
                     prev.reg, prev.value = g["reg"], int(g["val"], 16)
+                if g.get("maddr"):
+                    prev.mem_addr = int(g["maddr"], 16)
+                    prev.mem_wdata = (int(g["mdata"], 16)
+                                      if g.get("mdata") else None)
                 continue
             step = TraceStep(pc=pc, insn=insn, index=len(steps),
                              hart=int(g.get("hart") or 0))
             if g.get("reg"):
                 step.reg, step.value = g["reg"], int(g["val"], 16)
+            if g.get("maddr"):
+                step.mem_addr = int(g["maddr"], 16)
+                step.mem_wdata = int(g["mdata"], 16) if g.get("mdata") else None
         else:
             m = _SPIKE.match(line)
             if not m:
@@ -141,9 +159,17 @@ def parse_rtl_trace(text: str, limit: int = 0) -> list[TraceStep]:
             continue
         mi = _RTL_INSN.search(line)
         mh = _RTL_HART.search(line)
+        mr = _RTL_RD.search(line)
+        mv = _RTL_WDATA.search(line)
+        ma = _RTL_MEM.search(line)
+        mw = _RTL_MWD.search(line)
         steps.append(TraceStep(pc=int(m.group("pc"), 16),
                                insn=int(mi.group("insn"), 16) if mi else None,
                                hart=_int_auto(mh) if mh else 0,
+                               reg=f"x{int(mr.group('rd'))}" if mr else "",
+                               value=int(mv.group("v"), 16) if mv else None,
+                               mem_addr=int(ma.group("a"), 16) if ma else None,
+                               mem_wdata=int(mw.group("w"), 16) if mw else None,
                                index=len(steps)))
         if limit and len(steps) >= limit:
             break
@@ -195,6 +221,14 @@ class Divergence:
                     f"0x{(d.insn or 0):08x} but the reference decoded "
                     f"0x{(r.insn or 0):08x}"
                     + (f" ({r.disasm})" if r.disasm else ""))
+        if self.reason == "mem":
+            def _m(st, off):
+                a = f"0x{(st.mem_addr or 0) + off:08x}"
+                return (f"[{a}]=0x{st.mem_wdata:x}" if st.mem_wdata is not None
+                        else f"[{a}] (load)")
+            return (f"at {at}, PC 0x{d.pc:08x}: the core accessed "
+                    f"{_m(d, self.pc_offset)} but the reference accessed "
+                    f"{_m(r, 0)}" + (f" ({r.disasm})" if r.disasm else ""))
         return (f"at {at}, PC 0x{d.pc:08x}: the core wrote {d.reg}="
                 f"0x{(d.value or 0):x} but the reference wrote {r.reg}="
                 f"0x{(r.value or 0):x}"
@@ -263,8 +297,22 @@ def diff_traces(dut: list[TraceStep], ref: list[TraceStep], *,
             return Divergence(idx, "insn", d, r, ctx, pc_offset)
         if (d.reg and r.reg and d.reg == r.reg
                 and d.value is not None and r.value is not None
-                and d.value != r.value):
+                and d.value != r.value
+                # a register holding an ADDRESS legitimately differs by the
+                # dual-link image offset (auipc/la materialize the base):
+                # equal-plus-offset is equality under this comparison
+                and d.value + pc_offset != r.value):
             return Divergence(idx, "writeback", d, r, ctx, pc_offset)
+        if d.mem_addr is not None and r.mem_addr is not None:
+            # the dual-linked image shifts data addresses by the same
+            # constant as code addresses
+            if d.mem_addr + pc_offset != r.mem_addr:
+                return Divergence(idx, "mem", d, r, ctx, pc_offset)
+            if (d.mem_wdata is not None and r.mem_wdata is not None
+                    and d.mem_wdata != r.mem_wdata
+                    and d.mem_wdata + pc_offset != r.mem_wdata):
+                # stored POINTERS shift with the image too
+                return Divergence(idx, "mem", d, r, ctx, pc_offset)
     if strict_length and len(a) != len(b):
         idx = min(len(a), len(b)) + sd
         shorter_is_dut = len(a) < len(b)

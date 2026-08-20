@@ -338,12 +338,17 @@ def iss_argv(backend: str, exe: str, elf: str, *, march: str = "",
         argv = [exe, "-l", "--log-commits"]
         if march:
             argv.append(f"--isa={march}")
-        if max_steps:
-            argv.append(f"--instructions={max_steps}")
         if harts > 1:
             # a barrel core's threads each have their own mhartid; a program
-            # that branches on it needs one reference stream PER hart
+            # that branches on it needs one reference stream PER hart.
+            # spike schedules harts in ~5000-instruction quanta: with a small
+            # global budget, hart 0 never yields and harts 1..N-1 produce
+            # NOTHING — the budget must cover every hart's whole quantum.
             argv.append(f"-p{harts}")
+            if max_steps:
+                argv.append(f"--instructions={harts * (max_steps + 5000)}")
+        elif max_steps:
+            argv.append(f"--instructions={max_steps}")
         return argv + [elf]
     argv = [exe, "--trace-insn=on", "--trace-disasm=on"]
     for r in (regions or []):
