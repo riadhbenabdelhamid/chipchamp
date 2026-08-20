@@ -942,7 +942,8 @@ class InputController:
         self.session = None
         if _HAS_PTK and self.tty:
             style = Style.from_dict({"prompt": "bold cyan",
-                                     "bottom-toolbar": "bg:#222222 #888888",
+                                     # lime-phosphor status bar: black text on phosphor, CRT-style
+                                     "bottom-toolbar": "bg:#a8ff00 #000000",
                                      # skills in the slash menu. ptk's default
                                      # menu is LIGHT (#bbbbbb, #ffffff when
                                      # selected, #999999 for meta), so this has
@@ -1056,16 +1057,18 @@ class InputController:
                 extra = self.toolbar_extra() or ""
             except Exception:
                 extra = ""
+        # everything inherits black-on-phosphor from the bar; the MODE is
+        # an inverted pill (phosphor-on-black), matching the model pill
+        sep = "  │  "
         if extra:
-            extra = f" {extra}  · "
+            extra = f" {extra}{sep}"
         if self.mode is not None:
-            color = getattr(self.mode, "color", "")  # per-mode accent (cli._MODE_COLOR)
-            name = (f"<ansi{color}><b>{self.mode.name}</b></ansi{color}>"
-                    if color else f"<b>{self.mode.name}</b>")
-            return HTML(f"{extra} mode: {name} (shift-tab) "
-                        f" ·  <b>/</b> commands  ·  ctrl-d to exit")
-        return HTML(f"{extra} <b>/</b> commands  ·  enter to send  ·  "
-                    "ctrl-d to exit")
+            name = (f'<style bg="#000000" fg="#a8ff00"><b> '
+                    f'{self.mode.name} </b></style>')
+            return HTML(f"{extra}{name} mode (shift-tab){sep}"
+                        f"<b>/</b> commands{sep}ctrl-d exits")
+        return HTML(f"{extra}<b>/</b> commands{sep}enter sends · "
+                    "ctrl-d exits")
 
     def _init_readline(self) -> None:
         try:

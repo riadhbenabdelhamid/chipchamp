@@ -1544,28 +1544,41 @@ def _board_leds(c, loop):
         except Exception:
             pass
         _board_leds._cache = (now, latest)
+    # Lime-phosphor bar: the toolbar paints black-on-phosphor, so plain
+    # text needs no styling at all — the MODEL rides as an inverted pill
+    # (phosphor-on-black), and the LED strip is monochrome: filled=pass,
+    # hollow=never-ran, half=running, with red reserved for failure.
+    segs = []
+    try:
+        ref = getattr(loop.gateway, "ref", "") or ""
+        prov, _, mdl = ref.partition(":")
+        mdl = (mdl or getattr(loop.gateway, "model", "")
+               or "").rsplit("/", 1)[-1][:28]
+        eff = getattr(loop.gateway, "reasoning_effort", "") or ""
+        if mdl:
+            label = f"{prov or 'model'}:{mdl}" + (f" ↯{eff}" if eff else "")
+            segs.append(f'<style bg="#000000" fg="#a8ff00"><b> '
+                        f'{_html.escape(label)} </b></style>')
+    except Exception:
+        pass
     kinds = list(_LED_KINDS) + sorted(
-        k for k in latest if k in ("formal", "lec"))
+        k for k in latest if k in ("formal", "lec", "efpga-fabulous"))
+    short = {"efpga-fabulous": "efpga"}
     cells = []
     for k in kinds:
         st = latest.get(k)
         if st == "passed":
-            led = "<ansigreen>●</ansigreen>"
+            led = "●"
         elif st in ("failed", "error", "timeout"):
             led = "<ansired>●</ansired>"
         elif st == "running":
-            led = "<ansiyellow>●</ansiyellow>"
+            led = "◐"
         else:
-            led = '<style fg="#555555">○</style>'
-        cells.append(f'<style fg="#777777">{k}</style> {led}')
-    model = ""
-    try:
-        model = (loop.gateway.model or "").rsplit("/", 1)[-1][:24]
-    except Exception:
-        pass
-    if model:
-        cells.append(f'<style fg="#666666">{_html.escape(model)}</style>')
-    return "  ".join(cells)
+            led = "○"
+        cells.append(f"{short.get(k, k)} {led}")
+    if cells:
+        segs.append("  ".join(cells))
+    return "  │  ".join(segs)
 
 
 def _print_failure_waves(c, jid: str) -> None:
