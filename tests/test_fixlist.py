@@ -419,3 +419,108 @@ def test_no_root_cause_notes_no_gate():
     ev = _ev_with_notes([_job("J-1", "passed")], [])
     assert not any(x.name == "diagnosis_cited"
                    for x in evaluate("investigation", ev).gates)
+
+
+# --- 17. cosim alignment respects skip_dut ---------------------------------
+
+def test_cosim_aligns_on_the_skipped_stream(ctx):
+    from chipchamp.tools.riscv_tools import riscv_cosim
+    import os
+    # core trace with ONE bogus warmup line; reference starts at the real pc
+    core = os.path.join(ctx.ws.root, "core_t.log")
+    ref = os.path.join(ctx.ws.root, "ref_t.log")
+    with open(core, "w") as fh:
+        fh.write("pc=0xdead0000 instr=0x00000013\n"        # warmup garbage
+                 "pc=0x00000000 instr=0x00500093\n"
+                 "pc=0x00000004 instr=0x00300113\n")
+    with open(ref, "w") as fh:
+        fh.write("[TRACE] pc=0x00000000 instr=0x00500093\n"
+                 "[TRACE] pc=0x00000004 instr=0x00300113\n")
+    out = riscv_cosim(ctx, core_trace="core_t.log",
+                      reference_trace="ref_t.log", skip_dut=1)
+    # before the fix, auto-align anchored on the garbage pc the skip removed
+    assert out.get("match") is True, out.get("summary")
+    os.unlink(core); os.unlink(ref)
+
+
+# --- 18. writeback-level cosim: parser + multi-hart reference budget -------
+
+def test_rtl_trace_carries_writebacks():
+    from chipchamp.riscv.trace import parse_rtl_trace
+    st = parse_rtl_trace(
+        "hart=3 pc=0x00000040 instr=0x40365693 rd=13 data=0xfffffff8\n")[0]
+    assert (st.hart, st.reg, st.value) == (3, "x13", 0xfffffff8)
+    # lines without a writeback stay comparison-neutral
+    st2 = parse_rtl_trace("pc=0x4 instr=0x13\n")[0]
+    assert st2.reg == "" and st2.value is None
+
+
+def test_spike_multihart_budget_covers_every_quantum():
+    from chipchamp.riscv.toolchain import iss_argv
+    argv = iss_argv("spike", "spike", "p.elf", march="rv32i_zicsr",
+                    max_steps=400, regions=[], harts=10)
+    # spike schedules harts in ~5000-instruction quanta: a per-hart budget
+    # must scale, or harts 1..N-1 never execute (found live: a 10-hart
+    # reference trace containing only core 0)
+    assert "-p10" in argv
+    assert f"--instructions={10 * (400 + 5000)}" in argv
+    solo = iss_argv("spike", "spike", "p.elf", march="", max_steps=400,
+                    regions=[], harts=0)
+    assert "--instructions=400" in solo and not any(
+        a.startswith("-p") for a in solo if a != "p.elf")
+
+
+# --- 19. memory-op cosim: parse, diff, offset equality ---------------------
+
+def test_mem_ops_parse_and_diff():
+    from chipchamp.riscv.trace import (TraceStep, diff_traces,
+                                       parse_rtl_trace, parse_spike_trace)
+    # rtl store line
+    st = parse_rtl_trace("hart=2 pc=0x1c instr=0x001a2023 "
+                         "mem=0x00000060 wdata=0x00000005\n")[0]
+    assert (st.mem_addr, st.mem_wdata) == (0x60, 0x5)
+    # spike store and load commit lines
+    sp = parse_spike_trace(
+        "core   1: 3 0x8000001c (0x001a2023) mem 0x80000060 0x00000005\n")[0]
+    assert (sp.mem_addr, sp.mem_wdata) == (0x80000060, 0x5)
+    ld = parse_spike_trace(
+        "core   0: 3 0x80000030 (0x00052503) x10 0x2a mem 0x80000420\n")[0]
+    assert (ld.reg, ld.value, ld.mem_addr, ld.mem_wdata) == \
+        ("x10", 0x2a, 0x80000420, None)
+
+    def mk(pc, ma=None, mw=None, reg="", val=None):
+        return TraceStep(pc=pc, insn=0x23, mem_addr=ma, mem_wdata=mw,
+                         reg=reg, value=val)
+
+    OFF = 0x80000000
+    # matching store through the image offset
+    assert diff_traces([mk(0x1c, 0x60, 5)], [mk(OFF + 0x1c, OFF + 0x60, 5)],
+                       pc_offset=OFF) is None
+    # wrong store address → mem divergence
+    d = diff_traces([mk(0x1c, 0x70, 5)], [mk(OFF + 0x1c, OFF + 0x60, 5)],
+                    pc_offset=OFF)
+    assert d and d.reason == "mem" and "0x80000070" in d.describe()
+    # wrong store data → mem divergence
+    d = diff_traces([mk(0x1c, 0x60, 6)], [mk(OFF + 0x1c, OFF + 0x60, 5)],
+                    pc_offset=OFF)
+    assert d and d.reason == "mem"
+    # an ADDRESS-valued writeback differs by exactly the offset: equal
+    assert diff_traces([mk(0x4, reg="x20", val=0x60)],
+                       [mk(OFF + 0x4, reg="x20", val=OFF + 0x60)],
+                       pc_offset=OFF) is None
+
+
+# --- 20. the footer leads with the model -----------------------------------
+
+def test_footer_model_segment_leads_and_is_valid_markup():
+    from types import SimpleNamespace as NS
+    from prompt_toolkit.formatted_text import HTML
+    from chipchamp.cli import _board_leds
+    _board_leds._cache = None
+    c = NS(runner=NS(list_jobs=lambda: [NS(kind="sim", status="passed")]))
+    loop = NS(gateway=NS(ref="ollama:qwen3.6:35b", model="qwen3.6:35b",
+                         reasoning_effort="high"))
+    out = _board_leds(c, loop)
+    HTML(out)                                   # malformed markup raises
+    assert out.index("qwen3.6:35b") < out.index("sim")   # model first
+    assert "ollama" in out and "↯high" in out
