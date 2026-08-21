@@ -524,3 +524,70 @@ def test_footer_model_segment_leads_and_is_valid_markup():
     HTML(out)                                   # malformed markup raises
     assert out.index("qwen3.6:35b") < out.index("sim")   # model first
     assert "ollama" in out and "↯high" in out
+
+
+# --- 21. UI polish: theme lever, ladder states, readable chronogram --------
+
+def test_theme_retints_standard_styles():
+    from rich.console import Console
+    from chipchamp import ui
+    assert set(ui.theme_names()) >= {"phosphor", "amber", "scope", "mono"}
+    for name, green in (("phosphor", "#a8ff00"), ("amber", "#ffb000"),
+                        ("scope", "#39d353"), ("mono", "#e8e8e8")):
+        con = Console()
+        con.push_theme(ui._THEMES[name])
+        assert str(con.get_style("green").color.triplet.hex).lower() == green, name
+
+
+def test_gate_ladder_states_and_verbatim_names():
+    from chipchamp.ui import gate_ladder
+    rep = SimpleNamespace(min_rung="E", task_class="efpga-fabulous", gates=[
+        SimpleNamespace(name="fabric_generated", status="pass", ok=True),
+        SimpleNamespace(name="bitstream_generated", status="fail", ok=False),
+        SimpleNamespace(name="diagnosis_cited", status="missing", ok=False)])
+    out = gate_ladder(rep)
+    # names verbatim (they are report.done's rejection vocabulary)
+    for n in ("fabric_generated", "bitstream_generated", "diagnosis_cited"):
+        assert n in out
+    assert "✗" in out and "○" in out and "[red]" in out and "1/3" in out
+
+
+def test_chronogram_axis_is_readable():
+    from chipchamp.waves.render import ascii_timing, fmt_time
+    assert fmt_time(20664500, "1ps") == "20.66µs"
+    assert fmt_time(42, "") == "42"
+    snap = {"window": [1000, 9000], "timescale": "1ns", "signals": {
+        "tb.clk": {"width": 1, "value_at_start": "0",
+                   "edges": [(1000 + i * 500, str(i % 2)) for i in range(16)]},
+        "tb.d": {"width": 8, "value_at_start": "0",
+                 "edges": [(1000 + i * 1000, bin(i)[2:]) for i in range(8)]}}}
+    out = ascii_timing(snap, width=80)
+    lines = out.splitlines()
+    assert lines[0].startswith("t 1µs … 9µs")      # real units, not run-ons
+    assert "tb.*" in lines[0]                       # common prefix in title
+    assert lines[1].startswith("clk")               # trimmed names
+    assert "╵+0" in lines[-1]                       # tick ruler
+    assert all(len(l) <= 80 for l in lines)         # width respected
+
+
+# --- 22. /theme: live switch + persistence ---------------------------------
+
+def test_set_theme_switches_and_reverts():
+    from chipchamp import ui
+    assert ui.set_theme("phosphor") == "phosphor"
+    assert ui.set_theme("nonsense") == "phosphor"     # unknown: no-op
+    assert ui.set_theme("off") == ""                  # back to defaults
+
+
+def test_persist_theme_is_surgical(tmp_path):
+    from types import SimpleNamespace as NS
+    from chipchamp.cli import _persist_theme
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[model]\nref = 'x'\n\n[ui]\n# comment kept\n")
+    c = NS(ws=NS(dot=tmp_path))
+    _persist_theme(c, "phosphor")
+    t = cfg.read_text()
+    assert 'theme = "phosphor"' in t and "[model]" in t and "# comment" in t
+    _persist_theme(c, "")                             # off → cleared, once
+    t = cfg.read_text()
+    assert t.count("theme =") == 1 and 'theme = ""' in t

@@ -283,12 +283,14 @@ def test_mode_colors_distinct_and_complete():
 @pytest.mark.skipif(not ui._HAS_PTK, reason="prompt_toolkit not installed")
 def test_toolbar_colors_the_mode_name():
     from types import SimpleNamespace as NS
-    for name, color in (("normal", "cyan"), ("auto", "yellow"), ("plan", "green")):
-        ic = ui.InputController({"sim": "x"}, mode=NS(name=name, color=color))
-        assert f"<ansi{color}><b>{name}</b></ansi{color}>" in ic._toolbar().value
-    # a mode object without .color must still render (plain bold)
+    # phosphor bar: the mode renders as an inverted phosphor-on-black pill
+    # regardless of the legacy per-mode accent color
+    for name in ("normal", "auto", "plan"):
+        ic = ui.InputController({"sim": "x"}, mode=NS(name=name, color="cyan"))
+        assert (f'<style bg="#000000" fg="#a8ff00"><b> {name} </b></style>'
+                in ic._toolbar().value)
     ic = ui.InputController({"sim": "x"}, mode=NS(name="normal"))
-    assert "<b>normal</b>" in ic._toolbar().value
+    assert " normal " in ic._toolbar().value
 
 
 @pytest.mark.skipif(not ui._HAS_PTK, reason="prompt_toolkit not installed")
@@ -318,8 +320,8 @@ def test_board_leds_reflect_latest_job_per_kind():
     c = NS(runner=FakeRunner())
     loop = NS(gateway=NS(model="mistralai/devstral-small-2-2512"))
     out = _board_leds(c, loop)
-    assert "lint" in out and "<ansired>●" in out       # lint failed
-    assert "sim" in out and "<ansigreen>●" in out      # sim latest = passed
+    assert "lint" in out and "<ansired>●" in out       # failure = only color
+    assert "sim ●" in out                              # latest passed: filled
     assert "synth" in out and "○" in out               # never ran
     assert "formal" in out                             # extra kind surfaced
     assert "devstral-small-2-2512" in out              # live model, short name

@@ -38,6 +38,8 @@ def echo(msg="", **kw):
 
 def _ctx(root, target=None) -> ToolContext:
     ws = Workspace(root)
+    from . import ui
+    ui.set_theme((ws.config.get("ui", {}) or {}).get("theme", ""))
     return ToolContext(ws, target=target)
 
 
@@ -1612,6 +1614,29 @@ def _burndown(hist: list[int]) -> str:
     return " ".join(cells)
 
 
+def _persist_theme(c, name: str) -> None:
+    """Write `[ui] theme` into the workspace config so the choice survives
+    the session. Surgical: replaces an existing theme line, extends an
+    existing [ui] section, or appends one — comments elsewhere untouched."""
+    import re as _re
+    path = c.ws.dot / "config.toml"
+    try:
+        text = path.read_text() if path.exists() else ""
+    except OSError:
+        return
+    line = f'theme = "{name}"' if name else 'theme = ""'
+    if _re.search(r"(?m)^\s*theme\s*=", text):
+        text = _re.sub(r"(?m)^\s*theme\s*=.*$", line, text, count=1)
+    elif _re.search(r"(?m)^\[ui\]", text):
+        text = _re.sub(r"(?m)^\[ui\]\s*$", f"[ui]\n{line}", text, count=1)
+    else:
+        text += f"\n[ui]\n{line}\n"
+    try:
+        path.write_text(text)
+    except OSError:
+        pass
+
+
 def _agent_events(c):
     """Render the agent's stream like claude-code: compact tool calls, colored
     diffs for edits, Markdown for prose (fenced SystemVerilog gets highlighted),
@@ -1839,6 +1864,7 @@ def _session_commands(c=None) -> dict:
                  "timeout": "per-model call budget (raise it for a slow model)",
                  "router": "auto model-routing: on/off, pool, profiles, chains",
                  "mode": "cycle autonomy: normal/auto/plan (shift-tab)",
+                 "theme": "UI theme: phosphor · amber · scope · mono · off",
                  "plan": "toggle plan mode (approve edits/jobs)",
                  "sessions": "list / resume saved sessions",
                  "undo": "revert the files the last task changed",
@@ -2415,6 +2441,23 @@ def _dispatch_slash(ctx_obj, c, loop, line, pending=None, mode=None,
     if name == "undo":
         _undo_cmd(c)
         return None
+    if name == "theme":
+        from . import ui as _ui
+        if not args:
+            cur = _ui._active_theme or "default"
+            echo(f"theme: [bold]{cur}[/] — available: "
+                 + ", ".join(_ui.theme_names() + ["off"]))
+            return None
+        want = args[0].lower()
+        applied = _ui.set_theme(want)
+        if want not in ("off", "default", "none") and applied != want:
+            echo(f"[yellow]unknown theme '{want}'[/] — available: "
+                 + ", ".join(_ui.theme_names() + ["off"]))
+            return None
+        _persist_theme(c, applied)
+        echo(f"theme: [bold]{applied or 'default'}[/] [dim](applied live, "
+             f"saved to .chipchamp/config.toml)[/]")
+        return None
     if name == "mode":
         if mode is None:
             echo("[yellow]autonomy modes aren't available here[/]")
@@ -2618,6 +2661,7 @@ def _head(name: str) -> str:
 # argument hint like [on|off] as markup and swallowing it.
 _HELP_SESSION = {
     "mode": " — cycle autonomy (shift-tab): normal · auto · plan",
+    "theme": " — UI theme, live + saved: phosphor · amber · scope · mono · off",
     "plan": r" \[on|off] — plan mode (approve edits/jobs)",
     "sessions": r" \[resume <id>] — list or resume a saved session "
                 "(also `chipchamp --continue` / `--resume <id>` at launch)",

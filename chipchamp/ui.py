@@ -58,6 +58,113 @@ class _RTLMarkdown(Markdown):
 
 _console = Console()
 
+# ---- themes ------------------------------------------------------------------
+# A theme retints the STANDARD style names, so every existing "[green]✓[/]"
+# call site follows it with zero changes. `[ui] theme = phosphor` in
+# config.toml selects one; unset keeps rich's defaults.
+from rich.theme import Theme as _Theme  # noqa: E402
+
+_THEMES = {
+    # monochrome lime CRT to match the status bar: everything phosphor,
+    # red kept as the single alarm color
+    "phosphor": _Theme({
+        "green": "#a8ff00",
+        "bright_green": "#c5ff4a",
+        "cyan": "#d8ff70",
+        "bright_cyan": "bold #e6ff9e",
+        "yellow": "#d4e600",
+        "bright_yellow": "#e6f76a",
+        "blue": "#8fd400",
+        "magenta": "#a8ff00",
+        "white": "#e8ffc4",
+        "grey30": "#374c00",
+        "grey42": "#557400",
+        "dim": "#5f7a00",
+        "rule.line": "#557400",
+    }, inherit=True),
+    # the other classic CRT phosphor (VT220 amber), same philosophy:
+    # monochrome warmth, red kept as the only alarm
+    "amber": _Theme({
+        "green": "#ffb000",
+        "bright_green": "#ffc94a",
+        "cyan": "#ffd280",
+        "bright_cyan": "bold #ffe0a3",
+        "yellow": "#e69500",
+        "bright_yellow": "#ffc94a",
+        "blue": "#d18f00",
+        "magenta": "#ffb000",
+        "white": "#ffe9c4",
+        "grey30": "#4d3500",
+        "grey42": "#6b4b00",
+        "dim": "#8a5f00",
+        "rule.line": "#6b4b00",
+    }, inherit=True),
+    # oscilloscope: bright trace-cyan for signal, steel for chrome — the
+    # bench instrument the chronograms are imitating
+    "scope": _Theme({
+        "green": "#39d353",
+        "bright_green": "#56e07a",
+        "cyan": "#53d8fb",
+        "bright_cyan": "bold #8ae7ff",
+        "yellow": "#ffd75f",
+        "bright_yellow": "#ffe38a",
+        "blue": "#3f9fd6",
+        "magenta": "#53d8fb",
+        "white": "#d9f2fb",
+        "grey30": "#1d3a4a",
+        "grey42": "#33566b",
+        "dim": "#4a7c94",
+        "rule.line": "#33566b",
+    }, inherit=True),
+    # grayscale with red as the ONLY color: colorblind-safe, and what a
+    # paper screenshot or grayscale print wants
+    "mono": _Theme({
+        "green": "bold #e8e8e8",
+        "bright_green": "bold #ffffff",
+        "cyan": "#c8c8c8",
+        "bright_cyan": "bold #e8e8e8",
+        "yellow": "#b8b8b8",
+        "bright_yellow": "#d0d0d0",
+        "blue": "#a8a8a8",
+        "magenta": "#c8c8c8",
+        "white": "#f0f0f0",
+        "grey30": "#3a3a3a",
+        "grey42": "#5a5a5a",
+        "dim": "#7a7a7a",
+        "rule.line": "#5a5a5a",
+    }, inherit=True),
+}
+
+
+_active_theme = ""
+
+
+def set_theme(name: str) -> str:
+    """Apply a named UI theme to the shared console, live. Returns the
+    active theme name ("" = rich defaults). Switching pops the previous
+    theme first so themes never stack; unknown names are a no-op."""
+    global _active_theme
+    name = (name or "").strip().lower()
+    if name in ("off", "default", "none"):
+        name = ""
+    if name == _active_theme:
+        return _active_theme
+    if name and name not in _THEMES:
+        return _active_theme
+    if _active_theme:
+        try:
+            _console.pop_theme()
+        except Exception:
+            pass
+    if name:
+        _console.push_theme(_THEMES[name])
+    _active_theme = name
+    return _active_theme
+
+
+def theme_names() -> list:
+    return sorted(_THEMES)
+
 # prompt_toolkit is optional
 try:
     from prompt_toolkit import PromptSession
@@ -272,8 +379,8 @@ def _clk(i: int, width: int = 8) -> str:
 # has always computed it and only ever shown it at report.done, as a verdict.
 # Shown continuously it becomes the session's spine: at any moment you can see
 # which rung the work is on and what is still owed.
-_GATE_MARK = {"pass": ("green", "✓"), "fail": ("red", "✗"),
-              "missing": ("grey42", "·")}
+_GATE_MARK = {"pass": ("green", "✓"), "fail": ("bold red", "✗"),
+              "missing": ("grey42", "○")}
 
 
 def gate_ladder(report, width: int = 0) -> str:
@@ -286,14 +393,24 @@ def gate_ladder(report, width: int = 0) -> str:
     if report is None or not getattr(report, "gates", None):
         return ""
     cells = []
+    any_fail = False
     for g in report.gates:
-        colour, mark = _GATE_MARK.get(g.status, ("grey42", "·"))
-        cells.append(f"[{colour}]{mark}[/] [dim]{g.name}[/]")
+        colour, mark = _GATE_MARK.get(g.status, ("grey42", "○"))
+        # a FAILING gate's name must shout — it is the exact string
+        # report.done will reject with; paid gates recede, owed ones wait
+        if g.status == "fail":
+            any_fail = True
+            cells.append(f"[{colour}]{mark}[/] [red]{g.name}[/]")
+        elif g.status == "pass":
+            cells.append(f"[{colour}]{mark}[/] [dim]{g.name}[/]")
+        else:
+            cells.append(f"[{colour}]{mark}[/] [grey42]{g.name}[/]")
     done = sum(1 for g in report.gates if g.ok)
-    head = (f"[dim]ladder[/] [bold]{report.min_rung}[/] "
+    total = len(report.gates)
+    bar = "green" if done == total else ("red" if any_fail else "yellow")
+    head = (f"[reverse bold] {report.min_rung} [/] "
             f"[dim]{report.task_class}[/] "
-            f"[{'green' if done == len(report.gates) else 'yellow'}]"
-            f"{done}/{len(report.gates)}[/]")
+            f"[{bar}]{done}/{total}[/]")
     return head + "  " + "  ".join(cells)
 
 

@@ -31,14 +31,20 @@ def test_the_ladder_shows_every_gate_and_the_count():
 def test_gate_states_are_visually_distinct():
     line = ui.gate_ladder(_report(lint="pass", smoke_sim="fail",
                                   affected_regress="missing"))
-    assert "[green]✓[/]" in line and "[red]✗[/]" in line
-    assert "[grey42]·[/]" in line
+    assert "[green]✓[/]" in line and "[bold red]✗[/]" in line
+    assert "[grey42]○[/]" in line
+    # a failing gate's NAME shouts too — it is report.done's rejection word
+    assert "[red]smoke_sim[/]" in line
 
 
 def test_a_complete_ladder_reads_green():
     assert "[green]2/2[/]" in ui.gate_ladder(_report(lint="pass", no_gaming="pass"))
+    # a ladder with a FAILING gate counts in red, not yellow — yellow is
+    # reserved for merely-unpaid (missing) gates
+    assert "[red]1/2[/]" in ui.gate_ladder(_report(lint="pass",
+                                                   no_gaming="fail"))
     assert "[yellow]1/2[/]" in ui.gate_ladder(_report(lint="pass",
-                                                      no_gaming="fail"))
+                                                      no_gaming="missing"))
 
 
 def test_the_ladder_is_one_line():

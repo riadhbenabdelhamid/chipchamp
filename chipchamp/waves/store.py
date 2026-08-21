@@ -207,4 +207,6 @@ class WaveStore:
             out[p] = {"width": self.data.signals[code].width,
                       "edges": edges[:max_edges],
                       "value_at_start": self.value(p, t0)}
-        return {"window": [t0, t1], "signals": out, "provenance": self.provenance}
+        return {"window": [t0, t1], "signals": out,
+                "timescale": self.data.timescale,
+                "provenance": self.provenance}

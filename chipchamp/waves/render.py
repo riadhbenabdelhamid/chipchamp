@@ -195,33 +195,87 @@ def analyzer_view(store, paths: list[str] | None = None, cycles: int = 48,
     return lines
 
 
-def ascii_timing(snapshot: dict, cell: int = 4) -> str:
-    """Render a snapshot() result as an ASCII timing diagram."""
+_TS_FACTOR = {"s": 1.0, "ms": 1e-3, "us": 1e-6, "ns": 1e-9,
+              "ps": 1e-12, "fs": 1e-15}
+
+
+def fmt_time(t: int, timescale: str = "") -> str:
+    """`20664500` @1ps → `20.66µs`: engineering units from the VCD's own
+    timescale. Without one, raw units with thousands grouping — never the
+    eleven-digit run-on that used to be the header."""
+    import re as _re
+    m = _re.match(r"(\d+)\s*([a-z]+)", (timescale or "").strip())
+    if not m or m.group(2) not in _TS_FACTOR:
+        return f"{t:,}"
+    sec = t * int(m.group(1)) * _TS_FACTOR[m.group(2)]
+    for unit, div in (("s", 1.0), ("ms", 1e-3), ("µs", 1e-6),
+                      ("ns", 1e-9), ("ps", 1e-15 * 1000)):
+        if abs(sec) >= div:
+            v = sec / div
+            return f"{v:.4g}{unit}"
+    return "0"
+
+
+def _trim_names(names: list) -> tuple:
+    """Longest common dotted prefix stripped from every name, returned
+    separately — hierarchy belongs in the title once, not in every row."""
+    if len(names) < 2:
+        return "", list(names)
+    split = [n.split(".") for n in names]
+    common = []
+    for parts in zip(*split):
+        if len(set(parts)) == 1:
+            common.append(parts[0])
+        else:
+            break
+    if not common:
+        return "", list(names)
+    k = len(".".join(common)) + 1
+    return ".".join(common) + ".", [n[k:] for n in names]
+
+
+def ascii_timing(snapshot: dict, cell: int = 4, width: int = 0) -> str:
+    """Render a snapshot() result as an ASCII timing diagram.
+
+    Title carries the window in real time units and the common hierarchy
+    prefix; rows carry trimmed names; a tick ruler underneath gives every
+    third column's offset from the window start."""
     win = snapshot.get("window", [0, 0])
     sigs = snapshot.get("signals", {})
+    ts = snapshot.get("timescale", "")
     if not sigs:
         return "(no signals in snapshot)"
     t0, t1 = win
-    # Build a sampled grid over the window at change points (bounded columns).
     all_edges = sorted({t for s in sigs.values() for t, _ in s["edges"]} | {t0, t1})
-    # cap columns
-    cols = all_edges[:40]
-    if t1 not in cols:
+    prefix, short = _trim_names(list(sigs))
+    name_w = max((len(n) for n in short), default=8)
+    cw = cell + 4
+    max_cols = max(4, ((width or 100) - name_w - 2) // cw)
+    cols = all_edges[:max_cols]
+    if t1 not in cols and len(cols) < max_cols:
         cols.append(t1)
-    lines = []
-    name_w = max((len(n) for n in sigs), default=8)
-    header = " " * (name_w + 2) + "".join(f"{t:<{cell+4}}" for t in cols[:12])
-    lines.append(header.rstrip())
-    for path, info in sigs.items():
-        width = info["width"]
-        row = f"{path:<{name_w}}  "
+    lines = [f"t {fmt_time(t0, ts)} … {fmt_time(t1, ts)}"
+             f"  (Δ {fmt_time(t1 - t0, ts)})"
+             + (f"  ·  {prefix}*" if prefix else "")]
+    for (path, info), name in zip(sigs.items(), short):
+        w = info["width"]
+        row = f"{name:<{name_w}}  "
         cur = info.get("value_at_start")
         edge_map = dict(info["edges"])
-        for t in cols[:12]:
+        for t in cols:
             if t in edge_map:
                 cur = edge_map[t]
-            row += _cellstr(cur, width, cell)
+            row += _cellstr(cur, w, cell)
         lines.append(row.rstrip())
+    ruler = [" "] * (name_w + 2 + cw * len(cols))
+    for i, t in enumerate(cols):
+        if i % 3 == 0:
+            tick = "╵+" + fmt_time(t - t0, ts)
+            pos = name_w + 2 + i * cw
+            for j, ch in enumerate(tick):
+                if pos + j < len(ruler):
+                    ruler[pos + j] = ch
+    lines.append("".join(ruler).rstrip())
     return "\n".join(lines)
 
 

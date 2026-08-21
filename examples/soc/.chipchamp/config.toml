@@ -100,3 +100,11 @@ retention_days = 14
 
 [mcp.servers.wavelets]
 command = "python3 /home/riadh/wavelet/alwavelets.py --mcp"
+
+[ui]
+# lime-phosphor CRT theme, matching the status bar (unset = rich defaults)
+theme = "phosphor"
+
+[model.effort_support]
+# qwen3.8 is a hybrid-thinking generation: ollama accepts reasoning_effort
+"qwen3\\.8" = ["low", "medium", "high"]
