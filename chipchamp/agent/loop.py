@@ -34,7 +34,10 @@ class AgentLoop:
                  approver: Optional[Callable[[str, dict, str], bool]] = None,
                  gate_permissions: Optional[set] = None,
                  router=None, need: str = "rtl_author",
-                 disclose: bool = False, context_budget: int = 0):
+                 disclose: bool = False, context_budget: int = 0,
+                 require_report_done: bool = False,
+                 max_narration_nudges: int = 1,
+                 verify_every_n_writes: int = 0):
         """`tools` restricts the catalog (least-privilege subagents, FR-MA-01);
         `system_suffix` appends role instructions to the system prompt. In plan
         mode `gate_permissions` (e.g. {"write","submit"}) names the permission
@@ -89,6 +92,19 @@ class AgentLoop:
         # 0 = never compact (the old unbounded behaviour, kept for tests and
         # for anyone who would rather hit a hard wall than lose a body)
         self.context_budget = max(0, int(context_budget or 0))
+        # Headless batch runs: a brief that ends in report.done means a bare
+        # text turn is NEVER a real answer — treat the task as engaged from
+        # step one, and allow more than one consecutive narration nudge (a
+        # low-effort model can narrate straight through a single nudge; five
+        # tiers of a campaign died at 2-4 steps proving it).
+        self.require_report_done = bool(require_report_done)
+        self.max_narration_nudges = max(1, int(max_narration_nudges or 1))
+        # Verification-cadence guard (0 = off): a fast model can author
+        # forever without ever closing a loop — one run wrote 10 files and
+        # deleted 3 across 70 steps with ZERO lint jobs. When N writes
+        # accumulate with no verification job since the last one, teach the
+        # rhythm at the moment of drift, like the narration nudge does.
+        self.verify_every_n_writes = max(0, int(verify_every_n_writes or 0))
         self._refresh_api_tools()
 
     def _refresh_api_tools(self) -> None:
@@ -153,6 +169,8 @@ class AgentLoop:
         length_stops = 0
         recovered_calls = 0
         narration_nudges = 0   # consecutive text-only turns nudged to act
+        writes_since_verify = 0  # authored files since the last lint/sim job
+        verify_nudged = False    # cadence guard latched until verification
         reported_done = False  # report.done accepted → text is a real answer
         made_mutating_call = False  # wrote a file / ran a job → needs report.done
         last_reasoning = ""
@@ -306,9 +324,10 @@ class AgentLoop:
                     # (no plan, no writes) still ends cleanly.
                     plan_pending = any(s.get("status") != "done"
                                        for s in (self.ctx.plan or []))
-                    engaged = made_mutating_call or plan_pending
+                    engaged = (made_mutating_call or plan_pending
+                               or self.require_report_done)
                     if (engaged and not reported_done
-                            and narration_nudges < 1):
+                            and narration_nudges < self.max_narration_nudges):
                         narration_nudges += 1
                         transcript.append({"role": "user", "content": (
                             "You ended with a message but no tool call, and "
@@ -399,6 +418,11 @@ class AgentLoop:
                     and not result.get("error")
                 if ok and getattr(tool_obj, "permission", "") in ("write", "submit"):
                     made_mutating_call = True  # real state change → needs report.done
+                if ok and real in ("fs.write", "fs.edit"):
+                    writes_since_verify += 1
+                if real in ("lint.run", "sim.run", "cov.run", "lec.run"):
+                    writes_since_verify = 0   # ran a check (pass or fail):
+                    verify_nudged = False     # the loop is closing loops
                 if real == "report.done" and ok and result.get("accepted"):
                     reported_done = True  # gates satisfied — a later text turn
                     #                       is now a legitimate final answer
@@ -419,6 +443,15 @@ class AgentLoop:
                                 "output": _stringify(result)})
                 self.on_event("tool_result", {"name": real, "result": result})
             transcript.append({"role": "tool", "content": results})
+            if (self.verify_every_n_writes
+                    and writes_since_verify >= self.verify_every_n_writes
+                    and not verify_nudged):
+                verify_nudged = True   # once per breach, not every step
+                transcript.append({"role": "user", "content": (
+                    f"You have written or edited {writes_since_verify} files "
+                    f"without running any verification. Run lint.run NOW and "
+                    f"fix what it reports before writing anything new — "
+                    f"unverified authoring compounds errors.")})
             if self.session:
                 self.session.messages = transcript
                 self.session.task_frame["plan"] = list(self.ctx.plan)
@@ -431,6 +464,24 @@ class AgentLoop:
             improved = bool(job_passed) or lint_err_this == 0 or (
                 lint_err_this is not None and last_lint_err is not None
                 and lint_err_this < last_lint_err)
+            # A model rewriting whole files rarely NOTICES it is regressing —
+            # one run drove a lint queue 3->9->19, each "fix" breaking more.
+            # State the scoreboard at the moment of drift and demand the
+            # minimal-edit protocol, exactly like the narration nudge does.
+            lint_rose = (lint_err_this is not None
+                         and last_lint_err is not None
+                         and lint_err_this > last_lint_err)
+            if lint_rose:
+                transcript.append({"role": "user", "content": (
+                    f"Lint errors ROSE from {last_lint_err} to "
+                    f"{lint_err_this} after your last change — the previous "
+                    f"version was closer. Do NOT rewrite whole files. Make "
+                    f"one minimal fs.edit that addresses ONLY the FIRST "
+                    f"reported error, then lint.run again. One error per "
+                    f"edit.")})
+                if self.session:
+                    self.session.messages = transcript
+                    self.session.save()
             if lint_err_this is not None:
                 last_lint_err = lint_err_this
             if improved:
@@ -704,6 +755,16 @@ class AgentLoop:
                                  f"this agent's tool set (least-privilege "
                                  f"role). Work with the tools you have, or "
                                  f"report the need back instead of retrying.",
+                        "your_tools": sorted(self.tools)[:40]}
+            if name in ("tool", "tools", "function", "functions",
+                        "function_call", "tool_call"):
+                # a model deep in a long context sometimes wraps a real call
+                # in an envelope: tool({"functions": {"fs__read": {...}}}).
+                # Teach the protocol instead of a bare unknown-tool error.
+                return {"error": f"'{name}' is not a tool — there is no "
+                                 f"wrapper. Call the tool directly by its "
+                                 f"dotted name, e.g. fs.read({{\"path\": "
+                                 f"...}}), one call per step.",
                         "your_tools": sorted(self.tools)[:40]}
             import difflib
             close = difflib.get_close_matches(name, list(self.tools), n=3,

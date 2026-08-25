@@ -118,23 +118,39 @@ def compact(transcript: list[dict], *, budget_chars: int,
     out = [dict(m) for m in transcript]
     evicted = 0
     horizon = max(0, len(out) - keep_recent)
-    for i in range(horizon):
-        msg = out[i]
-        if msg.get("role") != "tool" or not isinstance(msg.get("content"), list):
-            continue
-        results = []
-        for r in msg["content"]:
-            if not isinstance(r, dict):
-                results.append(r)
+
+    def _sweep(skip_pinned: bool) -> bool:
+        nonlocal evicted
+        for i in range(horizon):
+            msg = out[i]
+            if msg.get("role") != "tool" \
+                    or not isinstance(msg.get("content"), list):
                 continue
-            text, changed = digest_output(r.get("name", "?"),
-                                          str(r.get("output", "")))
-            if changed:
-                evicted += 1
-            results.append({**r, "output": text})
-        out[i] = {**msg, "content": results}
-        if transcript_size(out)["chars"] <= budget_chars:
-            break
+            results = []
+            for r in msg["content"]:
+                if not isinstance(r, dict):
+                    results.append(r)
+                    continue
+                # Library cards are REFERENCE material, not conversation: a
+                # model that loses them re-derives interfaces from memory and
+                # debugs against fiction (a lint queue rose 3->19 that way).
+                # Pin them: evicted only in a second pass, when nothing else
+                # can free enough space.
+                if skip_pinned and str(r.get("name", "")).startswith("lib."):
+                    results.append(r)
+                    continue
+                text, changed = digest_output(r.get("name", "?"),
+                                              str(r.get("output", "")))
+                if changed:
+                    evicted += 1
+                results.append({**r, "output": text})
+            out[i] = {**msg, "content": results}
+            if transcript_size(out)["chars"] <= budget_chars:
+                return True
+        return False
+
+    if not _sweep(skip_pinned=True):
+        _sweep(skip_pinned=False)
     after = transcript_size(out)["chars"]
     # The recent window is never sacrificed to hit a number: a few large recent
     # results can leave the transcript over budget, and that is the right

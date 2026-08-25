@@ -591,3 +591,155 @@ def test_persist_theme_is_surgical(tmp_path):
     _persist_theme(c, "")                             # off → cleared, once
     t = cfg.read_text()
     assert t.count("theme =") == 1 and 'theme = ""' in t
+
+
+# --- 23. cross-run artifact sweep + wrapper-call teaching -------------------
+# A blinded triage model found a PRIOR run's probe/ directory ("pre-built
+# tests for exactly" its problem) and another wrapped a real call in a fake
+# envelope tool. Fifth leak class closed; protocol taught, not just refused.
+
+def _load_triage_demo():
+    import importlib.util
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location(
+        "demo_efpga_triage_under_test", root / "demo_efpga_triage.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def test_agent_artifacts_swept_between_runs(tmp_path, monkeypatch):
+    m = _load_triage_demo()
+    proj = tmp_path / "proj"
+    (proj / "Tile").mkdir(parents=True)
+    (proj / "Tile" / "stock.csv").write_text("keep me")
+    monkeypatch.setattr(m, "PROJECT", str(proj))
+    monkeypatch.setattr(m, "SEQUESTER", str(tmp_path / "seq"))
+    m.snapshot_project_manifest()
+    # the run writes probes + flow emissions
+    probe = proj / "probe"
+    probe.mkdir()
+    (probe / "probe_io9_live_npnr_log.txt").write_text("answer key")
+    (proj / "Tile" / "stray.fasm").write_text("emission")
+    assert m.sweep_new_project_files() is True
+    assert (proj / "Tile" / "stock.csv").exists()          # stock survives
+    assert not (proj / "Tile" / "stray.fasm").exists()     # emission gone
+    assert not probe.exists()                              # new dir gone
+    assert m.sweep_new_project_files() is False            # manifest consumed
+
+
+def test_wrapper_envelope_call_is_taught(ctx):
+    loop = AgentLoop(ctx, FakeGateway())
+    out = loop._exec("tool", {"functions": "{\"fs__read\": {}}"})
+    assert "not a tool" in out["error"]
+    assert "fs.read" in out["error"]        # protocol example, not a refusal
+    assert "your_tools" in out
+
+
+# --- 24. headless narration guard ------------------------------------------
+# Five campaign tiers died at 2-4 steps: a low-effort model narrates its next
+# intention as a full turn and the single pre-mutation nudge isn't enough.
+
+def test_require_report_done_nudges_from_step_one(ctx):
+    texts = ["Now let me inspect the libraries.", "I will fetch components.",
+             "Next I will write the RTL.", "The architecture is ready."]
+    script = [ModelResponse(text=t, tool_calls=[]) for t in texts]
+    gw = FakeGateway(script)
+    loop = AgentLoop(ctx, gw, require_report_done=True,
+                     max_narration_nudges=3)
+    loop.run("build a thing; finish with report.done")
+    assert len(gw.script) == 0          # 1 turn + 3 nudged retries consumed
+
+
+def test_default_loop_still_ends_on_plain_answer(ctx):
+    script = [ModelResponse(text="It is a synchronizer.", tool_calls=[]),
+              ModelResponse(text="unreached", tool_calls=[])]
+    gw = FakeGateway(script)
+    loop = AgentLoop(ctx, gw)
+    loop.run("what does sync_2ff do?")
+    assert len(gw.script) == 1          # Q&A: no nudge, clean single-turn end
+
+
+# --- 25. verification-cadence guard ----------------------------------------
+# A fast model authored 10 files across 70 steps with ZERO lint jobs. When N
+# writes accumulate with no check, the loop teaches the rhythm — once per
+# breach, cleared by any verification job.
+
+def test_verify_cadence_guard_fires_and_latches(ctx, tmp_path):
+    from chipchamp.agent import Session
+    wr = lambda p: ModelResponse(text="", tool_calls=[
+        {"id": p, "name": "fs.write",
+         "input": {"path": f"work/rtl/{p}.sv", "content": "module m; endmodule"}}])
+    script = [wr("a"), wr("b"), wr("c"),
+              ModelResponse(text="done", tool_calls=[])]
+    gw = FakeGateway(script)
+    sess = Session.new(str(tmp_path))
+    loop = AgentLoop(ctx, gw, session=sess, verify_every_n_writes=2)
+    loop.run("build things")
+    guard = [m for m in sess.messages if m.get("role") == "user"
+             and "without running any verification" in str(m.get("content"))]
+    assert len(guard) == 1              # fired at write 2, latched (no nag at 3)
+
+
+def test_verify_cadence_off_by_default(ctx, tmp_path):
+    from chipchamp.agent import Session
+    script = [ModelResponse(text="", tool_calls=[
+        {"id": "w", "name": "fs.write",
+         "input": {"path": "work/rtl/x.sv", "content": "module x; endmodule"}}]),
+        ModelResponse(text="done", tool_calls=[])]
+    sess = Session.new(str(tmp_path))
+    loop = AgentLoop(ctx, FakeGateway(script), session=sess)
+    loop.run("write one file")
+    assert not any("without running any verification" in str(m.get("content"))
+                   for m in sess.messages)
+
+
+# --- 26. regression-aware debug teaching + pinned library cards -------------
+# A fast model drove a lint queue 3->9->19 without noticing, while compaction
+# evicted the library cards it needed — it re-derived interfaces from memory
+# and debugged against fiction.
+
+def test_lint_regression_is_taught(ctx, tmp_path):
+    from types import SimpleNamespace as NS
+    from chipchamp.agent import Session
+    lint_counts = iter([9, 19])
+
+    fake_lint = NS(
+        handler=lambda ctx, **kw: {"status": "failed",
+                                   "errors": next(lint_counts)},
+        permission="read", description="fake lint", group="verify",
+        cost="free", schema={"type": "object", "properties": {}})
+    cat = dict(all_tools())
+    cat["lint.run"] = fake_lint
+    lint_call = ModelResponse(text="", tool_calls=[
+        {"id": "l", "name": "lint.run", "input": {}}])
+    script = [lint_call, lint_call,
+              ModelResponse(text="done", tool_calls=[])]
+    sess = Session.new(str(tmp_path))
+    loop = AgentLoop(ctx, FakeGateway(script), tools=cat, session=sess)
+    loop.run("fix the lint")
+    msgs = [m for m in sess.messages if m.get("role") == "user"
+            and "Lint errors ROSE from 9 to 19" in str(m.get("content"))]
+    assert len(msgs) == 1
+
+
+def test_compaction_pins_lib_cards():
+    from chipchamp.agent.working_set import compact
+    big = "x" * 4000
+    t = [{"role": "user", "content": "task"}]
+    for i in range(8):
+        t.append({"role": "assistant", "content": f"s{i}"})
+        t.append({"role": "tool", "content": [
+            {"id": f"a{i}", "name": "lib.info", "output": big},
+            {"id": f"b{i}", "name": "fs.read", "output": big}]})
+    out, rep = compact(t, budget_chars=40000, keep_recent=2)
+    assert rep["compacted"]
+    survivors = [r for m in out if m.get("role") == "tool"
+                 for r in m["content"] if len(str(r.get("output"))) > 3000]
+    kinds = {r["name"] for r in survivors}
+    assert "lib.info" in kinds          # pinned cards outlive fs.read bodies
+    old_fs = [r for m in out[:len(out) - 2] if m.get("role") == "tool"
+              for r in m["content"]
+              if r["name"] == "fs.read" and len(str(r["output"])) > 3000]
+    assert not old_fs or rep["under_budget"] is False
