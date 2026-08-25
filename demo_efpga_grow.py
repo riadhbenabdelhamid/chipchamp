@@ -48,6 +48,53 @@ WRAP = os.path.join(PROJECT, "user_design", "top_wrapper.v")
 DESIGN = "user_design/lfsr_bank.v"
 N_LFSR = 32          # 512 flops: decisively over the stock fabric's budget
 GROW_PAIRS = 4       # +8 logic rows → 672 BELs become 1056
+# Blinding/restore state lives OUTSIDE the agent's workspace root. In-tree
+# ".presnap"/".preblind" names are archaeology bait: a triage model globbed
+# the presnap next to the live file and unblinded itself.
+SEQUESTER = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         ".demo_sequester")
+
+
+def sequestered(pth: str) -> str:
+    os.makedirs(SEQUESTER, exist_ok=True)
+    return os.path.join(SEQUESTER, os.path.basename(pth))
+
+
+# Agent-authored flow artifacts are an answer-shaped leak into the NEXT run
+# (a blinded triage model read a prior run's probe/ logs as "pre-built
+# tests"). Manifest the project at start, sweep anything new at the end.
+def _manifest_path() -> str:
+    return sequestered("project_manifest.json")
+
+
+def snapshot_project_manifest() -> None:
+    import json
+    files = []
+    for root, _dirs, names in os.walk(PROJECT):
+        for n in names:
+            files.append(os.path.relpath(os.path.join(root, n), PROJECT))
+    with open(_manifest_path(), "w") as fh:
+        json.dump(files, fh)
+
+
+def sweep_new_project_files() -> bool:
+    import json
+    mp = _manifest_path()
+    if not os.path.exists(mp):
+        return False
+    keep = set(json.load(open(mp)))
+    for root, dirs, names in os.walk(PROJECT, topdown=False):
+        for n in names:
+            p = os.path.join(root, n)
+            if os.path.relpath(p, PROJECT) not in keep:
+                os.unlink(p)
+        for d in dirs:
+            try:
+                os.rmdir(os.path.join(root, d))   # only empties fall
+            except OSError:
+                pass
+    os.unlink(mp)
+    return True
 T = all_tools()
 C = ui.console()
 
@@ -187,18 +234,24 @@ def recover_stale_state() -> None:
     snapshots died with it and the notebook lost its original entries."""
     stale = False
     for pth in (FABRIC, WRAP):
-        if os.path.exists(pth + ".presnap"):
-            os.replace(pth + ".presnap", pth)
-            stale = True
+        # sequestered home first, legacy in-tree name for pre-fix corpses
+        for snap in (sequestered(pth), pth + ".presnap"):
+            if os.path.exists(snap):
+                os.replace(snap, pth)
+                stale = True
     nb = os.path.join(ROOT, ".chipchamp", "notebook.json")
-    if os.path.exists(nb + ".preblind"):
-        if os.path.exists(nb):
-            os.unlink(nb)
-        os.rename(nb + ".preblind", nb)
-        stale = True
+    for snap in (sequestered(nb), nb + ".preblind"):
+        if os.path.exists(snap):
+            if os.path.exists(nb):
+                os.unlink(nb)
+            os.rename(snap, nb)
+            stale = True
     runs = os.path.join(ROOT, ".chipchamp", "runs")
-    if os.path.isdir(runs + ".preblind"):
-        merge_runs_back(runs, runs + ".preblind")
+    for snap in (sequestered(runs), runs + ".preblind"):
+        if os.path.isdir(snap):
+            merge_runs_back(runs, snap)
+            stale = True
+    if sweep_new_project_files():
         stale = True
     base = os.path.join(PROJECT, os.path.splitext(DESIGN)[0])
     for ext in (".v", ".vh", ".vhd", ".csv", ".bin", ".fasm", ".json",
@@ -322,11 +375,11 @@ def agentic(ctx, model: str, max_steps: int) -> bool:
     # (passing builds of OTHER designs invite archaeology instead of science).
     nb = os.path.join(ROOT, ".chipchamp", "notebook.json")
     if os.path.exists(nb):
-        os.rename(nb, nb + ".preblind")   # on disk, so a crash can't lose it
+        os.rename(nb, sequestered(nb))   # on disk, outside the workspace
     runs = os.path.join(ROOT, ".chipchamp", "runs")
     agentic.runs_snapshot = None
     if os.path.isdir(runs):
-        agentic.runs_snapshot = runs + ".preblind"
+        agentic.runs_snapshot = sequestered(runs)
         os.rename(runs, agentic.runs_snapshot)
         os.makedirs(runs)   # an EMPTY store, not a missing one
         seq = os.path.join(agentic.runs_snapshot, "seq.txt")
@@ -431,17 +484,18 @@ def main() -> int:
     ctx = ToolContext(Workspace(ROOT))
     recover_stale_state()
     for pth in (FABRIC, WRAP):        # crash-safe restore points
-        shutil.copy2(pth, pth + ".presnap")
+        shutil.copy2(pth, sequestered(pth))
+    snapshot_project_manifest()
     banner(a.agent, a.model)
     closed = False
     try:
         closed = agentic(ctx, a.model, a.max_steps) if a.agent else scripted(ctx)
     finally:
         nb = os.path.join(ROOT, ".chipchamp", "notebook.json")
-        if os.path.exists(nb + ".preblind"):
+        if os.path.exists(sequestered(nb)):
             if os.path.exists(nb):
                 os.unlink(nb)     # in-run notes are campaign ephemera
-            os.rename(nb + ".preblind", nb)
+            os.rename(sequestered(nb), nb)
         runs_snap = getattr(agentic, "runs_snapshot", None)
         if runs_snap and os.path.isdir(runs_snap):
             merge_runs_back(os.path.join(ROOT, ".chipchamp", "runs"),
@@ -449,8 +503,9 @@ def main() -> int:
         # the chip goes back to its stock floor plan, the wrapper to the
         # stock design, and every product of the oversized design is swept
         for pth in (FABRIC, WRAP):
-            if os.path.exists(pth + ".presnap"):
-                os.replace(pth + ".presnap", pth)
+            if os.path.exists(sequestered(pth)):
+                os.replace(sequestered(pth), pth)
+        sweep_new_project_files()
         base = os.path.join(PROJECT, os.path.splitext(DESIGN)[0])
         # includes the flow's sibling emissions (.vh/.vhd/.csv) — demo A's
         # cleanup lesson, relearned here on the first scripted run

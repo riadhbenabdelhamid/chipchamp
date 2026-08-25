@@ -49,6 +49,56 @@ MATRIX = os.path.join(PROJECT, "Tile", "LUT4AB", "LUT4AB_switch_matrix.list")
 CONFIGMEM = os.path.join(PROJECT, "Tile", "LUT4AB", "LUT4AB_ConfigMem.csv")
 PIPS = os.path.join(PROJECT, ".FABulous", "pips.txt")
 DESIGN = "user_design/sequential_16bit_en.v"
+# Blinding/restore state lives OUTSIDE the agent's workspace root. In-tree
+# ".presnap"/".preblind" names are archaeology bait: a model globbed the
+# switch-matrix presnap next to the live file, read the pristine copy, and
+# unblinded itself — the filename alone names the edited file.
+SEQUESTER = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         ".demo_sequester")
+
+
+def sequestered(pth: str) -> str:
+    os.makedirs(SEQUESTER, exist_ok=True)
+    return os.path.join(SEQUESTER, os.path.basename(pth))
+
+
+# Agent-authored flow artifacts (probe designs, bitstreams, pnr logs) are an
+# answer-shaped leak into the NEXT run: a blinded model found a prior run's
+# probe/ directory and called it "pre-built tests for exactly" its problem.
+# Manifest the project at start (on disk, crash-safe), sweep anything new at
+# the end — the fifth leak class closed, same doctrine as the other four.
+def _manifest_path() -> str:
+    return sequestered("project_manifest.json")
+
+
+def snapshot_project_manifest() -> None:
+    import json
+    files = []
+    for root, _dirs, names in os.walk(PROJECT):
+        for n in names:
+            files.append(os.path.relpath(os.path.join(root, n), PROJECT))
+    with open(_manifest_path(), "w") as fh:
+        json.dump(files, fh)
+
+
+def sweep_new_project_files() -> bool:
+    import json
+    mp = _manifest_path()
+    if not os.path.exists(mp):
+        return False
+    keep = set(json.load(open(mp)))
+    for root, dirs, names in os.walk(PROJECT, topdown=False):
+        for n in names:
+            p = os.path.join(root, n)
+            if os.path.relpath(p, PROJECT) not in keep:
+                os.unlink(p)
+        for d in dirs:
+            try:
+                os.rmdir(os.path.join(root, d))   # only empties fall
+            except OSError:
+                pass
+    os.unlink(mp)
+    return True
 T = all_tools()
 C = ui.console()
 
@@ -146,18 +196,24 @@ def recover_stale_state() -> None:
     starting (the grow demo lost a notebook to in-memory-only snapshots)."""
     stale = False
     for pth in (MATRIX, CONFIGMEM):
-        if os.path.exists(pth + ".presnap"):
-            os.replace(pth + ".presnap", pth)
-            stale = True
+        # sequestered home first, legacy in-tree name for pre-fix corpses
+        for snap in (sequestered(pth), pth + ".presnap"):
+            if os.path.exists(snap):
+                os.replace(snap, pth)
+                stale = True
     nb = os.path.join(ROOT, ".chipchamp", "notebook.json")
-    if os.path.exists(nb + ".preblind"):
-        if os.path.exists(nb):
-            os.unlink(nb)
-        os.rename(nb + ".preblind", nb)
-        stale = True
+    for snap in (sequestered(nb), nb + ".preblind"):
+        if os.path.exists(snap):
+            if os.path.exists(nb):
+                os.unlink(nb)
+            os.rename(snap, nb)
+            stale = True
     runs = os.path.join(ROOT, ".chipchamp", "runs")
-    if os.path.isdir(runs + ".preblind"):
-        merge_runs_back(runs, runs + ".preblind")
+    for snap in (sequestered(runs), runs + ".preblind"):
+        if os.path.isdir(snap):
+            merge_runs_back(runs, snap)
+            stale = True
+    if sweep_new_project_files():
         stale = True
     if stale:
         C.print("[yellow]  recovered state left by a run that died "
@@ -332,7 +388,7 @@ def agentic(ctx, model: str, max_steps: int) -> bool:
     # restored in main()'s finally.
     nb = os.path.join(ROOT, ".chipchamp", "notebook.json")
     if os.path.exists(nb):
-        os.rename(nb, nb + ".preblind")   # on disk, so a crash can't lose it
+        os.rename(nb, sequestered(nb))   # on disk, outside the workspace
     # Same treatment for the JOB STORE: it spans campaigns, so it holds
     # passing bitstreams from the healthy-fabric era next to failures from
     # the broken one — the third answer-shaped leak in three runs (a blinded
@@ -343,7 +399,7 @@ def agentic(ctx, model: str, max_steps: int) -> bool:
     runs = os.path.join(ROOT, ".chipchamp", "runs")
     agentic.runs_snapshot = None
     if os.path.isdir(runs):
-        agentic.runs_snapshot = runs + ".preblind"
+        agentic.runs_snapshot = sequestered(runs)
         os.rename(runs, agentic.runs_snapshot)
         # an EMPTY store, not a missing one: the ctx's live runner keeps
         # writing here (run 3 of this campaign lost all four of the model's
@@ -473,7 +529,8 @@ def main() -> int:
                                   if os.path.exists(CONFIGMEM) else "")
     for pth in (MATRIX, CONFIGMEM):   # crash-safe restore points
         if os.path.exists(pth):
-            shutil.copy2(pth, pth + ".presnap")
+            shutil.copy2(pth, sequestered(pth))
+    snapshot_project_manifest()
     banner(a.agent, a.model)
     closed = False
     try:
@@ -482,17 +539,18 @@ def main() -> int:
         # ALWAYS put the fabric SOURCE back and regenerate, so every generated
         # artifact is coherent with the healthy source for whatever runs next
         nb = os.path.join(ROOT, ".chipchamp", "notebook.json")
-        if os.path.exists(nb + ".preblind"):
+        if os.path.exists(sequestered(nb)):
             if os.path.exists(nb):
                 os.unlink(nb)     # in-run notes are campaign ephemera
-            os.rename(nb + ".preblind", nb)
+            os.rename(sequestered(nb), nb)
         runs_snap = getattr(agentic, "runs_snapshot", None)
         if runs_snap and os.path.isdir(runs_snap):
             merge_runs_back(os.path.join(ROOT, ".chipchamp", "runs"),
                             runs_snap)
         for pth in (MATRIX, CONFIGMEM):
-            if os.path.exists(pth + ".presnap"):
-                os.replace(pth + ".presnap", pth)
+            if os.path.exists(sequestered(pth)):
+                os.replace(sequestered(pth), pth)
+        sweep_new_project_files()
         for d in __import__("glob").glob(os.path.join(PROJECT, "Tile", "*",
                                                       "macro")):
             shutil.rmtree(d, ignore_errors=True)

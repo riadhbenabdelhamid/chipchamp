@@ -57,3 +57,4 @@ work/
 # stray capture files
 /h
 **/.chipchamp/mcp-images/
+.demo_sequester/
