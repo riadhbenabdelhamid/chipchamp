@@ -31,6 +31,7 @@ Three rules the implementation is built around:
 from __future__ import annotations
 
 import json
+import re
 from typing import Optional
 
 # Fields worth keeping verbatim in a digest: verdicts, addresses and counts.
@@ -102,6 +103,25 @@ def _pointer(name: str, data: dict) -> str:
     return f"re-run {name}"
 
 
+def _pinned(r: dict) -> bool:
+    """Reference material evicts LAST: library cards, and fs.read bodies of
+    fetched sources (work/rtl/lib/*) and golden ref models. Evicting them
+    forced a re-grounding loop — 94 reads in 56 steps, the same five files
+    re-read 5-8x, and the actual deliverable never reached the queue front.
+    Authored files stay evictable: they change; re-reading them is correct."""
+    name = str(r.get("name", ""))
+    if name.startswith("lib."):
+        return True
+    if name == "fs.read":
+        m = re.search(r'"path": "([^"]+)"', str(r.get("output", "")))
+        pth = m.group(1) if m else ""
+        base = pth.rsplit("/", 1)[-1]
+        return (pth.startswith("work/rtl/lib/")
+                or (pth.startswith("work/tb/verilator/")
+                    and (base.startswith("ref_") or base == "tb_base.hpp")))
+    return False
+
+
 def compact(transcript: list[dict], *, budget_chars: int,
             keep_recent: int = 6) -> tuple[list[dict], dict]:
     """Evict old tool-result bodies until the transcript fits `budget_chars`.
@@ -136,7 +156,7 @@ def compact(transcript: list[dict], *, budget_chars: int,
                 # debugs against fiction (a lint queue rose 3->19 that way).
                 # Pin them: evicted only in a second pass, when nothing else
                 # can free enough space.
-                if skip_pinned and str(r.get("name", "")).startswith("lib."):
+                if skip_pinned and _pinned(r):
                     results.append(r)
                     continue
                 text, changed = digest_output(r.get("name", "?"),

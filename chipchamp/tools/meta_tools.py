@@ -482,3 +482,48 @@ def note_add(ctx: ToolContext, kind: str, subject: str, detail: str,
           "kind": {"type": "string"}}})
 def note_list(ctx: ToolContext, kind: str = "") -> dict:
     return truncate({"notes": ctx.notebook.entries(kind)}, max_items=30)
+
+
+@tool("checkpoint.restore", "Restore the workspace files captured at a GREEN "
+      "verification job. Checkpoints are taken automatically whenever a "
+      "lint/sim job passes; restoring puts every captured file back exactly "
+      "as it was at that green state — the escape hatch when edits have "
+      "tangled past repair.", permission="write", group="workspace",
+      schema={"type": "object", "properties": {
+          "job": {"type": "string",
+                  "description": "the green job id, e.g. J-0004"}},
+          "required": ["job"]})
+def checkpoint_restore(ctx: ToolContext, job: str) -> dict:
+    import json as _json
+    import os
+    import shutil
+    base = os.path.join(str(ctx.ws.dot), "checkpoints")
+    d = os.path.join(base, job)
+    if not os.path.isdir(d):
+        avail = sorted(os.listdir(base)) if os.path.isdir(base) else []
+        return {"error": f"no checkpoint for '{job}'."
+                + (f" Available green checkpoints: {', '.join(avail)}."
+                   if avail else " None recorded yet — a checkpoint appears "
+                   "automatically the first time a lint/sim job passes.")}
+    try:
+        manifest = _json.load(open(os.path.join(d, "manifest.json")))
+    except (OSError, ValueError):
+        return {"error": f"checkpoint '{job}' is unreadable"}
+    restored = []
+    for rel in manifest.get("files", []):
+        src = os.path.join(d, "files", rel)
+        if not os.path.exists(src):
+            continue
+        dst = os.path.join(ctx.ws.root, rel)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        old = open(dst, errors="replace").read() if os.path.exists(dst) else ""
+        new = open(src, errors="replace").read()
+        if old != new:
+            shutil.copy2(src, dst)
+            ctx.record_edit(rel, old, new, "restored")
+            restored.append(rel)
+    ctx.ws.invalidate(ctx.target_name)
+    return {"job": job, "restored": restored,
+            "unchanged": len(manifest.get("files", [])) - len(restored),
+            "note": "files are back at the green state; make MINIMAL changes "
+                    "from here and re-run the check after each one"}

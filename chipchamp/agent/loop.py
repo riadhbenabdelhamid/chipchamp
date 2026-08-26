@@ -22,6 +22,9 @@ from .providers.base import ModelResponse
 from .session import Session
 
 
+LEDGER_TAG = "[workspace ledger]"
+
+
 class AgentLoop:
     # meta tools that finish/report a task — never gated by plan mode
     _GATE_EXCLUDE = {"report.done", "evidence.bundle", "policy.check"}
@@ -170,6 +173,13 @@ class AgentLoop:
         recovered_calls = 0
         narration_nudges = 0   # consecutive text-only turns nudged to act
         writes_since_verify = 0  # authored files since the last lint/sim job
+        authored: set = set()    # files this run wrote/edited and not deleted
+        deleted: set = set()     # files this run deleted
+        last_verify = ""        # 'lint.run passed (0 errors)' style summary
+        ledger_active = False    # once anything was evicted, keep it current
+        last_green_job = ""     # newest PASSING lint/sim job (checkpointed)
+        fails_since_green = 0    # consecutive failing checks since that green
+        checkpoint_taught = False
         verify_nudged = False    # cadence guard latched until verification
         reported_done = False  # report.done accepted → text is a real answer
         made_mutating_call = False  # wrote a file / ran a job → needs report.done
@@ -217,6 +227,27 @@ class AgentLoop:
                     transcript, budget_chars=self.context_budget)
                 if moved["compacted"]:
                     self.on_event("compacted", moved)
+                    ledger_active = True
+                if ledger_active:
+                    # Pinned workspace inventory: after 21 compactions a
+                    # model claimed 'top module written, lint at 0 errors'
+                    # over a tree holding two files — it trusted evicted
+                    # memory over the filesystem. The loop's own ledger
+                    # is authoritative; keep exactly one copy, refreshed
+                    # at every compaction (user turns are never evicted).
+                    transcript = [m for m in transcript if not (
+                        m.get("role") == "user" and str(
+                            m.get("content", "")).startswith(LEDGER_TAG))]
+                    if authored or deleted:
+                        transcript.append({"role": "user", "content": (
+                            f"{LEDGER_TAG} Authoritative record kept by the "
+                            f"loop — trust it over your memory; older turns "
+                            f"were just compacted. Files you authored that "
+                            f"still exist: {', '.join(sorted(authored)) or '(none)'}. "
+                            f"Files you deleted: {', '.join(sorted(deleted)) or '(none)'}. "
+                            f"Last verification: {last_verify or 'none yet'}. "
+                            f"A file not listed as authored does NOT exist "
+                            f"— fs.list before assuming.")})
                     if self.session:
                         self.session.messages = transcript
             # the size of what is about to be sent rides on the event: it is the
@@ -420,15 +451,39 @@ class AgentLoop:
                     made_mutating_call = True  # real state change → needs report.done
                 if ok and real in ("fs.write", "fs.edit"):
                     writes_since_verify += 1
+                    _p = str((call.get("input") or {}).get("path", ""))
+                    if _p:
+                        authored.add(_p)
+                        deleted.discard(_p)
+                if ok and real == "fs.delete":
+                    _p = str((call.get("input") or {}).get("path", ""))
+                    if _p:
+                        authored.discard(_p)
+                        deleted.add(_p)
                 if real in ("lint.run", "sim.run", "cov.run", "lec.run"):
                     writes_since_verify = 0   # ran a check (pass or fail):
                     verify_nudged = False     # the loop is closing loops
+                    if isinstance(result, dict):
+                        _e = result.get("errors")
+                        last_verify = (f"{real} {result.get('status', '?')}"
+                                       + (f" ({_e} errors)" if isinstance(_e, int) else ""))
                 if real == "report.done" and ok and result.get("accepted"):
                     reported_done = True  # gates satisfied — a later text turn
                     #                       is now a legitimate final answer
                 if real == "lint.run" and isinstance(result, dict) \
                         and isinstance(result.get("errors"), int):
                     lint_err_this = result["errors"]
+                if real in ("lint.run", "sim.run") and isinstance(result, dict):
+                    _st = result.get("status")
+                    _jid = str(result.get("job") or "")
+                    if _st == "passed" or result.get("sim_status") == "pass":
+                        if _jid:
+                            self._save_green_checkpoint(_jid, authored)
+                            last_green_job = _jid
+                        fails_since_green = 0
+                        checkpoint_taught = False
+                    elif _st in ("failed", "error"):
+                        fails_since_green += 1
                 if real in ("sim.run", "synth.run", "fpga.run") \
                         and isinstance(result, dict):
                     st = result.get("status")
@@ -484,6 +539,25 @@ class AgentLoop:
                     self.session.save()
             if lint_err_this is not None:
                 last_lint_err = lint_err_this
+            # Post-green regression tangle: a run went green at J-0004, then
+            # revised itself into five straight failing lints and said "my
+            # files have drifted into a tangle... I can't see the actual
+            # on-disk wiring". Green states are checkpointed — teach the way
+            # back instead of watching the tangle grow.
+            if (last_green_job and fails_since_green >= 2
+                    and not checkpoint_taught):
+                checkpoint_taught = True
+                transcript.append({"role": "user", "content": (
+                    f"Your checks have failed {fails_since_green} times in a "
+                    f"row since {last_green_job} was GREEN. A checkpoint of "
+                    f"that green state exists: call "
+                    f"checkpoint.restore(job='{last_green_job}') to put the "
+                    f"files back exactly as they were, then make MINIMAL "
+                    f"changes from there — one error per edit, re-check "
+                    f"after each.")})
+                if self.session:
+                    self.session.messages = transcript
+                    self.session.save()
             if improved:
                 stall = 0
             elif job_failed or (lint_err_this is not None and lint_err_this > 0):
@@ -739,6 +813,35 @@ class AgentLoop:
         slug = re.sub(r"[-_.]", "", name.lower())
         hit = self._slug_map.get(slug)
         return hit if hit else name
+
+    def _save_green_checkpoint(self, job: str, authored) -> None:
+        """A passing check is a state worth being able to RETURN to: snapshot
+        every authored file under .chipchamp/checkpoints/<job>/ so
+        checkpoint.restore can undo a post-green edit tangle. Newest three
+        checkpoints are kept."""
+        import json
+        import os
+        import shutil
+        if not job or not authored:
+            return
+        base = os.path.join(str(self.ctx.ws.dot), "checkpoints")
+        d = os.path.join(base, job)
+        files = []
+        for rel in sorted(authored):
+            src = os.path.join(self.ctx.ws.root, rel)
+            if not os.path.isfile(src):
+                continue
+            dst = os.path.join(d, "files", rel)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copy2(src, dst)
+            files.append(rel)
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "manifest.json"), "w") as fh:
+            json.dump({"job": job, "files": files}, fh)
+        kids = sorted(os.listdir(base),
+                      key=lambda n: os.path.getmtime(os.path.join(base, n)))
+        for old_ck in kids[:-3]:
+            shutil.rmtree(os.path.join(base, old_ck), ignore_errors=True)
 
     def _exec(self, name: str, args: dict) -> dict:
         tool = self.tools.get(name)

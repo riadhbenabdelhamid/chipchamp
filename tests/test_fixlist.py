@@ -743,3 +743,123 @@ def test_compaction_pins_lib_cards():
               for r in m["content"]
               if r["name"] == "fs.read" and len(str(r["output"])) > 3000]
     assert not old_fs or rep["under_budget"] is False
+
+
+# --- 27. pinned workspace inventory ----------------------------------------
+# After 21 compactions a model claimed 'top module written' over a tree
+# holding two files. The loop's own write/delete ledger is authoritative:
+# exactly one copy rides in the transcript, refreshed at every compaction.
+
+def test_workspace_ledger_pinned_after_compaction(ctx, tmp_path):
+    from chipchamp.agent import Session
+    from chipchamp.agent.loop import LEDGER_TAG
+
+    def wr(name):
+        return ModelResponse(text="", tool_calls=[
+            {"id": name, "name": "fs.write",
+             "input": {"path": f"work/rtl/{name}.sv",
+                       "content": "module m; endmodule\n" + "// pad\n" * 600}}])
+    rd = ModelResponse(text="", tool_calls=[
+        {"id": "r", "name": "fs.read", "input": {"path": "work/rtl/a.sv"}}])
+    script = [wr("a"), rd, rd, wr("b"),
+              ModelResponse(text="", tool_calls=[
+                  {"id": "d", "name": "fs.delete",
+                   "input": {"path": "work/rtl/a.sv"}}]),
+              wr("c"), wr("d"), wr("e"), wr("f"),
+              ModelResponse(text="done", tool_calls=[])]
+    sess = Session.new(str(tmp_path))
+    loop = AgentLoop(ctx, FakeGateway(script), session=sess,
+                     context_budget=1)          # every step over budget
+    loop.run("write things")
+    ledgers = [m for m in sess.messages if m.get("role") == "user"
+               and str(m.get("content", "")).startswith(LEDGER_TAG)]
+    assert len(ledgers) == 1                    # exactly one copy survives
+    body = ledgers[0]["content"]
+    assert "work/rtl/b.sv" in body and "work/rtl/f.sv" in body
+    assert "deleted: work/rtl/a.sv" in body
+    assert "work/rtl/a.sv" not in body.split("Files you deleted")[0]
+
+
+# --- 28. reference reads pinned + workspace-relative write guard ------------
+# The re-grounding loop: compaction evicted fs.read bodies of fetched sources
+# and golden refs, forcing 94 reads in 56 steps. And a model wrote to
+# '/work_tmp_note' — mutating fs tools must teach the relative-path contract.
+
+def test_reference_reads_evict_last():
+    from chipchamp.agent.working_set import compact
+    big = "x" * 4000
+    mk = lambda name, path: {"id": path, "name": name,
+                             "output": '{"path": "' + path + '", "content": "'
+                                       + big + '"}'}
+    t = [{"role": "user", "content": "task"}]
+    for i in range(8):
+        t.append({"role": "assistant", "content": f"s{i}"})
+        t.append({"role": "tool", "content": [
+            mk("fs.read", "work/rtl/lib/stream_fifo.sv"),
+            mk("fs.read", "work/tb/verilator/ref_stream_mux.hpp"),
+            mk("fs.read", "work/rtl/my_glue.sv")]})
+    out, rep = compact(t, budget_chars=70000, keep_recent=2)
+    assert rep["compacted"]
+    survivors = {r["id"] for m in out if m.get("role") == "tool"
+                 for r in m["content"] if len(str(r.get("output"))) > 3000}
+    assert "work/rtl/lib/stream_fifo.sv" in survivors        # pinned
+    assert "work/tb/verilator/ref_stream_mux.hpp" in survivors
+    # under REAL pressure the second sweep may still take them — only assert
+    # the authored-file bodies went first
+    out2, rep2 = compact(t, budget_chars=2000, keep_recent=2)
+    assert rep2["compacted"]                                 # both sweeps ran
+
+
+def test_mutating_fs_tools_teach_relative_paths(ctx):
+    from chipchamp.tools.fs_tools import fs_delete, fs_edit, fs_write
+    out = fs_write(ctx, "/work_tmp_note", "x")
+    assert "workspace-relative" in out["error"]
+    out = fs_edit(ctx, "/etc/hosts", "a", "b")
+    assert "workspace-relative" in out["error"]
+    out = fs_delete(ctx, "../outside.txt")
+    assert "escapes the workspace" in out["error"]
+    assert not __import__("os").path.exists("/work_tmp_note")
+
+
+# --- 29. green-state checkpointing ------------------------------------------
+# A run went green at J-0004, revised itself into five straight failing lints
+# ("my files have drifted into a tangle"), and had no way back. Green states
+# are now snapshotted; a post-green failing streak teaches checkpoint.restore.
+
+def test_green_checkpoint_snapshot_teach_restore(tmp_path):
+    import os
+    from types import SimpleNamespace as NS
+    from chipchamp.agent import Session
+    from chipchamp.config import Workspace
+    from chipchamp.tools.context import ToolContext
+    from chipchamp.tools.meta_tools import checkpoint_restore
+    ctx = ToolContext(Workspace(str(tmp_path)))
+    seq = iter([{"status": "passed", "job": "J-0001", "errors": 0},
+                {"status": "failed", "job": "J-0002", "errors": 3},
+                {"status": "failed", "job": "J-0003", "errors": 5}])
+    fake_lint = NS(handler=lambda ctx, **kw: next(seq), permission="read",
+                   description="fake lint", group="verify", cost="free",
+                   schema={"type": "object", "properties": {}})
+    cat = dict(all_tools())
+    cat["lint.run"] = fake_lint
+    wr = lambda txt: ModelResponse(text="", tool_calls=[
+        {"id": txt, "name": "fs.write",
+         "input": {"path": "work/rtl/m.sv", "content": txt}}])
+    lint = ModelResponse(text="", tool_calls=[
+        {"id": "l", "name": "lint.run", "input": {}}])
+    script = [wr("GREEN"), lint, wr("BROKEN"), lint, lint,
+              ModelResponse(text="done", tool_calls=[])]
+    sess = Session.new(str(tmp_path / "s"))
+    loop = AgentLoop(ctx, FakeGateway(script), tools=cat, session=sess)
+    loop.run("build; finish with report.done")
+    ck = tmp_path / ".chipchamp" / "checkpoints" / "J-0001"
+    assert (ck / "files" / "work" / "rtl" / "m.sv").read_text() == "GREEN"
+    taught = [m for m in sess.messages if m.get("role") == "user"
+              and "checkpoint.restore(job='J-0001')" in str(m.get("content"))]
+    assert len(taught) == 1
+    assert (tmp_path / "work" / "rtl" / "m.sv").read_text() == "BROKEN"
+    out = checkpoint_restore(ctx, job="J-0001")
+    assert out["restored"] == ["work/rtl/m.sv"]
+    assert (tmp_path / "work" / "rtl" / "m.sv").read_text() == "GREEN"
+    out = checkpoint_restore(ctx, job="J-9999")
+    assert "no checkpoint" in out["error"] and "J-0001" in out["error"]

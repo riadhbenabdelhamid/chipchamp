@@ -134,13 +134,33 @@ def fs_grep(ctx: ToolContext, pattern: str, glob: str = "") -> dict:
     return truncate({"pattern": pattern, "hits": hits}, max_items=40)
 
 
+def _workspace_path_guard(ctx, path: str):
+    """Mutating fs tools take WORKSPACE-RELATIVE paths only. A model wrote to
+    '/work_tmp_note' (filesystem root) and got a raw PermissionError — teach
+    the contract instead, and refuse workspace escapes outright."""
+    if os.path.isabs(path):
+        return {"error": f"absolute path not allowed: '{path}'. File paths "
+                         f"are workspace-relative — e.g. work/rtl/<name>.sv."}
+    root = os.path.realpath(ctx.ws.root)
+    ap = os.path.realpath(os.path.join(root, path))
+    if ap != root and not ap.startswith(root + os.sep):
+        return {"error": f"path escapes the workspace: '{path}'. Use a "
+                         f"workspace-relative path under the project root."}
+    return None
+
+
 @tool("fs.write", "Create or overwrite a file (policy/ACL-gated; recorded for "
       "gating). Refuses generated outputs and protected paths.", permission="write",
       group="workspace",
       schema={"type": "object", "properties": {
           "path": {"type": "string"}, "content": {"type": "string"}},
           "required": ["path", "content"]})
+
+
 def fs_write(ctx: ToolContext, path: str, content: str) -> dict:
+    bad = _workspace_path_guard(ctx, path)
+    if bad:
+        return bad
     ok, why = ctx.policy.can_write(path)
     if not ok:
         return {"error": f"write denied: {why}"}
@@ -234,6 +254,9 @@ def _nearest_raw(text: str, old: str, window: int = 2) -> dict | None:
       schema={"type": "object", "properties": {
           "path": {"type": "string"}}, "required": ["path"]})
 def fs_delete(ctx: ToolContext, path: str) -> dict:
+    bad = _workspace_path_guard(ctx, path)
+    if bad:
+        return bad
     ok, why = ctx.policy.can_write(path)
     if not ok:
         return {"error": f"delete denied: {why}"}
@@ -258,6 +281,9 @@ def fs_delete(ctx: ToolContext, path: str) -> dict:
           "path": {"type": "string"}, "old": {"type": "string"}, "new": {"type": "string"}},
           "required": ["path", "old", "new"]})
 def fs_edit(ctx: ToolContext, path: str, old: str, new: str) -> dict:
+    bad = _workspace_path_guard(ctx, path)
+    if bad:
+        return bad
     ok, why = ctx.policy.can_write(path)
     if not ok:
         return {"error": f"write denied: {why}"}
