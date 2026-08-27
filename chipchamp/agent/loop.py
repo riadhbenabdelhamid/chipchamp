@@ -22,6 +22,31 @@ from .providers.base import ModelResponse
 from .session import Session
 
 
+_PLAN_CUE = re.compile(
+    r"(?:\b(?:let me|i will|i'll|next,? i|now i(?:'ll| will)|the "
+    r"(?:proportional |minimal |correct |right )?fix is|i need to|"
+    r"i must)\b[^.\n]{8,240})", re.I)
+
+
+def _stated_plan(text: str) -> str:
+    """The model's own next-step sentence, if its turn contains one."""
+    m = _PLAN_CUE.search(text or "")
+    return m.group(0).strip() if m else ""
+
+
+_MODULE_HDR = re.compile(
+    r"\bmodule\s+(\w+)\s*(?:#\s*\((?:[^()]|\([^()]*\))*\)\s*)?\(([^;]*?)\)\s*;",
+    re.S)
+
+
+def _port_signatures(text: str) -> dict:
+    """{module_name: normalized ANSI port list} for every module in text."""
+    out = {}
+    for m in _MODULE_HDR.finditer(text or ""):
+        out[m.group(1)] = re.sub(r"\s+", " ", m.group(2)).strip()
+    return out
+
+
 LEDGER_TAG = "[workspace ledger]"
 
 
@@ -116,6 +141,7 @@ class AgentLoop:
         # written). After N consecutive non-constructive turns on a green,
         # unchanged state, name the plan's next unfinished step and demand it.
         self.progress_guard_after = max(0, int(progress_guard_after or 0))
+        self._port_sigs: dict = {}   # module -> port-list signature last seen
         self._refresh_api_tools()
 
     def _refresh_api_tools(self) -> None:
@@ -191,6 +217,7 @@ class AgentLoop:
         mutated_since_green = True  # no green yet counts as 'not settled'
         idle_turns = 0           # consecutive turns with no constructive call
         progress_taught = False
+        pending_teach: list = []  # interface-change teachings for this step
         verify_nudged = False    # cadence guard latched until verification
         reported_done = False  # report.done accepted → text is a real answer
         made_mutating_call = False  # wrote a file / ran a job → needs report.done
@@ -371,15 +398,26 @@ class AgentLoop:
                     if (engaged and not reported_done
                             and narration_nudges < self.max_narration_nudges):
                         narration_nudges += 1
+                        # A run died narrating a fix it had already
+                        # diagnosed ('the proportional fix is ...') three
+                        # times through this nudge. Quote the model's own
+                        # plan back as the directive — the knowledge is
+                        # there; only the act is missing.
+                        quoted = _stated_plan(resp.text or "")
+                        lead = (f"You wrote: \"{quoted}\" — that is a plan, "
+                                f"not an action. Execute it NOW as a tool "
+                                f"call. " if quoted else
+                                "You ended with a message but no tool call, "
+                                "and report.done has not accepted this task. ")
                         transcript.append({"role": "user", "content": (
-                            "You ended with a message but no tool call, and "
-                            "report.done has not accepted this task. If you are "
-                            "genuinely finished, call report.done now — it is "
-                            "the ONLY way to complete and it validates your work "
-                            "against the required gates against real job "
-                            "records. Otherwise take the NEXT concrete action as "
-                            "a tool call. Do NOT describe what you will do, and "
-                            "do NOT claim success in prose — act.")})
+                            lead
+                            + "If you are genuinely finished, call "
+                            "report.done now — it is the ONLY way to complete "
+                            "and it validates your work against the required "
+                            "gates against real job records. Otherwise take "
+                            "the NEXT concrete action as a tool call. Do NOT "
+                            "describe what you will do, and do NOT claim "
+                            "success in prose — act.")})
                         if self.session:
                             self.session.messages = transcript
                             self.session.save()
@@ -462,6 +500,10 @@ class AgentLoop:
                     made_mutating_call = True  # real state change → needs report.done
                 if ok and real in ("fs.write", "fs.edit"):
                     writes_since_verify += 1
+                    _teach = self._port_change_teaching(
+                        str((call.get("input") or {}).get("path", "")))
+                    if _teach:
+                        pending_teach.append(_teach)
                     _p = str((call.get("input") or {}).get("path", ""))
                     if _p:
                         authored.add(_p)
@@ -512,6 +554,9 @@ class AgentLoop:
                                 "output": _stringify(result)})
                 self.on_event("tool_result", {"name": real, "result": result})
             transcript.append({"role": "tool", "content": results})
+            for _msg in pending_teach:
+                transcript.append({"role": "user", "content": _msg})
+            pending_teach = []
             if (self.verify_every_n_writes
                     and writes_since_verify >= self.verify_every_n_writes
                     and not verify_nudged):
@@ -856,6 +901,57 @@ class AgentLoop:
         slug = re.sub(r"[-_.]", "", name.lower())
         hit = self._slug_map.get(slug)
         return hit if hit else name
+
+    def _port_change_teaching(self, rel: str) -> str:
+        """After a module's PORT LIST changes, name every file that
+        instantiates it. A run rewrote chan_tagger's ports and left the top's
+        instance stale — 8 PINNOTFOUND errors it then narrated about until
+        its nudges ran out. The change is mechanical to detect; make it
+        mechanical to hear."""
+        import os
+        if not rel or not rel.endswith((".sv", ".v")):
+            return ""
+        root = self.ctx.ws.root
+        try:
+            text = open(os.path.join(root, rel), errors="replace").read()
+        except OSError:
+            return ""
+        changed = []
+        for name, sig in _port_signatures(text).items():
+            prev = self._port_sigs.get(name)
+            self._port_sigs[name] = sig
+            if prev is not None and prev != sig:
+                changed.append(name)
+        if not changed:
+            return ""
+        hits: dict = {}
+        for dirpath, _dirs, files in os.walk(root):
+            if "/lib" in dirpath or "/.chipchamp" in dirpath:
+                continue
+            for fn in files:
+                if not fn.endswith((".sv", ".v")):
+                    continue
+                fp = os.path.join(dirpath, fn)
+                frel = os.path.relpath(fp, root)
+                if frel == rel:
+                    continue
+                try:
+                    body = open(fp, errors="replace").read()
+                except OSError:
+                    continue
+                for name in changed:
+                    if re.search(r"\b" + re.escape(name)
+                                 + r"\s+(?:#\s*\([^;]*?\)\s*)?\w+\s*\(",
+                                 body):
+                        hits.setdefault(name, []).append(frel)
+        if not hits:
+            return ""
+        parts = [f"`{n}` is instantiated in {', '.join(sorted(set(f)))}"
+                 for n, f in hits.items()]
+        return (f"You changed the PORT LIST of {', '.join('`'+n+'`' for n in hits)} "
+                f"in {rel}. {'; '.join(parts)} — update those instances NOW, "
+                f"in this turn, before running lint (a stale instance is "
+                f"exactly what PINNOTFOUND errors mean).")
 
     def _save_green_checkpoint(self, job: str, authored) -> None:
         """A passing check is a state worth being able to RETURN to: snapshot

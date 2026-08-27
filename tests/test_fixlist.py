@@ -913,3 +913,49 @@ def test_progress_guard_off_by_default(tmp_path):
     AgentLoop(ctx, FakeGateway(script), session=sess).run("look around")
     assert not any("GREEN and UNCHANGED" in str(m.get("content"))
                    for m in sess.messages)
+
+
+# --- 31. interface-change propagation + quote-back nudge --------------------
+# A run rewrote chan_tagger's ports, left the top's instance stale (8
+# PINNOTFOUND), correctly diagnosed 'the proportional fix is ...' and then
+# narrated that plan through all three nudges. Two teachings: name the files
+# that instantiate a module whose ports changed, and quote a stated plan
+# back as the directive.
+
+def test_port_change_names_instantiating_files(tmp_path):
+    from chipchamp.agent import Session
+    from chipchamp.config import Workspace
+    from chipchamp.tools.context import ToolContext
+    ctx = ToolContext(Workspace(str(tmp_path)))
+    leaf_v1 = "module leaf(input a, output b); assign b = a; endmodule\n"
+    leaf_v2 = ("module leaf(input a, input c, output b); "
+               "assign b = a ^ c; endmodule\n")
+    top = ("module top(input x, output y);\n"
+           "  leaf u_leaf (.a(x), .b(y));\nendmodule\n")
+    w = lambda i, p, c: ModelResponse(text="", tool_calls=[
+        {"id": i, "name": "fs.write", "input": {"path": p, "content": c}}])
+    script = [w("1", "work/rtl/leaf.sv", leaf_v1),
+              w("2", "work/rtl/top.sv", top),
+              w("3", "work/rtl/leaf.sv", leaf_v2),
+              ModelResponse(text="done", tool_calls=[])]
+    sess = Session.new(str(tmp_path / "s"))
+    AgentLoop(ctx, FakeGateway(script), session=sess).run("build")
+    taught = [m for m in sess.messages if m.get("role") == "user"
+              and "PORT LIST of `leaf`" in str(m.get("content"))]
+    assert len(taught) == 1                       # only on the CHANGE, not v1
+    assert "work/rtl/top.sv" in taught[0]["content"]
+
+
+def test_narration_nudge_quotes_stated_plan(ctx, tmp_path):
+    from chipchamp.agent import Session
+    script = [ModelResponse(text="Errors are clear. The proportional fix is to "
+                                 "re-declare slice_s_ready in the top module. "
+                                 "Let me do that next.", tool_calls=[]),
+              ModelResponse(text="ok", tool_calls=[]),
+              ModelResponse(text="ok", tool_calls=[])]
+    sess = Session.new(str(tmp_path))
+    AgentLoop(ctx, FakeGateway(script), session=sess,
+              require_report_done=True, max_narration_nudges=2).run("fix it")
+    nudges = [m for m in sess.messages if m.get("role") == "user"
+              and "that is a plan, not an action" in str(m.get("content"))]
+    assert nudges and "re-declare slice_s_ready" in nudges[0]["content"]
