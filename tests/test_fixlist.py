@@ -959,3 +959,159 @@ def test_narration_nudge_quotes_stated_plan(ctx, tmp_path):
     nudges = [m for m in sess.messages if m.get("role") == "user"
               and "that is a plan, not an action" in str(m.get("content"))]
     assert nudges and "re-declare slice_s_ready" in nudges[0]["content"]
+
+
+# --- 32. a budget stop is loud, never masked by the model's last prose -------
+# Every run of a campaign ended at ~2,000,000 tokens and was autopsied as
+# 'died narrating' — the ledger's ceiling ended them and the last turn's text
+# stood in for the reason.
+
+def test_token_budget_stop_is_surfaced(tmp_path):
+    # own workspace: the ledger is persisted per workspace and the shared
+    # fixture's has accumulated real campaign usage
+    from chipchamp.agent import Session
+    from chipchamp.config import Workspace
+    from chipchamp.tools.context import ToolContext
+    (tmp_path / ".chipchamp").mkdir()
+    (tmp_path / ".chipchamp" / "config.toml").write_text(
+        "[budgets.default]\nmodel_tokens = 100000\n")
+    ctx = ToolContext(Workspace(str(tmp_path)))
+    r = ModelResponse(text="Let me keep going with the next step.",
+                      tool_calls=[{"id": "l", "name": "fs.list", "input": {}}])
+    r.input_tokens, r.output_tokens = 60_000, 50_000   # 110k > 100k after one call
+    script = [r, ModelResponse(text="unreached", tool_calls=[])]
+    sess = Session.new(str(tmp_path / "s"))
+    gw = FakeGateway(script)
+    out = AgentLoop(ctx, gw, session=sess).run("work")
+    assert out["budget_stop"]                       # explicit, machine-readable
+    assert "token budget exhausted" in out["text"]  # and in the prose
+    assert len(gw.script) == 1                      # exactly one call, then stop
+
+
+# --- 33. scope-aware verification state + same-step ledger refresh -----------
+# A run alternated lint(work/rtl) [green] and lint(work/rtl, top=...) [15
+# errors] on an UNCHANGED tree; the progress guard said 'GREEN and UNCHANGED'
+# while the ledger (refreshed a step later) said 'failed (15 errors)'.
+
+def _tmp_ctx(tmp_path):
+    from chipchamp.config import Workspace
+    from chipchamp.tools.context import ToolContext
+    (tmp_path / ".chipchamp").mkdir(exist_ok=True)
+    return ToolContext(Workspace(str(tmp_path)))
+
+
+def _fake_lint_by_scope():
+    from types import SimpleNamespace as NS
+    n = {"i": 0}
+
+    def handler(ctx, **kw):
+        n["i"] += 1
+        if kw.get("top"):
+            return {"status": "failed", "job": f"J-{n['i']:04d}", "errors": 15}
+        return {"status": "passed", "job": f"J-{n['i']:04d}", "errors": 0}
+    return NS(handler=handler, permission="read", description="fake lint",
+              group="verify", cost="free",
+              schema={"type": "object", "properties": {}})
+
+
+def test_green_is_scope_aware_and_teaches_the_gap(tmp_path):
+    from chipchamp.agent import Session
+    ctx = _tmp_ctx(tmp_path)
+    ctx.plan = [{"step": "write the harness", "status": "pending"}]
+    cat = dict(all_tools())
+    cat["lint.run"] = _fake_lint_by_scope()
+    wr = ModelResponse(text="", tool_calls=[
+        {"id": "w", "name": "fs.write",
+         "input": {"path": "work/rtl/m.sv", "content": "module m; endmodule"}}])
+    lint_files = ModelResponse(text="", tool_calls=[
+        {"id": "l1", "name": "lint.run", "input": {"paths": ["work/rtl"]}}])
+    lint_top = ModelResponse(text="", tool_calls=[
+        {"id": "l2", "name": "lint.run",
+         "input": {"paths": ["work/rtl"], "top": "m"}}])
+    rd = ModelResponse(text="", tool_calls=[
+        {"id": "r", "name": "fs.read", "input": {"path": "work/rtl/m.sv"}}])
+    script = [wr, lint_files, lint_top, rd, rd, rd, lint_files,
+              ModelResponse(text="done", tool_calls=[])]
+    sess = Session.new(str(tmp_path / "s"))
+    AgentLoop(ctx, FakeGateway(script), tools=cat, session=sess,
+              progress_guard_after=2).run("build; finish with report.done")
+    msgs = [str(m.get("content")) for m in sess.messages
+            if m.get("role") == "user"]
+    # file-level pass banked a checkpoint (tree was green at that moment)
+    assert (tmp_path / ".chipchamp" / "checkpoints" / "J-0001").is_dir()
+    # the stronger scope failing on the SAME tree is taught as the open gap
+    gap = [m for m in msgs if "is green on this tree and need not be repeated"
+           in m and "J-0002 FAILED on the SAME tree with 15 errors" in m]
+    assert len(gap) == 1
+    # with a current failure the tree is NOT green: no progress-guard claim
+    assert not any("GREEN and UNCHANGED" in m for m in msgs)
+    # re-running the file-level scope on the unchanged tree is redundant
+    assert any("already has a current result on this unchanged tree" in m
+               for m in msgs)
+
+
+def test_ledger_refreshes_in_the_same_step(tmp_path):
+    from chipchamp.agent import Session
+    from chipchamp.agent.loop import LEDGER_TAG
+    ctx = _tmp_ctx(tmp_path)
+    big = "module m; endmodule\n" + "// pad\n" * 600
+
+    def wr(name):
+        return ModelResponse(text="", tool_calls=[
+            {"id": name, "name": "fs.write",
+             "input": {"path": f"work/rtl/{name}.sv", "content": big}}])
+    rd = ModelResponse(text="", tool_calls=[
+        {"id": "r", "name": "fs.read", "input": {"path": "work/rtl/a.sv"}}])
+    script = [wr("a"), rd, rd, rd, rd, rd, rd, wr("b")]   # ends on a tool turn
+    sess = Session.new(str(tmp_path / "s"))
+    AgentLoop(ctx, FakeGateway(script), session=sess, max_steps=8,
+              context_budget=1).run("write things")
+    t = sess.messages
+    last_tool = max(i for i, m in enumerate(t) if m.get("role") == "tool")
+    ledgers = [i for i, m in enumerate(t) if m.get("role") == "user"
+               and str(m.get("content", "")).startswith(LEDGER_TAG)]
+    assert len(ledgers) == 1
+    assert ledgers[0] > last_tool                     # refreshed after results
+    assert "work/rtl/b.sv" in t[ledgers[0]]["content"]  # and current
+
+
+# --- 34. chunked authoring after a length-stop ------------------------------
+# A run died on three consecutive 32K length-stops trying to emit a whole C++
+# harness in one turn; the generic 'continue' nudge invited the same
+# oversized attempt. Teach parts-then-fill instead.
+
+def _cut_off(text, reasoning=""):
+    r = ModelResponse(text=text, tool_calls=[])
+    r.stop_reason = "length"
+    r.reasoning = reasoning
+    return r
+
+
+def test_length_stop_teaches_parts_when_writing_a_file(ctx, tmp_path):
+    from chipchamp.agent import Session
+    script = [_cut_off('I will now write the harness: fs.write({"path": '
+                       '"work/tb/verilator/harness_merge.cpp", "content": '
+                       '"#include <verilated.h>'),
+              ModelResponse(text="ok", tool_calls=[])]
+    sess = Session.new(str(tmp_path))
+    AgentLoop(ctx, FakeGateway(script), session=sess).run("build the harness")
+    nudges = [str(m.get("content")) for m in sess.messages
+              if m.get("role") == "user"]
+    part = [n for n in nudges if "Write it in PARTS" in n
+            or "in PARTS instead" in n]
+    assert part, nudges
+    assert "harness_merge.cpp" in part[0]
+    assert "skeleton" in part[0] and "fs.edit" in part[0]
+
+
+def test_repeated_length_stops_teach_parts_even_without_a_path(ctx, tmp_path):
+    from chipchamp.agent import Session
+    script = [_cut_off("Let me reason about the design at length..."),
+              _cut_off("Continuing the deliberation..."),
+              ModelResponse(text="ok", tool_calls=[])]
+    sess = Session.new(str(tmp_path))
+    AgentLoop(ctx, FakeGateway(script), session=sess).run("think")
+    nudges = [str(m.get("content")) for m in sess.messages
+              if m.get("role") == "user"]
+    assert any("Continue from where you stopped" in n for n in nudges)  # 1st
+    assert any("in PARTS instead" in n for n in nudges)                  # 2nd

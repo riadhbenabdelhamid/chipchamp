@@ -47,6 +47,45 @@ def _port_signatures(text: str) -> dict:
     return out
 
 
+def _verify_key(tool: str, inp: dict):
+    """(key, scope, rank) for a verification call. Two lints with different
+    scopes (file-level vs elaboration with a top) are DIFFERENT checks: a run
+    alternated between them on an unchanged tree and the loop called the
+    tree 'green' on the weaker pass while the stronger one was red."""
+    inp = inp or {}
+    parts = []
+    for k in sorted(inp):
+        v = inp[k]
+        parts.append(f"{k}={','.join(map(str, v)) if isinstance(v, list) else v}")
+    scope = " ".join(parts) or "default"
+    rank = {"lint.run": 0, "sim.run": 2, "cov.run": 2, "lec.run": 2}.get(tool, 1)
+    if tool == "lint.run" and inp.get("top"):
+        rank = 1
+    return (tool, scope), scope, rank
+
+
+_WRITE_CUE = re.compile(
+    r'"?(?:path|file)"?\s*[:=]\s*"([^"\n]{3,120}\.(?:sv|svh|v|vh|cpp|hpp|h|c|py|md|yaml|yml|json))"',
+    re.I)
+
+
+def _truncated_write_target(resp) -> str:
+    """The file a cut-off turn was in the middle of writing, if any. A run
+    died on three consecutive 32K length-stops trying to emit a whole C++
+    harness in one turn; the generic 'continue' nudge just invited the same
+    oversized attempt again."""
+    blob = (getattr(resp, "text", "") or "")
+    tail = (getattr(resp, "reasoning", "") or "")[-4000:]
+    for hay in (blob, tail):
+        m = _WRITE_CUE.search(hay or "")
+        if m:
+            return m.group(1)
+    # a bare fs.write mention without a parsable path still signals authoring
+    if re.search(r"fs[_.]{1,2}write", (blob + tail), re.I):
+        return "the file you were writing"
+    return ""
+
+
 LEDGER_TAG = "[workspace ledger]"
 
 
@@ -201,6 +240,7 @@ class AgentLoop:
         system = self.system_prompt(task=user_prompt)
         self._warn_if_window_too_small(system)
         final_text = ""
+        budget_stop = ""
         step = 0
         empty_turns = 0
         length_stops = 0
@@ -209,12 +249,34 @@ class AgentLoop:
         writes_since_verify = 0  # authored files since the last lint/sim job
         authored: set = set()    # files this run wrote/edited and not deleted
         deleted: set = set()     # files this run deleted
-        last_verify = ""        # 'lint.run passed (0 errors)' style summary
         ledger_active = False    # once anything was evicted, keep it current
-        last_green_job = ""     # newest PASSING lint/sim job (checkpointed)
+        epoch = 0                # bumps on every mutation of the tree
+        checks: dict = {}        # (tool, scope) -> result stamped with its epoch
+        green_epoch = -1         # epoch at which the tree was last fully green
+        green_job = ""           # strongest passing job at that green
         fails_since_green = 0    # consecutive failing checks since that green
         checkpoint_taught = False
-        mutated_since_green = True  # no green yet counts as 'not settled'
+        scope_taught: set = set()   # (key, epoch, kind) already taught
+
+        def _verify_summary() -> str:
+            cur = [v for v in checks.values() if v["epoch"] == epoch]
+            if not cur:
+                return "none yet on this tree (re-run your checks after edits)"
+            return "; ".join(
+                f"{v['tool']}({v['scope']}) {v['job']} "
+                + ("passed" if v["passed"] else
+                   (f"FAILED ({v['errors']} errors)"
+                    if isinstance(v["errors"], int) else "FAILED"))
+                for v in sorted(cur, key=lambda v: -v["rank"]))
+
+        def _ledger_msg() -> str:
+            return (f"{LEDGER_TAG} Authoritative record kept by the loop — "
+                    f"trust it over your memory. Files you authored that "
+                    f"still exist: {', '.join(sorted(authored)) or '(none)'}. "
+                    f"Files you deleted: {', '.join(sorted(deleted)) or '(none)'}. "
+                    f"Verification on the CURRENT tree: {_verify_summary()}. "
+                    f"A file not listed as authored does NOT exist — fs.list "
+                    f"before assuming.")
         idle_turns = 0           # consecutive turns with no constructive call
         progress_taught = False
         pending_teach: list = []  # interface-change teachings for this step
@@ -251,7 +313,12 @@ class AgentLoop:
             ok, why = self.ctx.ledger.can_spend_tokens()
             if not ok:
                 self.on_event("budget_block", {"name": "model", "reason": why})
-                final_text = final_text or why
+                # A whole campaign misread this exit as 'died narrating':
+                # the model's last prose stood in for the reason. Keep the
+                # prose, but make the stop itself unmistakable in the result.
+                budget_stop = why
+                final_text = (final_text + "\n\n" if final_text else "") + \
+                    f"(stopped: model token budget exhausted — {why})"
                 break
             if self._prompt_dirty:
                 system = self.system_prompt(task=user_prompt)
@@ -277,15 +344,8 @@ class AgentLoop:
                         m.get("role") == "user" and str(
                             m.get("content", "")).startswith(LEDGER_TAG))]
                     if authored or deleted:
-                        transcript.append({"role": "user", "content": (
-                            f"{LEDGER_TAG} Authoritative record kept by the "
-                            f"loop — trust it over your memory; older turns "
-                            f"were just compacted. Files you authored that "
-                            f"still exist: {', '.join(sorted(authored)) or '(none)'}. "
-                            f"Files you deleted: {', '.join(sorted(deleted)) or '(none)'}. "
-                            f"Last verification: {last_verify or 'none yet'}. "
-                            f"A file not listed as authored does NOT exist "
-                            f"— fs.list before assuming.")})
+                        transcript.append({"role": "user",
+                                           "content": _ledger_msg()})
                     if self.session:
                         self.session.messages = transcript
             # the size of what is about to be sent rides on the event: it is the
@@ -468,12 +528,27 @@ class AgentLoop:
                                                     "synthetic": True})
                     break
                 if truncated:
-                    nudge = ("Your previous message was cut off at the token "
-                             "limit (finish_reason=length) before you finished."
-                             " Continue from where you stopped — if you were "
-                             "about to call a tool, emit that tool call now. "
-                             "Be concise; do not restart or re-plan from "
-                             "scratch.")
+                    target = _truncated_write_target(resp)
+                    if target or length_stops >= 2:
+                        what = target or "the file you were writing"
+                        nudge = (
+                            f"Your turn was cut off at the token limit "
+                            f"(finish_reason=length) while writing {what}. "
+                            f"The content does NOT fit in one turn — emitting "
+                            f"it again the same way will be cut off again "
+                            f"(this has now happened {length_stops}x). Write "
+                            f"it in PARTS instead: first fs.write a compact "
+                            f"skeleton (includes, module/class declaration, "
+                            f"function stubs with TODO bodies), then fill one "
+                            f"section per turn with fs.edit, verifying as you "
+                            f"go. Start with the skeleton NOW.")
+                    else:
+                        nudge = ("Your previous message was cut off at the "
+                                 "token limit (finish_reason=length) before "
+                                 "you finished. Continue from where you "
+                                 "stopped — if you were about to call a tool, "
+                                 "emit that tool call now. Be concise; do not "
+                                 "restart or re-plan from scratch.")
                 else:
                     nudge = ("Your previous reply was empty. Respond now with "
                              "either a tool call or a concise final answer as "
@@ -508,8 +583,9 @@ class AgentLoop:
                     if _p:
                         authored.add(_p)
                         deleted.discard(_p)
-                if ok and real in ("fs.write", "fs.edit", "fs.delete"):
-                    mutated_since_green = True
+                if ok and real in ("fs.write", "fs.edit", "fs.delete",
+                                   "checkpoint.restore"):
+                    epoch += 1
                 if ok and real == "fs.delete":
                     _p = str((call.get("input") or {}).get("path", ""))
                     if _p:
@@ -518,10 +594,6 @@ class AgentLoop:
                 if real in ("lint.run", "sim.run", "cov.run", "lec.run"):
                     writes_since_verify = 0   # ran a check (pass or fail):
                     verify_nudged = False     # the loop is closing loops
-                    if isinstance(result, dict):
-                        _e = result.get("errors")
-                        last_verify = (f"{real} {result.get('status', '?')}"
-                                       + (f" ({_e} errors)" if isinstance(_e, int) else ""))
                 if real == "report.done" and ok and result.get("accepted"):
                     reported_done = True  # gates satisfied — a later text turn
                     #                       is now a legitimate final answer
@@ -530,16 +602,64 @@ class AgentLoop:
                     lint_err_this = result["errors"]
                 if real in ("lint.run", "sim.run") and isinstance(result, dict):
                     _st = result.get("status")
-                    _jid = str(result.get("job") or "")
-                    if _st == "passed" or result.get("sim_status") == "pass":
-                        if _jid:
-                            self._save_green_checkpoint(_jid, authored)
-                            last_green_job = _jid
-                            mutated_since_green = False
-                        fails_since_green = 0
-                        checkpoint_taught = False
-                    elif _st in ("failed", "error"):
-                        fails_since_green += 1
+                    _passed = _st == "passed" or result.get("sim_status") == "pass"
+                    _failed = _st in ("failed", "error")
+                    if _passed or _failed:
+                        _jid = str(result.get("job") or "")
+                        _key, _scope, _rank = _verify_key(
+                            real, call.get("input") or {})
+                        _prev = checks.get(_key)
+                        if (_prev and _prev["epoch"] == epoch
+                                and (_key, epoch, "redo") not in scope_taught):
+                            # same check, same tree: the job cache made it
+                            # cheap, but it still cost a step and taught
+                            # nothing — say so once
+                            scope_taught.add((_key, epoch, "redo"))
+                            pending_teach.append(
+                                f"{real}({_scope}) already has a current "
+                                f"result on this unchanged tree: "
+                                f"{_prev['job']} "
+                                f"{'passed' if _prev['passed'] else 'FAILED'}. "
+                                f"Re-running it adds nothing — act on the "
+                                f"open problem instead.")
+                        checks[_key] = {"job": _jid, "passed": _passed,
+                                        "epoch": epoch, "rank": _rank,
+                                        "scope": _scope, "tool": real,
+                                        "errors": result.get("errors")}
+                        cur = [v for v in checks.values()
+                               if v["epoch"] == epoch]
+                        if _passed:
+                            if all(v["passed"] for v in cur):
+                                # green means EVERY current check passes;
+                                # checkpoint under the strongest of them
+                                strongest = max(cur, key=lambda v: v["rank"])
+                                if strongest["job"]:
+                                    self._save_green_checkpoint(
+                                        strongest["job"], authored)
+                                    green_job = strongest["job"]
+                                green_epoch = epoch
+                                fails_since_green = 0
+                                checkpoint_taught = False
+                        else:
+                            fails_since_green += 1
+                            # the tree is now KNOWN not-green: stop calling it
+                            # green — but keep the weaker pass on record, it
+                            # is still a valid fact about this same tree
+                            green_epoch = -1
+                            weaker = [v for v in cur
+                                      if v["passed"] and v["rank"] < _rank]
+                            if weaker and (_key, epoch, "gap") not in scope_taught:
+                                scope_taught.add((_key, epoch, "gap"))
+                                w = max(weaker, key=lambda v: v["rank"])
+                                _e = result.get("errors")
+                                pending_teach.append(
+                                    f"{w['tool']}({w['scope']}) {w['job']} is "
+                                    f"green on this tree and need not be "
+                                    f"repeated. {real}({_scope}) {_jid} FAILED "
+                                    f"on the SAME tree"
+                                    + (f" with {_e} errors" if isinstance(_e, int) else "")
+                                    + " — that is the open problem: fix it, "
+                                    f"then re-run that scope only.")
                 if real in ("sim.run", "synth.run", "fpga.run") \
                         and isinstance(result, dict):
                     st = result.get("status")
@@ -557,6 +677,14 @@ class AgentLoop:
             for _msg in pending_teach:
                 transcript.append({"role": "user", "content": _msg})
             pending_teach = []
+            if ledger_active and (authored or deleted):
+                # refresh NOW, not only at the next compaction: a guard
+                # message appended this step must never sit next to a
+                # ledger that still describes the previous step
+                transcript = [m for m in transcript if not (
+                    m.get("role") == "user" and str(
+                        m.get("content", "")).startswith(LEDGER_TAG))]
+                transcript.append({"role": "user", "content": _ledger_msg()})
             if (self.verify_every_n_writes
                     and writes_since_verify >= self.verify_every_n_writes
                     and not verify_nudged):
@@ -608,8 +736,8 @@ class AgentLoop:
                 progress_taught = False
             else:
                 idle_turns += 1
-            if (self.progress_guard_after and last_green_job
-                    and not mutated_since_green
+            if (self.progress_guard_after and green_job
+                    and green_epoch == epoch
                     and idle_turns >= self.progress_guard_after
                     and not progress_taught):
                 progress_taught = True
@@ -617,8 +745,8 @@ class AgentLoop:
                             if p.get("status") != "done"), "")
                 transcript.append({"role": "user", "content": (
                     f"The workspace is GREEN and UNCHANGED since "
-                    f"{last_green_job} — re-reading or re-checking it adds "
-                    f"nothing. "
+                    f"{green_job} (checks on this tree: {_verify_summary()}) "
+                    f"— re-reading or re-checking it adds nothing. "
                     + (f"The plan's next unfinished step is: {nxt!r}. "
                        if nxt else "Your plan has no unfinished step listed. ")
                     + f"Take it NOW with a constructive tool call (write the "
@@ -632,14 +760,14 @@ class AgentLoop:
             # files have drifted into a tangle... I can't see the actual
             # on-disk wiring". Green states are checkpointed — teach the way
             # back instead of watching the tangle grow.
-            if (last_green_job and fails_since_green >= 2
+            if (green_job and fails_since_green >= 2
                     and not checkpoint_taught):
                 checkpoint_taught = True
                 transcript.append({"role": "user", "content": (
                     f"Your checks have failed {fails_since_green} times in a "
-                    f"row since {last_green_job} was GREEN. A checkpoint of "
+                    f"row since {green_job} was GREEN. A checkpoint of "
                     f"that green state exists: call "
-                    f"checkpoint.restore(job='{last_green_job}') to put the "
+                    f"checkpoint.restore(job='{green_job}') to put the "
                     f"files back exactly as they were, then make MINIMAL "
                     f"changes from there — one error per edit, re-check "
                     f"after each.")})
@@ -708,6 +836,7 @@ class AgentLoop:
             self.session.task_frame["parked_task"] = user_prompt
             self.session.save()
         return {"text": final_text, "steps": step + 1,
+                "budget_stop": budget_stop,
                 "pending_jobs": list(self.ctx.pending_jobs),
                 "tokens": self.ctx.ledger.tokens_used,
                 "model": self.gateway.ref,
