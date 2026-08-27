@@ -40,7 +40,8 @@ class AgentLoop:
                  disclose: bool = False, context_budget: int = 0,
                  require_report_done: bool = False,
                  max_narration_nudges: int = 1,
-                 verify_every_n_writes: int = 0):
+                 verify_every_n_writes: int = 0,
+                 progress_guard_after: int = 0):
         """`tools` restricts the catalog (least-privilege subagents, FR-MA-01);
         `system_suffix` appends role instructions to the system prompt. In plan
         mode `gate_permissions` (e.g. {"write","submit"}) names the permission
@@ -108,6 +109,13 @@ class AgentLoop:
         # accumulate with no verification job since the last one, teach the
         # rhythm at the moment of drift, like the narration nudge does.
         self.verify_every_n_writes = max(0, int(verify_every_n_writes or 0))
+        # Progress guard (0 = off), the dual of the cadence guard: with green
+        # states banked, a model can re-read and re-lint an UNCHANGED green
+        # workspace forever ('run a fresh lint to lock ground truth before
+        # writing the top' — 67 reads, 10 lints, 8 writes, top never
+        # written). After N consecutive non-constructive turns on a green,
+        # unchanged state, name the plan's next unfinished step and demand it.
+        self.progress_guard_after = max(0, int(progress_guard_after or 0))
         self._refresh_api_tools()
 
     def _refresh_api_tools(self) -> None:
@@ -180,6 +188,9 @@ class AgentLoop:
         last_green_job = ""     # newest PASSING lint/sim job (checkpointed)
         fails_since_green = 0    # consecutive failing checks since that green
         checkpoint_taught = False
+        mutated_since_green = True  # no green yet counts as 'not settled'
+        idle_turns = 0           # consecutive turns with no constructive call
+        progress_taught = False
         verify_nudged = False    # cadence guard latched until verification
         reported_done = False  # report.done accepted → text is a real answer
         made_mutating_call = False  # wrote a file / ran a job → needs report.done
@@ -455,6 +466,8 @@ class AgentLoop:
                     if _p:
                         authored.add(_p)
                         deleted.discard(_p)
+                if ok and real in ("fs.write", "fs.edit", "fs.delete"):
+                    mutated_since_green = True
                 if ok and real == "fs.delete":
                     _p = str((call.get("input") or {}).get("path", ""))
                     if _p:
@@ -480,6 +493,7 @@ class AgentLoop:
                         if _jid:
                             self._save_green_checkpoint(_jid, authored)
                             last_green_job = _jid
+                            mutated_since_green = False
                         fails_since_green = 0
                         checkpoint_taught = False
                     elif _st in ("failed", "error"):
@@ -539,6 +553,35 @@ class AgentLoop:
                     self.session.save()
             if lint_err_this is not None:
                 last_lint_err = lint_err_this
+            constructive = any(
+                self._resolve_tool_name(c["name"]) in (
+                    "fs.write", "fs.edit", "fs.delete", "lib.fetch",
+                    "checkpoint.restore", "report.done")
+                for c in resp.tool_calls)
+            if constructive:
+                idle_turns = 0
+                progress_taught = False
+            else:
+                idle_turns += 1
+            if (self.progress_guard_after and last_green_job
+                    and not mutated_since_green
+                    and idle_turns >= self.progress_guard_after
+                    and not progress_taught):
+                progress_taught = True
+                nxt = next((str(p.get("step", "")) for p in (self.ctx.plan or [])
+                            if p.get("status") != "done"), "")
+                transcript.append({"role": "user", "content": (
+                    f"The workspace is GREEN and UNCHANGED since "
+                    f"{last_green_job} — re-reading or re-checking it adds "
+                    f"nothing. "
+                    + (f"The plan's next unfinished step is: {nxt!r}. "
+                       if nxt else "Your plan has no unfinished step listed. ")
+                    + f"Take it NOW with a constructive tool call (write the "
+                    f"next file, fetch the next component, or report.done "
+                    f"if the task is complete).")})
+                if self.session:
+                    self.session.messages = transcript
+                    self.session.save()
             # Post-green regression tangle: a run went green at J-0004, then
             # revised itself into five straight failing lints and said "my
             # files have drifted into a tangle... I can't see the actual

@@ -863,3 +863,53 @@ def test_green_checkpoint_snapshot_teach_restore(tmp_path):
     assert (tmp_path / "work" / "rtl" / "m.sv").read_text() == "GREEN"
     out = checkpoint_restore(ctx, job="J-9999")
     assert "no checkpoint" in out["error"] and "J-0001" in out["error"]
+
+
+# --- 30. progress guard: green + unchanged + idle → do the next step ---------
+# With green states banked a model re-read and re-linted an unchanged
+# workspace to the end of its budget; the top was never written.
+
+def test_progress_guard_names_next_plan_step(tmp_path):
+    from types import SimpleNamespace as NS
+    from chipchamp.agent import Session
+    from chipchamp.config import Workspace
+    from chipchamp.tools.context import ToolContext
+    ctx = ToolContext(Workspace(str(tmp_path)))
+    ctx.plan = [{"step": "write leaf buffer", "status": "done"},
+                {"step": "write stream_merge_top", "status": "pending"}]
+    fake_lint = NS(handler=lambda ctx, **kw: {"status": "passed",
+                                              "job": "J-0001", "errors": 0},
+                   permission="read", description="fake lint", group="verify",
+                   cost="free", schema={"type": "object", "properties": {}})
+    cat = dict(all_tools())
+    cat["lint.run"] = fake_lint
+    wr = ModelResponse(text="", tool_calls=[
+        {"id": "w", "name": "fs.write",
+         "input": {"path": "work/rtl/buf.sv", "content": "module b; endmodule"}}])
+    lint = ModelResponse(text="", tool_calls=[
+        {"id": "l", "name": "lint.run", "input": {}}])
+    rd = ModelResponse(text="", tool_calls=[
+        {"id": "r", "name": "fs.read", "input": {"path": "work/rtl/buf.sv"}}])
+    script = [wr, lint, rd, rd, rd, ModelResponse(text="done", tool_calls=[])]
+    sess = Session.new(str(tmp_path / "s"))
+    loop = AgentLoop(ctx, FakeGateway(script), tools=cat, session=sess,
+                     progress_guard_after=2)
+    loop.run("build; finish with report.done")
+    taught = [m for m in sess.messages if m.get("role") == "user"
+              and "GREEN and UNCHANGED since J-0001" in str(m.get("content"))]
+    assert len(taught) == 1                             # once per idle streak
+    assert "write stream_merge_top" in taught[0]["content"]
+
+
+def test_progress_guard_off_by_default(tmp_path):
+    from chipchamp.agent import Session
+    from chipchamp.config import Workspace
+    from chipchamp.tools.context import ToolContext
+    ctx = ToolContext(Workspace(str(tmp_path)))
+    rd = ModelResponse(text="", tool_calls=[
+        {"id": "r", "name": "fs.list", "input": {}}])
+    script = [rd, rd, rd, ModelResponse(text="done", tool_calls=[])]
+    sess = Session.new(str(tmp_path / "s"))
+    AgentLoop(ctx, FakeGateway(script), session=sess).run("look around")
+    assert not any("GREEN and UNCHANGED" in str(m.get("content"))
+                   for m in sess.messages)
