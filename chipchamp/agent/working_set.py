@@ -103,12 +103,17 @@ def _pointer(name: str, data: dict) -> str:
     return f"re-run {name}"
 
 
+FETCHED: set = set()   # paths the loop saw arrive via lib.fetch (provenance)
+
+
 def _pinned(r: dict) -> bool:
     """Reference material evicts LAST: library cards, and fs.read bodies of
-    fetched sources (work/rtl/lib/*) and golden ref models. Evicting them
-    forced a re-grounding loop — 94 reads in 56 steps, the same five files
-    re-read 5-8x, and the actual deliverable never reached the queue front.
-    Authored files stay evictable: they change; re-reading them is correct."""
+    files that ARRIVED via lib.fetch (recorded in FETCHED) or are golden ref
+    models. Evicting them forced a re-grounding loop — 94 reads in 56 steps,
+    the same five files re-read 5-8x. Provenance, not path: a run authored
+    seven of its own modules into work/rtl/lib/, and pinning those would
+    protect exactly the files it needed to fix. Authored files stay
+    evictable: they change; re-reading them is correct."""
     name = str(r.get("name", ""))
     if name.startswith("lib."):
         return True
@@ -116,9 +121,10 @@ def _pinned(r: dict) -> bool:
         m = re.search(r'"path": "([^"]+)"', str(r.get("output", "")))
         pth = m.group(1) if m else ""
         base = pth.rsplit("/", 1)[-1]
-        return (pth.startswith("work/rtl/lib/")
-                or (pth.startswith("work/tb/verilator/")
-                    and (base.startswith("ref_") or base == "tb_base.hpp")))
+        if pth in FETCHED:
+            return True          # provenance beats location
+        return (pth.startswith("work/tb/verilator/")
+                and (base.startswith("ref_") or base == "tb_base.hpp"))
     return False
 
 

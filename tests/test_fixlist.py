@@ -1115,3 +1115,101 @@ def test_repeated_length_stops_teach_parts_even_without_a_path(ctx, tmp_path):
               if m.get("role") == "user"]
     assert any("Continue from where you stopped" in n for n in nudges)  # 1st
     assert any("in PARTS instead" in n for n in nudges)                  # 2nd
+
+
+# --- 35. fetched provenance, wipe-aware restore, re-arming cadence ----------
+# A run wrote seven of its own modules into work/rtl/lib/, judged them
+# corrupt, deleted its green RTL with no failing check in between, and
+# authored 37 files against 6 lints.
+
+def test_pin_follows_fetch_provenance_not_path():
+    from chipchamp.agent import working_set
+    from chipchamp.agent.working_set import compact
+    big = "x" * 4000
+    mk = lambda path: {"id": path, "name": "fs.read",
+                       "output": '{"path": "' + path + '", "content": "'
+                                 + big + '"}'}
+    working_set.FETCHED.clear()
+    working_set.FETCHED.add("work/rtl/lib/stream_fifo.sv")   # really fetched
+    t = [{"role": "user", "content": "task"}]
+    for i in range(8):
+        t.append({"role": "assistant", "content": f"s{i}"})
+        t.append({"role": "tool", "content": [
+            mk("work/rtl/lib/stream_fifo.sv"),        # pinned by provenance
+            mk("work/rtl/lib/my_own_glue.sv")]})      # self-authored: not
+    out, rep = compact(t, budget_chars=30000, keep_recent=2)
+    assert rep["compacted"]
+    # only the EVICTABLE region proves the pin — the recent window is never
+    # touched, so counting it would hide the difference
+    survivors = {r["id"] for m in out[:-2] if m.get("role") == "tool"
+                 for r in m["content"] if len(str(r.get("output"))) > 3000}
+    assert "work/rtl/lib/stream_fifo.sv" in survivors
+    assert "work/rtl/lib/my_own_glue.sv" not in survivors
+    working_set.FETCHED.clear()
+
+
+def test_authoring_into_lib_dir_is_taught(tmp_path):
+    from chipchamp.agent import Session
+    from chipchamp.config import Workspace
+    from chipchamp.tools.context import ToolContext
+    (tmp_path / ".chipchamp").mkdir(exist_ok=True)
+    ctx = ToolContext(Workspace(str(tmp_path)))
+    script = [ModelResponse(text="", tool_calls=[
+        {"id": "w", "name": "fs.write",
+         "input": {"path": "work/rtl/lib/my_glue.sv",
+                   "content": "module g; endmodule"}}]),
+        ModelResponse(text="done", tool_calls=[])]
+    sess = Session.new(str(tmp_path / "s"))
+    AgentLoop(ctx, FakeGateway(script), session=sess).run("build")
+    taught = [m for m in sess.messages if m.get("role") == "user"
+              and "fetched-library directory" in str(m.get("content"))]
+    assert len(taught) == 1 and "work/rtl/" in taught[0]["content"]
+
+
+def test_deleting_a_checkpointed_file_teaches_restore(tmp_path):
+    from types import SimpleNamespace as NS
+    from chipchamp.agent import Session
+    from chipchamp.config import Workspace
+    from chipchamp.tools.context import ToolContext
+    (tmp_path / ".chipchamp").mkdir(exist_ok=True)
+    ctx = ToolContext(Workspace(str(tmp_path)))
+    cat = dict(all_tools())
+    cat["lint.run"] = NS(
+        handler=lambda ctx, **kw: {"status": "passed", "job": "J-0001",
+                                   "errors": 0},
+        permission="read", description="fake lint", group="verify",
+        cost="free", schema={"type": "object", "properties": {}})
+    script = [
+        ModelResponse(text="", tool_calls=[
+            {"id": "w", "name": "fs.write",
+             "input": {"path": "work/rtl/m.sv", "content": "module m; endmodule"}}]),
+        ModelResponse(text="", tool_calls=[
+            {"id": "l", "name": "lint.run", "input": {}}]),
+        ModelResponse(text="", tool_calls=[
+            {"id": "d", "name": "fs.delete", "input": {"path": "work/rtl/m.sv"}}]),
+        ModelResponse(text="done", tool_calls=[])]
+    sess = Session.new(str(tmp_path / "s"))
+    AgentLoop(ctx, FakeGateway(script), tools=cat, session=sess).run("build")
+    taught = [m for m in sess.messages if m.get("role") == "user"
+              and "which the GREEN checkpoint J-0001 contains"
+              in str(m.get("content"))]
+    assert len(taught) == 1                       # a wipe teaches immediately
+    assert "checkpoint.restore(job='J-0001')" in taught[0]["content"]
+
+
+def test_cadence_guard_rearms_every_n_writes(tmp_path):
+    from chipchamp.agent import Session
+    from chipchamp.config import Workspace
+    from chipchamp.tools.context import ToolContext
+    (tmp_path / ".chipchamp").mkdir(exist_ok=True)
+    ctx = ToolContext(Workspace(str(tmp_path)))
+    wr = lambda i: ModelResponse(text="", tool_calls=[
+        {"id": f"w{i}", "name": "fs.write",
+         "input": {"path": f"work/rtl/m{i}.sv", "content": "module m; endmodule"}}])
+    script = [wr(i) for i in range(6)] + [ModelResponse(text="d", tool_calls=[])]
+    sess = Session.new(str(tmp_path / "s"))
+    AgentLoop(ctx, FakeGateway(script), session=sess,
+              verify_every_n_writes=2).run("write a lot")
+    nags = [m for m in sess.messages if m.get("role") == "user"
+            and "without running any verification" in str(m.get("content"))]
+    assert len(nags) == 3          # at 2, 4, 6 writes — not latched at one

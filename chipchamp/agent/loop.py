@@ -181,6 +181,11 @@ class AgentLoop:
         # unchanged state, name the plan's next unfinished step and demand it.
         self.progress_guard_after = max(0, int(progress_guard_after or 0))
         self._port_sigs: dict = {}   # module -> port-list signature last seen
+        # Files that arrived via lib.fetch. The compaction pin and the
+        # 'this is fetched material' teaching key off PROVENANCE, not off a
+        # path prefix: a run wrote seven of its own modules into
+        # work/rtl/lib/, judged them corrupt, and thrashed for ~90 steps.
+        self.fetched_paths: set = set()
         self._refresh_api_tools()
 
     def _refresh_api_tools(self) -> None:
@@ -280,7 +285,7 @@ class AgentLoop:
         idle_turns = 0           # consecutive turns with no constructive call
         progress_taught = False
         pending_teach: list = []  # interface-change teachings for this step
-        verify_nudged = False    # cadence guard latched until verification
+        verify_nudged_at = 0     # writes count at the last cadence teaching
         reported_done = False  # report.done accepted → text is a real answer
         made_mutating_call = False  # wrote a file / ran a job → needs report.done
         last_reasoning = ""
@@ -573,8 +578,27 @@ class AgentLoop:
                     and not result.get("error")
                 if ok and getattr(tool_obj, "permission", "") in ("write", "submit"):
                     made_mutating_call = True  # real state change → needs report.done
+                if ok and real == "lib.fetch" and isinstance(result, dict):
+                    for _f in (list(result.get("written") or [])
+                               + list(result.get("unchanged") or [])):
+                        self.fetched_paths.add(str(_f))
+                        working_set.FETCHED.add(str(_f))
                 if ok and real in ("fs.write", "fs.edit"):
                     writes_since_verify += 1
+                    _wp = str((call.get("input") or {}).get("path", ""))
+                    if (_wp and _wp not in self.fetched_paths
+                            and "/lib/" in "/" + _wp
+                            and (_wp, "libdir") not in scope_taught):
+                        scope_taught.add((_wp, "libdir"))
+                        pending_teach.append(
+                            f"You wrote {_wp} into a fetched-library "
+                            f"directory. That directory holds components "
+                            f"copied by lib.fetch — files you author there "
+                            f"are NOT library components and will confuse "
+                            f"you later (a previous run wrote its own "
+                            f"modules there, judged them corrupt, and lost "
+                            f"most of its budget). Put your own modules "
+                            f"under work/rtl/ and re-run the write there.")
                     _teach = self._port_change_teaching(
                         str((call.get("input") or {}).get("path", "")))
                     if _teach:
@@ -591,9 +615,24 @@ class AgentLoop:
                     if _p:
                         authored.discard(_p)
                         deleted.add(_p)
+                        # A run deleted the very RTL its green checkpoint
+                        # held; no teaching fired because the restore path
+                        # only watched for FAILING checks. A wipe is just as
+                        # much a way to lose a good state.
+                        if (green_job and _p in self._checkpoint_files(green_job)
+                                and not checkpoint_taught):
+                            checkpoint_taught = True
+                            pending_teach.append(
+                                f"You deleted {_p}, which the GREEN "
+                                f"checkpoint {green_job} contains. If that "
+                                f"was not deliberate, "
+                                f"checkpoint.restore(job='{green_job}') puts "
+                                f"the whole green state back; otherwise say "
+                                f"why the rewrite is necessary and keep the "
+                                f"change minimal.")
                 if real in ("lint.run", "sim.run", "cov.run", "lec.run"):
                     writes_since_verify = 0   # ran a check (pass or fail):
-                    verify_nudged = False     # the loop is closing loops
+                    verify_nudged_at = 0      # the loop is closing loops
                 if real == "report.done" and ok and result.get("accepted"):
                     reported_done = True  # gates satisfied — a later text turn
                     #                       is now a legitimate final answer
@@ -687,8 +726,12 @@ class AgentLoop:
                 transcript.append({"role": "user", "content": _ledger_msg()})
             if (self.verify_every_n_writes
                     and writes_since_verify >= self.verify_every_n_writes
-                    and not verify_nudged):
-                verify_nudged = True   # once per breach, not every step
+                    and writes_since_verify >= verify_nudged_at
+                            + self.verify_every_n_writes):
+                # RE-ARMS every N further writes: latching once per breach let
+                # a run author 37 files against 6 checks — the teaching went
+                # quiet exactly when the drift got worse
+                verify_nudged_at = writes_since_verify
                 transcript.append({"role": "user", "content": (
                     f"You have written or edited {writes_since_verify} files "
                     f"without running any verification. Run lint.run NOW and "
@@ -1081,6 +1124,17 @@ class AgentLoop:
                 f"in {rel}. {'; '.join(parts)} — update those instances NOW, "
                 f"in this turn, before running lint (a stale instance is "
                 f"exactly what PINNOTFOUND errors mean).")
+
+    def _checkpoint_files(self, job: str) -> set:
+        """Files captured by a green checkpoint (empty if none/unreadable)."""
+        import json
+        import os
+        mp = os.path.join(str(self.ctx.ws.dot), "checkpoints", job,
+                          "manifest.json")
+        try:
+            return set(json.load(open(mp)).get("files", []))
+        except (OSError, ValueError):
+            return set()
 
     def _save_green_checkpoint(self, job: str, authored) -> None:
         """A passing check is a state worth being able to RETURN to: snapshot
