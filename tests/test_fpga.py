@@ -322,9 +322,24 @@ def test_vivado_flow_reads_constraints_when_given(tmp_path):
                        out_of_context=False, xdc=str(xdc))
     tcl = open(plan.artifacts["tcl"]).read()
     assert f"read_xdc {xdc}" in tcl
-    # and stays absent (byte-identical to before the feature) when not given
+    # and the user XDC stays absent when not given (the clock XDC is always read)
     plan2 = a.fpga_flow(["/tmp/x.sv"], "counter", str(tmp_path))
-    assert "read_xdc" not in open(plan2.artifacts["tcl"]).read()
+    assert f"read_xdc {xdc}" not in open(plan2.artifacts["tcl"]).read()
+
+
+def test_vivado_flow_constrains_the_clock_before_synthesis(tmp_path):
+    """Vivado synthesis is timing-driven: the clock must be an XDC read before
+    synth_design, not a create_clock issued afterwards (which constrained only
+    opt/place/route and left synthesis with no period)."""
+    from chipchamp.adapters.vivado import VivadoAdapter
+    a = VivadoAdapter()
+    plan = a.fpga_flow(["/tmp/x.sv"], "counter", str(tmp_path),
+                       clock_port="clk100mhz", clock_period_ns=8.0)
+    tcl = open(plan.artifacts["tcl"]).read()
+    clock_xdc = plan.artifacts["clock_xdc"]
+    assert open(clock_xdc).read().strip() == "create_clock -period 8.0 -name clk100mhz [get_ports clk100mhz]"
+    assert tcl.index(f"read_xdc {clock_xdc}") < tcl.index("synth_design")
+    assert "create_clock" not in tcl          # nothing left for after synthesis
 
 
 def _step_result(rc=0, stdout="", stderr=""):
