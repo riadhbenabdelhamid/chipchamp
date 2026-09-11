@@ -795,6 +795,14 @@ class JobTail:
     (from the submitting thread) once the job directory exists. Clears its
     whole block on stop; a TTY-only no-op otherwise."""
 
+    # Lines worth keeping once the window has rolled past them: a tool's own
+    # command echoes (Vivado's "# read_xdc …", "# synth_design …"), stage
+    # completions, and anything an engineer would grep for afterwards. They
+    # are printed once, permanently, above the rolling tail — so a transcript
+    # of the session shows every stage in order, not a 250 ms sample of it.
+    MILESTONE = re.compile(r"^(# \S|Command: |Starting \w+_design|.*completed successfully"
+                           r"|.*\b(ERROR|CRITICAL WARNING)\b|.*\bTiming (MET|NOT MET)\b)")
+
     def __init__(self, label: str, lines: int = 4,
                  pulse: "TaskPulse | None" = None):
         self.label = label
@@ -805,6 +813,35 @@ class JobTail:
         self._thread: threading.Thread | None = None
         self._start = 0.0
         self._painted = 0
+        self._seen = 0          # bytes of live.log already scanned for milestones
+        self._carry = ""        # partial last line between scans
+
+    @classmethod
+    def milestones(cls, text: str) -> list[str]:
+        """The lines of `text` worth pinning (ANSI stripped, right-trimmed)."""
+        out = []
+        for ln in text.splitlines():
+            ln = _ANSI.sub("", ln).rstrip()
+            if ln and cls.MILESTONE.match(ln):
+                out.append(ln)
+        return out
+
+    def _new_milestones(self) -> list[str]:
+        """Milestones among the log bytes appended since the last scan."""
+        if not self._path:
+            return []
+        try:
+            with open(self._path, "rb") as fh:
+                fh.seek(self._seen)
+                raw = fh.read()
+        except OSError:
+            return []
+        if not raw:
+            return []
+        self._seen += len(raw)
+        text = self._carry + raw.decode("utf-8", errors="replace")
+        text, _, self._carry = text.rpartition("\n")
+        return self.milestones(text)
 
     def attach(self, path: str) -> None:
         self._path = path  # str assignment is atomic; render picks it up
@@ -859,7 +896,10 @@ class JobTail:
                     else f"\x1b[36m{pulse_glyph(i)}\x1b[0m")
             block = [_clip_ansi(head + job, width)]
             block += [f"\x1b[2m  │ {ln}\x1b[0m" for ln in self._tail()]
+            pinned = [f"\x1b[2m  ┃ {ln[:width - 4]}\x1b[0m" for ln in self._new_milestones()]
             self._erase()
+            if pinned:                                   # permanent: above the window
+                sys.stdout.write("\n".join(pinned) + "\n")
             sys.stdout.write("\n".join(block) + "\n")
             sys.stdout.flush()
             self._painted = len(block)

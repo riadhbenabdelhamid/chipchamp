@@ -234,3 +234,28 @@ def test_stream_view_and_job_tail_are_headless_safe():
     jt.start()
     jt.attach("/nonexistent/live.log")
     jt.stop()  # must not raise
+
+
+def test_job_tail_pins_tool_milestones(tmp_path):
+    """A running job's live log is shown as a rolling window; command echoes
+    and stage completions are pinned once so a session transcript keeps the
+    flow's order (the Vivado read_xdc → synth_design → … sequence used to
+    fall between two repaints and vanish)."""
+    from chipchamp.ui import JobTail
+    ms = JobTail.milestones(
+        "# read_xdc /w/pins.xdc\n# read_xdc /w/clock.xdc\n# synth_design -top t\n"
+        "Command: synth_design -top t\nStarting synth_design\n"
+        "Phase 3.2 Commit Most Macros\nsynth_design completed successfully\n"
+        "\x1b[31mERROR: [Synth 8-1] boom\x1b[0m\nWrote Device Cache\n#\n")
+    assert ms == ["# read_xdc /w/pins.xdc", "# read_xdc /w/clock.xdc", "# synth_design -top t",
+                  "Command: synth_design -top t", "Starting synth_design",
+                  "synth_design completed successfully", "ERROR: [Synth 8-1] boom"]
+    # incremental scan: only what was appended since the last look, whole lines only
+    jt = JobTail("fpga")
+    log = tmp_path / "live.log"
+    log.write_bytes(b"# read_xdc a.xdc\nnoise\nsynth_design compl")
+    jt.attach(str(log))
+    assert jt._new_milestones() == ["# read_xdc a.xdc"]
+    log.write_bytes(log.read_bytes() + b"eted successfully\nmore noise\n")
+    assert jt._new_milestones() == ["synth_design completed successfully"]
+    assert jt._new_milestones() == []
