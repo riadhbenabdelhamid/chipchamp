@@ -463,7 +463,11 @@ class Workspace:
         tgt = self.target(tname)
         if db_path.exists() and not rebuild:
             db = DesignDB.load(str(db_path))
-            if not db.stale_files():
+            # A database carried over from another checkout (a cloned or seeded
+            # workspace) still names files that exist — at the OLD root — so
+            # stale_files() alone would call it fresh. The root moving is stale.
+            same_root = os.path.realpath(str(db.root)) == os.path.realpath(str(self.root))
+            if same_root and not db.stale_files():
                 self._db_cache[tname] = db
                 return db
         db = DesignDB(root=self.root)
