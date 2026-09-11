@@ -2,6 +2,7 @@
 repro, doc.blockdiagram — the trust and reproducibility surface."""
 from __future__ import annotations
 
+import re
 import time
 
 from ..evidence import build_bundle, save_bundle
@@ -51,13 +52,25 @@ def report_done(ctx: ToolContext, summary: str = "", acknowledge=None) -> dict:
 
 
 @tool("evidence.bundle", "Assemble + sign the evidence bundle for the current "
-      "change set from job records (the model contributes only the narrative).",
+      "change set from job records (the model contributes only the narrative; "
+      "cite only job ids job.list shows — unknown ids are refused).",
       permission="submit", group="meta",
       schema={"type": "object", "properties": {
           "bundle_id": {"type": "string"}, "narrative": {"type": "string"},
           "acknowledge": {"type": "array", "items": {"type": "string"}}}})
 def evidence_bundle(ctx: ToolContext, bundle_id: str = "", narrative: str = "",
                     acknowledge=None) -> dict:
+    # A narrative may only cite jobs the ledger knows. On one run the model
+    # wrote a bundle around J-0005..J-0008 before any tool had run: nothing
+    # checked the ids, the bundle was signed, and all_gates_passed came back
+    # true because no gate had been evaluated — all-of-nothing. Both answers
+    # were true statements about nothing, and the model read them as a pass.
+    cited = sorted(set(re.findall(r"\bJ-\d{4}\b", narrative or "")))
+    known = {r.id for r in ctx.runner.list_jobs()} | {r.id for r in ctx.task_jobs}
+    unknown = [j for j in cited if j not in known]
+    if unknown:
+        return {"error": "narrative cites job ids that do not exist: " + ", ".join(unknown)
+                + ". A bundle cites only jobs in the ledger — job.list shows them."}
     diff = ctx.current_diff()
     ev = _collect_evidence(ctx, acknowledge or [])
     report = ctx.policy.validate_done(diff, ev, closure_claim=ctx.closure_claim)
@@ -78,8 +91,14 @@ def evidence_bundle(ctx: ToolContext, bundle_id: str = "", narrative: str = "",
         repro_commands=_repro_all(ctx),
         antigaming=ev.antigaming, narrative=narrative)
     path = save_bundle(b, str(ctx.ws.dot / "bundles"))
-    return {"bundle_id": bundle_id, "path": ctx.rel(path), "signature": b.signature,
-            "all_gates_passed": report.all_passed, "verify": b.verify()}
+    out = {"bundle_id": bundle_id, "path": ctx.rel(path), "signature": b.signature,
+           "gates_evaluated": len(report.gates),
+           "all_gates_passed": report.all_passed if report.gates else None,
+           "verify": b.verify()}
+    if not report.gates:
+        out["warning"] = ("no gate has been evaluated for this task — nothing has run; "
+                          "this bundle certifies no result")
+    return out
 
 
 @tool("mr.prepare", "Prepare a merge request for the current change set: create "
