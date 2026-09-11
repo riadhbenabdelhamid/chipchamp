@@ -471,3 +471,116 @@ def fpga_pins(ctx: ToolContext, action: str = "validate", module: str = "",
         "note": ("all top-level ports are constrained" if not findings
                  else "fix these before the flow — they otherwise surface "
                       "after synthesis or at write_bitstream")})
+
+
+# ---- fpga.snapshot: a picture of the routed device -------------------------
+#
+# Vivado has no Tcl screenshot command (write_device_image is Versal's PDI
+# writer), so this runs the real GUI on a private Xvfb display, opens the
+# post_route checkpoint, applies the requested highlights and grabs the Device
+# canvas with Pillow. The canvas is the largest near-black block of the capture;
+# the virtual screen is sized to Vivado's default window so nothing else is.
+
+def _free_display() -> str:
+    for n in range(90, 200):
+        if not os.path.exists(f"/tmp/.X11-unix/X{n}"):
+            return f":{n}"
+    return ":99"
+
+
+def _crop_device_canvas(img, pad: int = 6):
+    g = img.convert("L")
+    w, h = g.size
+    px = g.load()
+    step = 4
+    rows = [y for y in range(0, h, step)
+            if sum(1 for x in range(0, w, step) if px[x, y] < 28) > (w / step) * 0.35]
+    if not rows:
+        return img
+    y0, y1 = min(rows), max(rows)
+    cols = [x for x in range(0, w, step)
+            if sum(1 for y in range(y0, y1, step) if px[x, y] < 28) > ((y1 - y0) / step) * 0.6]
+    if not cols:
+        return img
+    x0, x1 = min(cols), max(cols)
+    canvas = img.crop((max(x0 - pad, 0), max(y0 - pad, 0), min(x1 + pad + step, w), min(y1 + pad + step, h)))
+    # then to the die itself: the bounding box of everything brighter than canvas black
+    inset = 8                                   # the canvas frame lines are not the drawing
+    canvas = canvas.crop((inset, inset, canvas.size[0] - inset, canvas.size[1] - inset))
+    bb = canvas.convert('L').point(lambda v: 255 if v > 40 else 0).getbbox()
+    if not bb:
+        return canvas
+    m = 24
+    return canvas.crop((max(bb[0] - m, 0), max(bb[1] - m, 0), min(bb[2] + m, canvas.size[0]), min(bb[3] + m, canvas.size[1])))
+
+
+@tool("fpga.snapshot", "Picture of the routed FPGA: renders Vivado's Device "
+      "view for the latest vivado run's post_route checkpoint on a headless "
+      "display and saves a PNG. `highlight` is a list of {cells, color} where "
+      "cells is a Vivado get_cells expression (e.g. \"-hier -filter "
+      "{PRIMITIVE_TYPE =~ BMEM.*}\" or \"-of [get_pblocks pb_fb]\"). Takes "
+      "one to three minutes.", cost="metered", permission="submit", group="fpga",
+      schema={"type": "object", "properties": {
+          "module": {"type": "string", "description": "defaults to the latest run"},
+          "highlight": {"type": "array", "items": {"type": "object", "properties": {
+              "cells": {"type": "string"}, "color": {"type": "string"}}, "required": ["cells"]}},
+          "wait_s": {"type": "integer", "default": 75,
+                     "description": "seconds to let the GUI render after opening the checkpoint"}}})
+def fpga_snapshot(ctx: ToolContext, module: str = "", highlight: list | None = None,
+                  wait_s: int = 75) -> dict:
+    import subprocess, tempfile, time
+    rec = _latest_fpga(ctx, module)
+    if rec is None:
+        return {"error": "no fpga run recorded — call fpga.run first"}
+    if (rec.result.get("metrics", {}) or {}).get("flow") != "vivado":
+        return {"error": "the latest fpga run is not a vivado run; the device view needs a .dcp"}
+    dcp = rec.artifacts.get("post_route_dcp") or ""
+    if not dcp:
+        top = (rec.result.get("metrics", {}) or {}).get("top", "") or module
+        dcp = os.path.join(_workdir(ctx, top, "vivado"), "checkpoints", "post_route.dcp")
+    if not os.path.exists(dcp):
+        return {"error": f"post_route checkpoint not found: {dcp}"}
+    vivado = shutil.which("vivado") or os.path.expanduser("~/Xilinx/2025.1/Vivado/bin/vivado")
+    if not shutil.which("Xvfb") or not os.path.exists(vivado):
+        return {"error": "needs Xvfb and vivado on this machine"}
+    try:
+        from PIL import ImageGrab  # noqa: F401
+    except ImportError:
+        return {"error": "Pillow with xcb support is required (pip install pillow)"}
+    out_png = os.path.join(os.path.dirname(os.path.dirname(dcp)), "device.png")
+    tcl = tempfile.NamedTemporaryFile("w", suffix=".tcl", delete=False)
+    tcl.write(f"open_checkpoint {{{dcp}}}\n")
+    for h in highlight or []:
+        cells = str(h.get("cells", "")).strip()
+        if cells and not cells.startswith("-") and not cells.startswith("["):
+            cells = f"-hier {cells}"
+        tcl.write(f"catch {{ highlight_objects -color {h.get('color', 'yellow')} [get_cells {cells}] }}\n")
+    tcl.close()
+    display = _free_display()
+    env = dict(os.environ, DISPLAY=display)
+    xvfb = subprocess.Popen(["Xvfb", display, "-screen", "0", "1400x960x24", "-nolisten", "tcp"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(1.5)
+    viv = subprocess.Popen([vivado, "-mode", "gui", "-nolog", "-nojournal", "-source", tcl.name],
+                           env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           cwd=os.path.dirname(dcp))
+    try:
+        from PIL import ImageGrab
+        time.sleep(max(20, wait_s))
+        img = ImageGrab.grab(xdisplay=display)
+        full = out_png.replace(".png", ".full.png")
+        img.save(full)
+        crop = _crop_device_canvas(img)
+        crop.save(out_png)
+    finally:
+        viv.terminate()
+        try:
+            viv.wait(20)
+        except Exception:
+            viv.kill()
+        xvfb.terminate()
+        os.unlink(tcl.name)
+    return {"png": ctx.rel(out_png), "full_window_png": ctx.rel(full),
+            "size": list(crop.size), "checkpoint": ctx.rel(dcp), "from_job": rec.id,
+            "highlights": len(highlight or []),
+            "note": "device view of the routed design; open the PNG to see placement"}
