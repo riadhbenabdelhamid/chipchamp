@@ -2837,8 +2837,8 @@ def _list_models(reg):
     echo("[dim]probing providers (this can take a moment for local servers)…[/]")
     found = reg.discover()
     if not found:
-        echo("[yellow]No reachable providers.[/] Set ANTHROPIC_API_KEY or OPENAI_API_KEY, "
-             "or start a local server (Ollama :11434, LM Studio :1234).")
+        echo("[yellow]No reachable providers.[/] Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or "
+             "GEMINI_API_KEY, or start a local server (Ollama :11434, LM Studio :1234).")
         return found
     for prov, models in found:
         loc = " [dim](local)[/]" if prov.config.local else ""
