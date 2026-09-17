@@ -76,11 +76,22 @@ def to_openai_messages(system: str, transcript: list[dict]) -> list[dict]:
         elif role == "assistant":
             m = {"role": "assistant", "content": turn.get("content") or ""}
             if turn.get("tool_calls"):
-                m["tool_calls"] = [
-                    {"id": _wire_id(tc["id"]), "type": "function",
-                     "function": {"name": tc["name"],
-                                  "arguments": json.dumps(tc.get("input") or {})}}
-                    for tc in turn["tool_calls"]]
+                m["tool_calls"] = []
+                for tc in turn["tool_calls"]:
+                    wire_tc = {"id": _wire_id(tc["id"]), "type": "function",
+                               "function": {"name": tc["name"],
+                                            "arguments": json.dumps(tc.get("input") or {})}}
+                    # Gemini rejects a replayed functionCall that doesn't carry
+                    # back the exact thought_signature it attached originally
+                    # (HTTP 400 "Function call is missing a thought_signature
+                    # in functionCall parts") — its thinking models can't be
+                    # turned off (reasoning_effort="none" errors with "this
+                    # model only works in thinking mode"), so every tool-using
+                    # turn must round-trip this opaque blob. Other servers
+                    # never set extra_content, so this is a no-op for them.
+                    if tc.get("extra_content"):
+                        wire_tc["extra_content"] = tc["extra_content"]
+                    m["tool_calls"].append(wire_tc)
                 # OpenAI allows empty content alongside tool_calls
                 if not m["content"]:
                     m["content"] = None
@@ -126,8 +137,12 @@ def parse_openai_response(data: dict) -> ModelResponse:
             args = json.loads(fn.get("arguments") or "{}")
         except (json.JSONDecodeError, TypeError):
             args = {}
-        tool_calls.append({"id": tc.get("id", ""), "name": fn.get("name", ""),
-                           "input": args})
+        call = {"id": tc.get("id", ""), "name": fn.get("name", ""), "input": args}
+        # Carried opaque so it can be replayed verbatim on the next turn — see
+        # the matching comment in to_openai_messages().
+        if tc.get("extra_content"):
+            call["extra_content"] = tc["extra_content"]
+        tool_calls.append(call)
     usage = data.get("usage", {}) or {}
     return ModelResponse(
         text=text, tool_calls=tool_calls,
@@ -204,6 +219,11 @@ def assemble_sse(fh, on_delta, idle_timeout: Optional[float] = None) -> dict:
                     on_delta("tool", slot["function"]["name"])
                 if fn.get("arguments"):
                     slot["function"]["arguments"] += fn["arguments"]
+                # Gemini sends this whole (not split across chunks) in the
+                # same delta as the tool call — see the matching comment in
+                # to_openai_messages() for why it must round-trip.
+                if tc.get("extra_content"):
+                    slot["extra_content"] = tc["extra_content"]
     if calls:
         msg["tool_calls"] = [calls[i] for i in sorted(calls)]
     if not usage:
