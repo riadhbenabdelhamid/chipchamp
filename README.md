@@ -379,6 +379,16 @@ under `<root>/work/` (override with `[project] work_dir`), created on session
 start — the agent is told to write there and not scatter files across the repo
 or edit unrelated directories.
 
+**Loop guards (`[agent.guards]`).** The loop teaches at the moment of drift —
+a plan written instead of an action gets the model's own plan quoted back
+(`max_narration_nudges`, default 3); N files written with no lint or sim run
+in between triggers "verify now" (`verify_every_n_writes`, default 3); idle
+turns on a green, unchanged tree are told to take the next step
+(`progress_guard_after`, default 2). `require_report_done` is unset by default:
+headless runs (`-p`, `wake`, subagents) must end on `report.done`, interactive
+turns may end in prose; set it `true`/`false` to force either. These defaults
+are the values the headless campaigns were measured with.
+
 **Autonomy modes (shift-tab).** Like Claude Code, three modes cycle with
 **shift-tab** (or `/mode [name]`), shown in the bottom toolbar: **normal**
 (edits & jobs run; destructive actions confirmed) · **auto** (full autonomy;

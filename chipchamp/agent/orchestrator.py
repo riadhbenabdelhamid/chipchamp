@@ -65,11 +65,16 @@ class Orchestrator:
             return SubagentResult(label=task.label, role=task.role, text="",
                                   error=f"unknown role '{task.role}'")
         child = self._child_context()
+        role_tools = role.tools()
+        guards = self.ctx.ws.guards(headless=True).as_kwargs()
+        if "report.done" not in role_tools:
+            guards["require_report_done"] = False   # cannot demand a tool it lacks
         loop = AgentLoop(
             child, self.gateway_factory(role.name),
             max_steps=min(role.max_steps, self.max_steps_cap),
-            tools=role.tools(), system_suffix=role.system_suffix,
-            on_event=lambda k, d, _l=task.label: self.on_event(k, {**d, "subagent": _l}))
+            tools=role_tools, system_suffix=role.system_suffix,
+            on_event=lambda k, d, _l=task.label: self.on_event(k, {**d, "subagent": _l}),
+            **guards)
         try:
             out = loop.run(task.prompt)
         except Exception as e:  # a crashed subagent must not kill the fan-out

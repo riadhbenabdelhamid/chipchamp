@@ -37,6 +37,14 @@ license_hours = 24
 cpu_hours = 200
 model_tokens = 5000000
 
+[agent.guards]
+# Loop guards, tuned on headless campaigns. require_report_done is unset:
+# headless runs (-p, wake, subagents) must end on report.done; interactive
+# turns may end in prose. Set true/false to force it either way.
+max_narration_nudges = 3     # "that is a plan, not an action" nudges per run
+verify_every_n_writes = 3    # N writes with no lint/sim -> teach to verify now
+progress_guard_after = 2     # idle turns on a green, unchanged tree -> next step
+
 [waves]
 prefer = "vcd"
 retention_days = 14

@@ -23,7 +23,7 @@ from .coverage import CoverageService
 from .design import DesignDB
 from .filelist import FileSet, resolve_sources
 from .jobs import JobRunner
-from .policy import Budget, ContextACL, PolicyEngine
+from .policy import Budget, ContextACL, GuardConfig, PolicyEngine
 
 def _yaml_or_none(p: Path):
     """Parse a dot-file, tolerating syntax errors (-> None). The dot-file
@@ -425,6 +425,10 @@ class Workspace:
             license_hours=b.get("license_hours", 24.0),
             cpu_hours=b.get("cpu_hours", 200.0),
             model_tokens=b.get("model_tokens", 2_000_000))
+
+    def guards(self, *, headless: bool = False) -> GuardConfig:
+        """Loop-guard knobs from ``[agent.guards]`` (see policy.guards)."""
+        return GuardConfig.from_config(self.config, headless=headless)
 
     def policy_engine(self) -> PolicyEngine:
         auto = self.policy_cfg.get("autonomy", {})

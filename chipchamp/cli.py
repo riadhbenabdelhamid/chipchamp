@@ -2171,7 +2171,8 @@ def _interactive(ctx_obj, prompt=None, model=None, provider=None, max_steps=40,
     loop = AgentLoop(c, gw, session=sess, max_steps=max_steps,
                      on_event=events, tools=tool_set,
                      approver=_make_approver(), router=_build_router(c),
-                     disclose=disclose, context_budget=_context_budget(c, gw))
+                     disclose=disclose, context_budget=_context_budget(c, gw),
+                     **c.ws.guards(headless=bool(prompt)).as_kwargs())
     mode = _AutonomyMode(loop, "plan" if plan_mode else "normal")
 
     # headless one-shot (`chipchamp -p "..."`)
@@ -3096,7 +3097,8 @@ def wake(ctx, session_id, timeout, model, provider, max_steps):
     events = _agent_events(c)
     loop = AgentLoop(c, gw or NullGateway(), session=sess, max_steps=max_steps,
                      on_event=events, router=_build_router(c),
-                     context_budget=_context_budget(c, gw))
+                     context_budget=_context_budget(c, gw),
+                     **c.ws.guards(headless=True).as_kwargs())
     out = loop.run("The detached jobs you launched have finished:\n"
                    + "\n".join(lines)
                    + f"\n\nContinue the task from here: {task}")

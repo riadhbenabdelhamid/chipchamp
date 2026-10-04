@@ -5,6 +5,7 @@ from .budgets import Budget, BudgetExceeded, BudgetLedger
 from .classify import classify
 from .diff import Diff, FileChange
 from .engine import PolicyCheck, PolicyEngine
+from .guards import GuardConfig
 from .gates import (
     CLASS_GATES,
     LADDER,
@@ -16,6 +17,7 @@ from .gates import (
 )
 
 __all__ = [
+    "GuardConfig",
     "PolicyEngine",
     "PolicyCheck",
     "Diff",
