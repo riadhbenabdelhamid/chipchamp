@@ -29,6 +29,7 @@ from ..util.hashing import hash_manifest
 from ..util.ids import new_job_id
 from ..util.jsonio import atomic_write, dump_json, load_json
 from .record import JobRecord, StepLog
+from .env import scrub_env
 
 
 class LicensePool:
@@ -62,7 +63,7 @@ class LicensePool:
 class JobRunner:
     def __init__(self, store_dir: str, registry, *, env_modules: dict | None = None,
                  licenses: dict | None = None, env_allowlist: list[str] | None = None,
-                 farm=None, cache: bool = True):
+                 env_deny: list[str] | None = None, farm=None, cache: bool = True):
         from .cache import JobCache
         from .farm import FarmConfig
         self.store_dir = Path(store_dir)
@@ -71,7 +72,11 @@ class JobRunner:
         self.env_modules = env_modules or {}
         self.licenses = LicensePool({f: v.get("tokens", 1) if isinstance(v, dict) else v
                                      for f, v in (licenses or {}).items()})
-        self.env_allowlist = env_allowlist or ["PATH", "HOME", "USER"]
+        # None/empty = pass the environment through minus secrets (jobs.env);
+        # a list = strict allowlist for hermetic steps. Never the old
+        # ["PATH","HOME","USER"] default: honoured, it broke every EDA flow.
+        self.env_allowlist = list(env_allowlist or [])
+        self.env_deny = list(env_deny or [])
         self.farm = farm or FarmConfig()
         self.cache = JobCache(self.store_dir, enabled=cache)
         self._seq = self._load_seq()
@@ -247,7 +252,7 @@ class JobRunner:
 
     def _run_step(self, st, job_dir: Path, idx: int, timeout,
                   env_modules: list[str] | None = None) -> StepResult:
-        env = {k: v for k, v in os.environ.items() if k in self.env_allowlist or True}
+        env = scrub_env(os.environ, allowlist=self.env_allowlist, deny=self.env_deny)
         env.update(st.env)
         argv = wrap_with_modules(st.argv, env_modules or [])
         from .farm import plan_submission

@@ -27,6 +27,14 @@ formal = "symbiyosys"
 kind = "local"
 max_parallel = 4
 
+[jobs]
+# Steps inherit the environment minus anything that looks like a credential
+# (*_API_KEY, *_TOKEN, *_SECRET*, *_PASSWORD, AWS_*, ANTHROPIC_*, OPENAI_* ...),
+# so license servers, vendor roots, MODULEPATH and nix devshells keep working
+# while farm submissions never forward a model key. Tighten or go hermetic:
+# env_deny = ["MY_INTERNAL_*"]          # extra patterns to drop
+# env_allowlist = ["*_LICENSE_FILE", "XILINX*", "NIX_*", "MODULE*"]  # strict mode
+
 [context]
 deny = ["pdk/**", "**/*.lic"]
 module_card_tokens = 220

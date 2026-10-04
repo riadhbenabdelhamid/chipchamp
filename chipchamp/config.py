@@ -408,10 +408,13 @@ class Workspace:
         store = os.path.expanduser(shared) if shared else str(self.dot / "runs")
         licenses = self.config.get("licenses", {})
         env_modules = self.config.get("tools", {}).get("env_modules", {})
+        jobs = self.config.get("jobs", {}) or {}
         self._runner = JobRunner(store, self.registry(),
                                  env_modules=env_modules, licenses=licenses,
+                                 env_allowlist=jobs.get("env_allowlist"),
+                                 env_deny=jobs.get("env_deny"),
                                  farm=FarmConfig.from_config(self.config),
-                                 cache=self.config.get("jobs", {}).get("cache", True))
+                                 cache=jobs.get("cache", True))
         return self._runner
 
     def context_acl(self) -> ContextACL:
