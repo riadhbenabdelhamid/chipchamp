@@ -51,7 +51,7 @@ def test_generated_outputs_are_write_protected(ctx):
 def test_regen_gate_detects_stale_outputs(ctx):
     from chipchamp.tools.regmap_tools import regen_check
     assert regen_check(ctx) is True  # committed outputs match the spec
-    sv_path = os.path.join(str(EXAMPLE), "rtl/gen/timer_reg_top.sv")
+    sv_path = os.path.join(str(ctx.ws.root), "rtl/gen/timer_reg_top.sv")  # the test's own copy
     original = open(sv_path).read()
     try:
         with open(sv_path, "w") as fh:  # simulate a hand-edit behind the map's back
