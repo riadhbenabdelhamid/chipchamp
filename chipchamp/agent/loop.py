@@ -186,6 +186,9 @@ class AgentLoop:
         # path prefix: a run wrote seven of its own modules into
         # work/rtl/lib/, judged them corrupt, and thrashed for ~90 steps.
         self.fetched_paths: set = set()
+        # A router handoff that fires right after tool results rides in the
+        # system prompt for ONE call (see _try_switch / _call_with_retry).
+        self._handoff_note = ""
         self._refresh_api_tools()
 
     def _refresh_api_tools(self) -> None:
@@ -292,6 +295,7 @@ class AgentLoop:
         known_names = set(self._name_map) | set(self._name_map.values())
         call_retries = 0
         self._tried = set()          # model refs already used/skipped this run
+        self._handoff_note = ""      # a stale note must not outlive its run
         self._switches = []          # [{from, to, reason}] for the return dict
         self._models_used = [self.gateway.ref]
         stall = 0                    # consecutive failing checks with no progress
@@ -334,7 +338,8 @@ class AgentLoop:
             # is the one structural advantage a hardware agent has here.
             if self.context_budget:
                 transcript, moved = working_set.compact(
-                    transcript, budget_chars=self.context_budget)
+                    transcript, budget_chars=self.context_budget,
+                    pinned=self.fetched_paths)
                 if moved["compacted"]:
                     self.on_event("compacted", moved)
                     ledger_active = True
@@ -582,7 +587,6 @@ class AgentLoop:
                     for _f in (list(result.get("written") or [])
                                + list(result.get("unchanged") or [])):
                         self.fetched_paths.add(str(_f))
-                        working_set.FETCHED.add(str(_f))
                 if ok and real in ("fs.write", "fs.edit"):
                     writes_since_verify += 1
                     _wp = str((call.get("input") or {}).get("path", ""))
@@ -1011,6 +1015,10 @@ class AgentLoop:
         for attempt in range(attempts):
             try:
                 resp = self._call(system, transcript)
+                # The model has now seen the handoff; a retry of THIS call
+                # still carries it (cleared only on success), the next call
+                # must not — it was outliving the whole REPL session.
+                self._handoff_note = ""
                 if attempt:
                     resp._retries = attempt
                 return resp

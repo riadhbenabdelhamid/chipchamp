@@ -103,13 +103,10 @@ def _pointer(name: str, data: dict) -> str:
     return f"re-run {name}"
 
 
-FETCHED: set = set()   # paths the loop saw arrive via lib.fetch (provenance)
-
-
-def _pinned(r: dict) -> bool:
+def _pinned(r: dict, fetched: set) -> bool:
     """Reference material evicts LAST: library cards, and fs.read bodies of
-    files that ARRIVED via lib.fetch (recorded in FETCHED) or are golden ref
-    models. Evicting them forced a re-grounding loop — 94 reads in 56 steps,
+    files that ARRIVED via lib.fetch (the loop's per-run `fetched` set) or are
+    golden ref models. Evicting them forced a re-grounding loop — 94 reads in 56 steps,
     the same five files re-read 5-8x. Provenance, not path: a run authored
     seven of its own modules into work/rtl/lib/, and pinning those would
     protect exactly the files it needed to fix. Authored files stay
@@ -121,7 +118,7 @@ def _pinned(r: dict) -> bool:
         m = re.search(r'"path": "([^"]+)"', str(r.get("output", "")))
         pth = m.group(1) if m else ""
         base = pth.rsplit("/", 1)[-1]
-        if pth in FETCHED:
+        if pth in fetched:
             return True          # provenance beats location
         return (pth.startswith("work/tb/verilator/")
                 and (base.startswith("ref_") or base == "tb_base.hpp"))
@@ -129,13 +126,17 @@ def _pinned(r: dict) -> bool:
 
 
 def compact(transcript: list[dict], *, budget_chars: int,
-            keep_recent: int = 6) -> tuple[list[dict], dict]:
+            keep_recent: int = 6, pinned: set | None = None) -> tuple[list[dict], dict]:
     """Evict old tool-result bodies until the transcript fits `budget_chars`.
 
     Oldest-first, because the recent window is what the model is reasoning
     about. Returns the new transcript and a report of what moved. Never touches
-    user or assistant turns — those have no backing store.
+    user or assistant turns — those have no backing store. `pinned` is the
+    set of workspace paths that arrived via lib.fetch — passed by the caller,
+    never a module global: a global leaked a fetch from one task (or one
+    workspace, in a long REPL) into the pinning decisions of the next.
     """
+    fetched = pinned or set()
     from .loop import transcript_size
     before = transcript_size(transcript)["chars"]
     if before <= budget_chars:
@@ -162,7 +163,7 @@ def compact(transcript: list[dict], *, budget_chars: int,
                 # debugs against fiction (a lint queue rose 3->19 that way).
                 # Pin them: evicted only in a second pass, when nothing else
                 # can free enough space.
-                if skip_pinned and _pinned(r):
+                if skip_pinned and _pinned(r, fetched):
                     results.append(r)
                     continue
                 text, changed = digest_output(r.get("name", "?"),

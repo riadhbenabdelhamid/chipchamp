@@ -1123,21 +1123,19 @@ def test_repeated_length_stops_teach_parts_even_without_a_path(ctx, tmp_path):
 # authored 37 files against 6 lints.
 
 def test_pin_follows_fetch_provenance_not_path():
-    from chipchamp.agent import working_set
     from chipchamp.agent.working_set import compact
     big = "x" * 4000
     mk = lambda path: {"id": path, "name": "fs.read",
                        "output": '{"path": "' + path + '", "content": "'
                                  + big + '"}'}
-    working_set.FETCHED.clear()
-    working_set.FETCHED.add("work/rtl/lib/stream_fifo.sv")   # really fetched
+    fetched = {"work/rtl/lib/stream_fifo.sv"}                 # really fetched
     t = [{"role": "user", "content": "task"}]
     for i in range(8):
         t.append({"role": "assistant", "content": f"s{i}"})
         t.append({"role": "tool", "content": [
             mk("work/rtl/lib/stream_fifo.sv"),        # pinned by provenance
             mk("work/rtl/lib/my_own_glue.sv")]})      # self-authored: not
-    out, rep = compact(t, budget_chars=30000, keep_recent=2)
+    out, rep = compact(t, budget_chars=30000, keep_recent=2, pinned=fetched)
     assert rep["compacted"]
     # only the EVICTABLE region proves the pin — the recent window is never
     # touched, so counting it would hide the difference
@@ -1145,7 +1143,6 @@ def test_pin_follows_fetch_provenance_not_path():
                  for r in m["content"] if len(str(r.get("output"))) > 3000}
     assert "work/rtl/lib/stream_fifo.sv" in survivors
     assert "work/rtl/lib/my_own_glue.sv" not in survivors
-    working_set.FETCHED.clear()
 
 
 def test_authoring_into_lib_dir_is_taught(tmp_path):
