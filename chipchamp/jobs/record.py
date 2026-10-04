@@ -23,6 +23,7 @@ class StepLog:
     duration_s: float
     log_path: str
     timed_out: bool = False
+    timeout_reason: str = ""
 
 
 @dataclass

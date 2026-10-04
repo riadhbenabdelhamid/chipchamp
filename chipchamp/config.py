@@ -354,6 +354,7 @@ class Workspace:
 
     def _load_tests(self) -> None:
         p = self.dot / "tests.yaml"
+        self.test_defaults: dict = {}   # `defaults:` — timeout_s, idle_timeout_s, seeds
         if not p.exists():
             self.tests = []          # a deleted manifest must not leave stale entries
             return
@@ -366,6 +367,8 @@ class Workspace:
         data = _yaml_or_none(p)
         if isinstance(data, dict):
             entries = data.get("tests") or []   # 'tests:' with a null value
+            if isinstance(data.get("defaults"), dict):
+                self.test_defaults = dict(data["defaults"])
         elif isinstance(data, list):
             entries = data
         else:

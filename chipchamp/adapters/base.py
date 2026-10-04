@@ -72,6 +72,7 @@ class StepResult:
     stderr: str
     duration_s: float = 0.0
     timed_out: bool = False
+    timeout_reason: str = ""   # "wall" (ran too long) | "idle" (went silent)
 
 
 @dataclass

@@ -239,7 +239,8 @@ class JobRunner:
                defines: Optional[dict] = None, seed: Optional[int] = None,
                timeout: Optional[float] = None,
                env_modules: Optional[list[str]] = None,
-               no_cache: bool = False) -> tuple[JobRecord, ToolResult]:
+               no_cache: bool = False,
+               idle_timeout: Optional[float] = None) -> tuple[JobRecord, ToolResult]:
         from .cache import cache_key, result_from_record, reusable
         key = ""
         if self.cache.enabled and not no_cache:
@@ -293,11 +294,13 @@ class JobRunner:
         try:
             for idx, st in enumerate(plan.steps):
                 sr = self._run_step(st, job_dir, idx, timeout,
-                                    env_modules=rec.env_modules)
+                                    env_modules=rec.env_modules,
+                                    idle_timeout=idle_timeout)
                 results.append(sr)
                 rec.steps.append(StepLog(
                     argv=st.argv, rc=sr.rc, duration_s=sr.duration_s,
-                    log_path=str(job_dir / f"step{idx}.log"), timed_out=sr.timed_out))
+                    log_path=str(job_dir / f"step{idx}.log"), timed_out=sr.timed_out,
+                    timeout_reason=sr.timeout_reason))
                 rec.cpu_seconds += sr.duration_s
                 if rec.license_features:
                     rec.license_seconds += sr.duration_s
@@ -477,7 +480,12 @@ class JobRunner:
         return [r for r in self.list_jobs() if r.status == "running"]
 
     def _run_step(self, st, job_dir: Path, idx: int, timeout,
-                  env_modules: list[str] | None = None) -> StepResult:
+                  env_modules: list[str] | None = None,
+                  idle_timeout: float | None = None) -> StepResult:
+        """`timeout` bounds the wall clock; `idle_timeout` bounds silence —
+        a tool that has printed nothing for that long is wedged, while one
+        still printing progress is merely slow. Either kills the whole tree
+        and marks the step timed_out with the reason."""
         env = scrub_env(os.environ, allowlist=self.env_allowlist, deny=self.env_deny)
         env.update(st.env)
         argv = wrap_with_modules(st.argv, env_modules or [])
@@ -485,6 +493,8 @@ class JobRunner:
         argv, _farm_note = plan_submission(argv, self.farm)
         t0 = time.time()
         timed_out = False
+        timeout_reason = ""
+        last_output = [t0]
         # Live log: both streams interleave into <job>/live.log AS THEY ARRIVE,
         # so a UI can tail a running build/sim instead of showing a dead
         # spinner for minutes. The per-step separated log (step<idx>.log) is
@@ -515,6 +525,7 @@ class JobRunner:
 
                 def pump(stream, key):
                     for line in iter(stream.readline, ""):
+                        last_output[0] = time.time()
                         bufs[key].append(line)
                         files[key].write(line)
                         try:
@@ -536,11 +547,23 @@ class JobRunner:
                 for t in pumps:
                     t.start()
                 try:
-                    rc = p.wait(timeout=timeout)
-                except subprocess.TimeoutExpired:
-                    _kill_tree(p)
-                    p.wait()
-                    rc, timed_out = 124, True
+                    wall_deadline = t0 + timeout if timeout else None
+                    while True:
+                        try:
+                            rc = p.wait(timeout=0.5)
+                            break
+                        except subprocess.TimeoutExpired:
+                            now = time.time()
+                            if wall_deadline and now >= wall_deadline:
+                                timeout_reason = "wall"
+                            elif idle_timeout and now - last_output[0] >= idle_timeout:
+                                timeout_reason = "idle"
+                            else:
+                                continue
+                            _kill_tree(p)
+                            p.wait()
+                            rc, timed_out = 124, True
+                            break
                 except KeyboardInterrupt:
                     # own session => the terminal's SIGINT no longer reaches
                     # the step; take the whole tree down ourselves
@@ -551,8 +574,11 @@ class JobRunner:
                     t.join(timeout=5)
                 out, err = bufs["out"].text(), bufs["err"].text()
                 if timed_out:
-                    err += "\n[timed out]"
-                    err_fh.write("\n[timed out]")
+                    note = (f"\n[timed out: no output for {idle_timeout:g}s]"
+                            if timeout_reason == "idle"
+                            else f"\n[timed out after {timeout:g}s]")
+                    err += note
+                    err_fh.write(note)
         except (OSError, subprocess.SubprocessError) as e:
             rc, out, err = 127, "", f"{type(e).__name__}: {e}"
             try:
@@ -582,7 +608,8 @@ class JobRunner:
                 except OSError:
                     pass
         return StepResult(argv=st.argv, rc=rc, stdout=out or "", stderr=err or "",
-                          duration_s=dur, timed_out=timed_out)
+                          duration_s=dur, timed_out=timed_out,
+                          timeout_reason=timeout_reason)
 
     def _persist(self, rec: JobRecord) -> None:
         atomic_write(self.store_dir / rec.id / "record.json", dump_json(rec.to_dict()))

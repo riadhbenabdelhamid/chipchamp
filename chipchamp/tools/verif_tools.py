@@ -35,8 +35,86 @@ def _resolve_sim(ctx: ToolContext, test: str):
     return ctx.target.sources + tb_files, tb_top
 
 
+
+# ---- time limits for a test ------------------------------------------------
+# A simulation's deadline used to be a constant (300/180/600/120 s) that
+# neither the engineer nor the agent could change: tests.yaml's documented
+# `defaults.timeout_s` was never read, and sim.run had no timeout parameter.
+# Precedence, highest first: the agent's timeout_s argument (capped by
+# [tools] max_timeout_s), the test's own timeout_s, tests.yaml defaults,
+# [tools] sim_timeout_s, the built-in.
+TIMEOUT_CEILING_S = 4 * 3600
+
+
+def _timeout_for(ctx: ToolContext, t: dict | None, builtin: float,
+                 override=None) -> tuple[float, str]:
+    tools = ctx.ws.config.get("tools", {}) or {}
+    ceiling = float(tools.get("max_timeout_s", TIMEOUT_CEILING_S))
+    if override:
+        want = float(override)
+        if want > ceiling:
+            return ceiling, f"timeout_s argument, capped at [tools] max_timeout_s={ceiling:g}"
+        return want, "timeout_s argument"
+    if t and t.get("timeout_s"):
+        return float(t["timeout_s"]), f"tests.yaml test '{t.get('name')}'"
+    d = getattr(ctx.ws, "test_defaults", {}) or {}
+    if d.get("timeout_s"):
+        return float(d["timeout_s"]), "tests.yaml defaults"
+    if tools.get("sim_timeout_s"):
+        return float(tools["sim_timeout_s"]), "config [tools] sim_timeout_s"
+    return float(builtin), "built-in default"
+
+
+def _idle_for(ctx: ToolContext, t: dict | None):
+    """Seconds of silence that count as a hang; None = off."""
+    if t and t.get("idle_timeout_s"):
+        return float(t["idle_timeout_s"])
+    d = getattr(ctx.ws, "test_defaults", {}) or {}
+    if d.get("idle_timeout_s"):
+        return float(d["idle_timeout_s"])
+    v = (ctx.ws.config.get("tools", {}) or {}).get("idle_timeout_s")
+    return float(v) if v else None
+
+
+def _timeout_hint(after_s: float, source: str, reason: str) -> str:
+    if reason == "idle":
+        return (f"Killed after {after_s:g}s with no output (idle_timeout_s) — the "
+                f"simulator looked hung. If it is legitimately silent that long, "
+                f"raise idle_timeout_s in tests.yaml; otherwise debug the hang.")
+    return (f"Timed out after {after_s:g}s ({source}). If this test legitimately "
+            f"needs longer: set timeout_s in tests.yaml (per test, or defaults), "
+            f"or call sim.run with timeout_s=<seconds> (max "
+            f"{TIMEOUT_CEILING_S}); for very long runs use detach=true and "
+            f"collect with job.wait. If it hangs rather than runs, set "
+            f"idle_timeout_s to catch that sooner.")
+
+
+def _finish_plan(ctx: ToolContext, t: dict | None, adapter, plan, files,
+                 builtin: float, timeout_s=None):
+    """The planner's one exit: resolve the limits and stash them on the plan
+    so every submit path (sim.run, regress, cov, triage) sees the same."""
+    timeout, source = _timeout_for(ctx, t, builtin, timeout_s)
+    plan.meta.update(timeout_s=timeout, timeout_source=source,
+                     idle_timeout_s=_idle_for(ctx, t))
+    return adapter, plan, files, timeout
+
+
+def _timeout_report(rec, plan) -> dict | None:
+    """What to tell the agent when a job timed out: how long, by whose rule,
+    and what to do about it."""
+    if getattr(rec, "status", "") != "timeout":
+        return None
+    reason = next((s.timeout_reason for s in rec.steps if s.timed_out), "") or "wall"
+    after = (plan.meta.get("idle_timeout_s") if reason == "idle"
+             else plan.meta.get("timeout_s")) or 0
+    source = plan.meta.get("timeout_source", "")
+    return {"reason": reason, "after_s": after, "source": source,
+            "hint": _timeout_hint(after, source, reason)}
+
+
 def _plan_for_test(ctx: ToolContext, test: str, seed: int = 1,
-                   waves: bool = True, uvm_test: str = "", plusargs=None):
+                   waves: bool = True, uvm_test: str = "", plusargs=None,
+                   timeout_s=None):
     """Full runner-kind dispatch for ONE named test — the single source of
     truth for how a test runs (plain SV / UVM / cocotb), shared by sim.run,
     regress.run, cov.run and the triage playbook. Returns
@@ -67,7 +145,7 @@ def _plan_for_test(ctx: ToolContext, test: str, seed: int = 1,
         plan = adapter.sim_cpp(rtl, cpp, top, ctx.ws.root,
                                cpp_incdirs=cpp_incdirs, incdirs=ctx.target.incdirs,
                                defines=ctx.target.defines, seed=seed)
-        return adapter, plan, rtl, 300
+        return _finish_plan(ctx, t, adapter, plan, rtl, 300, timeout_s)
     if runner.get("kind") == "cocotb":
         adapter = ctx.registry.get("cocotb")
         if not adapter.available():
@@ -87,7 +165,7 @@ def _plan_for_test(ctx: ToolContext, test: str, seed: int = 1,
                            seed=seed, waves=waves,
                            test_dir=os.path.join(ctx.ws.root,
                                                  runner.get("test_dir", "tb")))
-        return adapter, plan, rtl, 180
+        return _finish_plan(ctx, t, adapter, plan, rtl, 180, timeout_s)
     files, tb_top = _resolve_sim(ctx, test)
     is_uvm = bool(uvm_test) or runner.get("kind") == "uvm" or bool(runner.get("uvm"))
     pargs = list(plusargs or [])
@@ -112,7 +190,8 @@ def _plan_for_test(ctx: ToolContext, test: str, seed: int = 1,
     kw = {"uvm": True} if is_uvm else {}
     plan = adapter.sim(files, tb_top=tb_top, workdir=ctx.ws.root, seed=seed,
                        waves=waves, plusargs=pargs, incdirs=incdirs or None, **kw)
-    return adapter, plan, files, (600 if is_uvm else 120)
+    return _finish_plan(ctx, t, adapter, plan, files, 600 if is_uvm else 120,
+                        timeout_s)
 
 
 @tool("sim.list_tests", "List tests from the regression manifest with tags/owners.",
@@ -138,12 +217,17 @@ def sim_list_tests(ctx: ToolContext, tag: str = "") -> dict:
                      "return immediately with a job id instead of blocking; "
                      "collect it later with job.wait or job.status. Use for "
                      "long runs so you can do other work meanwhile."},
-          "plusargs": {"type": "array", "items": {"type": "string"}}},
+          "plusargs": {"type": "array", "items": {"type": "string"}},
+          "timeout_s": {"type": "number", "description":
+                        "wall-clock limit for THIS run, when the test's own "
+                        "or the default limit is too short (capped by "
+                        "[tools] max_timeout_s)"}},
           "required": ["test"]})
 def sim_run(ctx: ToolContext, test: str, seed: int = 1, waves: bool = True,
-            uvm_test: str = "", plusargs=None, detach: bool = False) -> dict:
+            uvm_test: str = "", plusargs=None, detach: bool = False,
+            timeout_s=None) -> dict:
     got = _plan_for_test(ctx, test, seed=seed, waves=waves,
-                         uvm_test=uvm_test, plusargs=plusargs)
+                         uvm_test=uvm_test, plusargs=plusargs, timeout_s=timeout_s)
     if isinstance(got, dict):
         return got
     adapter, plan, files, timeout = got
@@ -159,6 +243,10 @@ def sim_run(ctx: ToolContext, test: str, seed: int = 1, waves: bool = True,
                           timeout=timeout)
     out = {"job": rec.id, "status": rec.status, "sim_status": res.status,
            "summary": res.summary, "seed": seed}
+    tr = _timeout_report(rec, plan)
+    if tr:
+        out["timeout"] = tr
+        out["hint"] = tr["hint"]
     # Cross-run history (FR-JOB-06). A reused verdict is not a second
     # observation of the same seed — recording it would manufacture agreement
     # and make a genuinely flaky test look stable.
@@ -225,6 +313,8 @@ def regress_run(ctx: ToolContext, tag: str = "", tests=None, seeds=None,
         return {"error": "no tests selected", "tag": tag}
     seeds = seeds or [1]
 
+    timeouts: list[dict] = []
+
     def run_one(name, seed):
         got = _plan_for_test(ctx, name, seed=seed, waves=True)
         if isinstance(got, dict):
@@ -232,16 +322,22 @@ def regress_run(ctx: ToolContext, tag: str = "", tests=None, seeds=None,
         adapter, plan, files, timeout = got
         rec, _ = ctx.submit(plan, adapter, seed=seed, input_files=files,
                             is_v3=True, timeout=timeout)
+        tr = _timeout_report(rec, plan)
+        if tr:
+            timeouts.append({"test": name, "seed": seed, "job": rec.id, **tr})
         return rec
 
     mgr = RegressionManager(run_one, max_parallel=self_parallel(ctx))
     res = mgr.run(names, seeds, run_id=run_id)
-    return {"run_id": run_id, "summary": res.summary(),
-            "passed": res.passed, "failed": res.failed, "total": res.total,
-            "errored_tests": res.errored_tests,
-            "clusters": [{"id": c.id, "count": c.count, "signature": c.signature,
-                          "representative": c.representative} for c in res.clusters],
-            "flaky": res.flaky}
+    out = {"run_id": run_id, "summary": res.summary(),
+           "passed": res.passed, "failed": res.failed, "total": res.total,
+           "errored_tests": res.errored_tests,
+           "clusters": [{"id": c.id, "count": c.count, "signature": c.signature,
+                         "representative": c.representative} for c in res.clusters],
+           "flaky": res.flaky}
+    if timeouts:
+        out["timeouts"] = timeouts
+    return out
 
 
 def self_parallel(ctx: ToolContext) -> int:

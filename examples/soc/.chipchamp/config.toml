@@ -23,6 +23,13 @@ synth = "yosys"
 lec = "eqy"
 formal = "symbiyosys"
 
+# Simulation time limits, lowest to highest precedence: these, then
+# tests.yaml `defaults.timeout_s`, then a test's own `timeout_s`, then the
+# agent's sim.run(timeout_s=) — which can never exceed max_timeout_s.
+# sim_timeout_s = 300
+# idle_timeout_s = 600     # no output for this long = hung; default: off
+# max_timeout_s = 14400    # ceiling on anything the agent asks for
+
 [runner]
 kind = "local"
 max_parallel = 4

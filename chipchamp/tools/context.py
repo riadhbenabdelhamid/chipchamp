@@ -92,7 +92,7 @@ class ToolContext:
 
     def submit(self, plan, adapter, *, is_v3: bool = False, seed=None,
                input_files=None, timeout=None, no_cache: bool = False,
-               detach: bool = False):
+               detach: bool = False, idle_timeout=None):
         """Launch a job, after the budget says it may be launched.
 
         The budget check happens HERE rather than inside the runner because
@@ -111,8 +111,10 @@ class ToolContext:
             ok, why = self.ledger.can_spend_license(0.0)
             if not ok and not self._budget_ok("license_hours", why):
                 raise BudgetExceeded(why)
+        if idle_timeout is None:   # the planner stashes it on the plan (sim tests)
+            idle_timeout = (getattr(plan, "meta", None) or {}).get("idle_timeout_s")
         kw = dict(input_files=input_files or self.target.sources, seed=seed,
-                  timeout=timeout,
+                  timeout=timeout, idle_timeout=idle_timeout,
                   env_modules=self.ws.config.get("tools", {})
                   .get("env_modules", {}).get(adapter.name, []))
         if detach:

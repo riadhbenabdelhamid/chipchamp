@@ -1,5 +1,6 @@
 defaults:
-  timeout_s: 60
+  timeout_s: 60         # wall-clock cap per test; a test entry may set its own
+  # idle_timeout_s: 300 # kill a test that prints NOTHING for this long (a hang)
   seeds: [1]
 
 tests:
