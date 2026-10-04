@@ -158,14 +158,19 @@ def lib_fetch(ctx: ToolContext, name: str, view: str = "rtl",
     if sim and not src_files:
         return {"error": f"'{name}' ships no C++ reference model (ref_<name>.hpp) "
                          f"— check lib.info(name)['verification']"}
+    from .paths import PathRefused, ws_path
+    try:   # a dest of '../../x' used to pass can_write (globs only) and escape
+        ws_path(ctx, dest)
+    except PathRefused as e:
+        return e.payload
     written, unchanged, denied = [], [], []
     for f in src_files:
-        rel = os.path.join(dest, f["rel"])
-        ok, why = ctx.policy.can_write(rel)
-        if not ok:
-            denied.append({"path": rel, "reason": why})
+        try:
+            ap, rel = ws_path(ctx, os.path.join(dest, f["rel"]), write=True)
+        except PathRefused as e:
+            denied.append({"path": os.path.join(dest, f["rel"]),
+                           "reason": e.payload["error"]})
             continue
-        ap = rel if os.path.isabs(rel) else os.path.join(ctx.ws.root, rel)
         new = open(f["src"], errors="replace").read()
         old = open(ap, errors="replace").read() if os.path.exists(ap) else ""
         if old == new:

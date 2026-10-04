@@ -366,7 +366,7 @@ def fpga_bitstream(ctx: ToolContext, module: str = "", job: str = "") -> dict:
       "design's real top-level ports (typos, unconstrained ports, missing "
       "IOSTANDARD, duplicate pins) in a second instead of after a multi-minute "
       "run, or generate one for a known board. `action`: validate | generate | "
-      "boards | import.", cost="cheap", permission="read", group="fpga",
+      "boards | import.", cost="cheap", permission="write", group="fpga",
       schema={"type": "object", "properties": {
           "action": {"type": "string",
                      "enum": ["validate", "generate", "boards", "import"],
@@ -399,15 +399,22 @@ def fpga_pins(ctx: ToolContext, action: str = "validate", module: str = "",
             "note": "board profiles come from Vivado's installed board files "
                     "and .chipchamp/boards/*.json — add one with action=import"})
 
+    from .paths import PathRefused, safe_name, ws_path
     path = ""
     if file:
-        path = file if os.path.isabs(file) else os.path.join(ctx.ws.root, file)
+        try:
+            path, file = ws_path(ctx, file, write=(action == "generate" and write))
+        except PathRefused as e:
+            return e.payload
     fmt = format or (detect_format(path) if path else "xdc")
 
     if action == "import":
         if not path or not os.path.isfile(path):
             return {"error": f"constraints file not found: {file or '(none)'}"}
-        name = board or os.path.splitext(os.path.basename(path))[0]
+        name = safe_name(board or os.path.splitext(os.path.basename(path))[0])
+        if name is None:
+            return {"error": f"board name must be a plain name, not a path: "
+                             f"{board!r}"}
         with open(path, "r", errors="replace") as fh:
             b = board_from_constraints(name, fh.read(), fmt)
         if not b.signals:
@@ -447,9 +454,13 @@ def fpga_pins(ctx: ToolContext, action: str = "validate", module: str = "",
                "note": "unmapped ports are emitted as TODO comments — map them "
                        "with map={\"port\": \"board_signal\"}"}
         if write and path:
+            old_text = (open(path, errors="replace").read()
+                        if os.path.exists(path) else "")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w") as fh:
                 fh.write(text)
-            out["written"] = ctx.rel(path)
+            ctx.record_edit(file, old_text, text, "modified" if old_text else "added")
+            out["written"] = file
         else:
             out["constraints"] = text
         return truncate(out)

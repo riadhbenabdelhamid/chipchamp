@@ -29,7 +29,11 @@ def _entry_for_spec(ctx: ToolContext, spec_path: str) -> dict | None:
       schema={"type": "object", "properties": {"spec": {"type": "string"}},
               "required": ["spec"]})
 def regmap_validate(ctx: ToolContext, spec: str) -> dict:
-    path = spec if os.path.isabs(spec) else os.path.join(ctx.ws.root, spec)
+    from .paths import PathRefused, ws_path
+    try:
+        path, spec = ws_path(ctx, spec)
+    except PathRefused as e:
+        return e.payload
     if not os.path.exists(path):
         return {"error": f"no such spec: {spec}"}
     try:
@@ -50,8 +54,11 @@ def regmap_validate(ctx: ToolContext, spec: str) -> dict:
                       "description": "defaults to the [[generated]] mapping"}},
           "required": ["spec"]})
 def regmap_generate(ctx: ToolContext, spec: str, out_dir: str = "") -> dict:
-    rel_spec = spec
-    path = spec if os.path.isabs(spec) else os.path.join(ctx.ws.root, spec)
+    from .paths import PathRefused, ws_path
+    try:
+        path, rel_spec = ws_path(ctx, spec)
+    except PathRefused as e:
+        return e.payload
     if not os.path.exists(path):
         return {"error": f"no such spec: {spec}"}
     s = load_spec(path)
@@ -62,8 +69,11 @@ def regmap_generate(ctx: ToolContext, spec: str, out_dir: str = "") -> dict:
     entry = _entry_for_spec(ctx, rel_spec)
     written = []
     for fname, content in outputs.items():
-        target = _output_path(ctx, entry, fname, out_dir)
-        ap = os.path.join(ctx.ws.root, target)
+        try:   # the sanctioned generator may write generated outputs, nothing else
+            ap, target = ws_path(ctx, _output_path(ctx, entry, fname, out_dir),
+                                 write=True, allow_generated=True)
+        except PathRefused as e:
+            return e.payload
         os.makedirs(os.path.dirname(ap), exist_ok=True)
         old = open(ap, errors="replace").read() if os.path.exists(ap) else ""
         changed = old != content

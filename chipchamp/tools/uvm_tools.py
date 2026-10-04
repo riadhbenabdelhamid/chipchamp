@@ -38,9 +38,12 @@ def uvm_scaffold(ctx: ToolContext, module: str, out_dir: str = "",
     base = out_dir or os.path.join("verif", "uvm", module)
     files = scaffold_uvm(mod)
     written = []
+    from .paths import PathRefused, ws_path
     for fname, content in files.items():
-        target = os.path.join(base, fname)
-        ap = os.path.join(ctx.ws.root, target)
+        try:
+            ap, target = ws_path(ctx, os.path.join(base, fname), write=True)
+        except PathRefused as e:
+            return e.payload
         os.makedirs(os.path.dirname(ap), exist_ok=True)
         old = open(ap, errors="replace").read() if os.path.exists(ap) else ""
         if old != content:
@@ -67,10 +70,11 @@ def uvm_scaffold(ctx: ToolContext, module: str, out_dir: str = "",
     manifest_note = "not added (add_test=false)"
     if add_test:
         import yaml
+        from ..util.jsonio import atomic_write
         tpath = ctx.ws.dot / "tests.yaml"
         old = tpath.read_text() if tpath.exists() else ""
         new = _append_test_entry(old, entry, test_name)
-        tpath.write_text(new)
+        atomic_write(tpath, new)
         ctx.record_edit(str(tpath.relative_to(ctx.ws.root)), old, new,
                         "modified" if old else "added")
         tests = [t for t in ctx.ws.tests if t.get("name") != test_name]

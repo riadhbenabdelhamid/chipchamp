@@ -7,6 +7,8 @@ be reported only when every required gate passes against real job records.
 """
 from __future__ import annotations
 
+import os
+
 from dataclasses import dataclass, field
 
 from .. import brand
@@ -17,6 +19,22 @@ from .budgets import Budget, BudgetLedger
 from .classify import classify
 from .diff import Diff
 from .gates import Evidence, GateReport, evaluate, required_gates
+
+
+def canonical(path: str) -> str:
+    """The one form a workspace path is matched and recorded under: forward
+    slashes, `.`/`..` segments collapsed, no leading `./`. An absolute path
+    stays absolute (callers refuse it); an escaping path keeps its leading
+    `../` so callers can see it. fnmatch on the raw string let `./waivers/x`
+    past `waivers/**` and `rtl/../.chipchamp/policy.yaml` past the policy
+    guard."""
+    p = str(path or "").replace("\\", "/")
+    if not p:
+        return p
+    if os.path.isabs(p):
+        return os.path.normpath(p)
+    p = os.path.normpath(p)
+    return "" if p == "." else p
 
 
 @dataclass
@@ -61,15 +79,25 @@ class PolicyEngine:
     # ---- read-side enforcement ---------------------------------------------
 
     def can_read(self, path: str) -> bool:
-        return self.acl.is_allowed(path)
+        return self.acl.is_allowed(canonical(path))
 
-    def can_write(self, path: str) -> tuple[bool, str]:
+    def can_write(self, path: str, *, allow_generated: bool = False) -> tuple[bool, str]:
+        """`allow_generated` is for the sanctioned generators (regmap.generate):
+        they may write generated outputs; everything else about the path —
+        containment, ACL, protected globs — still applies."""
         import fnmatch
+        raw = path
+        path = canonical(path)
+        if os.path.isabs(raw) or path == ".." or path.startswith("../"):
+            return False, (f"'{raw}' is outside the workspace — file paths are "
+                           f"workspace-relative")
         if not self.acl.is_allowed(path):
             return False, self.acl.reason(path)
         for g in self.protected_paths:
             if fnmatch.fnmatch(path, g):
                 return False, f"protected path (policy) — '{g}' is not agent-editable"
+        if allow_generated:
+            return True, "ok"
         # FR-PROJ-04 / FR-DB-05: never hand-edit generated files — edit the source
         for entry in self.generated:
             for g in entry.get("outputs", []):

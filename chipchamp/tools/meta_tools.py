@@ -516,7 +516,10 @@ def checkpoint_restore(ctx: ToolContext, job: str) -> dict:
     import json as _json
     import os
     import shutil
+    from .paths import PathRefused, safe_name, ws_path
     base = os.path.join(str(ctx.ws.dot), "checkpoints")
+    if safe_name(job) is None:
+        return {"error": f"'{job}' is not a job id (expected e.g. J-0004)"}
     d = os.path.join(base, job)
     if not os.path.isdir(d):
         avail = sorted(os.listdir(base)) if os.path.isdir(base) else []
@@ -528,12 +531,16 @@ def checkpoint_restore(ctx: ToolContext, job: str) -> dict:
         manifest = _json.load(open(os.path.join(d, "manifest.json")))
     except (OSError, ValueError):
         return {"error": f"checkpoint '{job}' is unreadable"}
-    restored = []
+    restored, refused = [], []
     for rel in manifest.get("files", []):
         src = os.path.join(d, "files", rel)
         if not os.path.exists(src):
             continue
-        dst = os.path.join(ctx.ws.root, rel)
+        try:
+            dst, rel = ws_path(ctx, rel, write=True)
+        except PathRefused as e:
+            refused.append({"path": rel, "reason": e.payload["error"]})
+            continue
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         old = open(dst, errors="replace").read() if os.path.exists(dst) else ""
         new = open(src, errors="replace").read()
@@ -543,6 +550,7 @@ def checkpoint_restore(ctx: ToolContext, job: str) -> dict:
             restored.append(rel)
     ctx.ws.invalidate(ctx.target_name)
     return {"job": job, "restored": restored,
-            "unchanged": len(manifest.get("files", [])) - len(restored),
+            **({"refused": refused} if refused else {}),
+            "unchanged": len(manifest.get("files", [])) - len(restored) - len(refused),
             "note": "files are back at the green state; make MINIMAL changes "
                     "from here and re-run the check after each one"}

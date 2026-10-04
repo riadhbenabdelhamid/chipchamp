@@ -12,6 +12,7 @@ import re
 
 from .base import tool, truncate
 from .context import ToolContext
+from .paths import PathRefused, ws_path
 
 
 def _abs(ctx: ToolContext, path: str) -> str:
@@ -62,9 +63,12 @@ def _near_paths(ctx: ToolContext, path: str, limit: int = 3) -> list[str]:
           "start": {"type": "integer"}, "end": {"type": "integer"}},
           "required": ["path"]})
 def fs_read(ctx: ToolContext, path: str, start: int = 1, end: int = 0) -> dict:
+    try:
+        ap, path = ws_path(ctx, path)
+    except PathRefused as e:
+        return e.payload
     if not ctx.policy.can_read(path):
         return {"error": f"read denied: {ctx.policy.acl.reason(path)}"}
-    ap = _abs(ctx, path)
     if not os.path.exists(ap):
         near = _near_paths(ctx, path)
         return {"error": f"no such file: {path}"
@@ -88,7 +92,10 @@ def fs_read(ctx: ToolContext, path: str, start: int = 1, end: int = 0) -> dict:
                       "source/fabric file type"}}})
 def fs_list(ctx: ToolContext, dir: str = ".", pattern: str = "") -> dict:
     import glob
-    base = _abs(ctx, dir)
+    try:
+        base, _ = ws_path(ctx, dir or ".")
+    except PathRefused as e:
+        return e.payload
     if not os.path.isdir(base):
         return {"error": f"no such directory: {dir}"}
     if pattern:
@@ -118,6 +125,11 @@ def fs_list(ctx: ToolContext, dir: str = ".", pattern: str = "") -> dict:
 def fs_grep(ctx: ToolContext, pattern: str, glob: str = "") -> dict:
     import glob as _g
     rx = re.compile(pattern)
+    if glob:
+        try:   # the glob's fixed prefix must stay inside the workspace
+            ws_path(ctx, re.split(r"[*?\[]", glob, 1)[0] or ".")
+        except PathRefused as e:
+            return e.payload
     files = (_g.glob(os.path.join(ctx.ws.root, glob), recursive=True)
              if glob else _source_files(ctx.ws.root))
     hits = []
@@ -137,15 +149,12 @@ def fs_grep(ctx: ToolContext, pattern: str, glob: str = "") -> dict:
 def _workspace_path_guard(ctx, path: str):
     """Mutating fs tools take WORKSPACE-RELATIVE paths only. A model wrote to
     '/work_tmp_note' (filesystem root) and got a raw PermissionError — teach
-    the contract instead, and refuse workspace escapes outright."""
-    if os.path.isabs(path):
-        return {"error": f"absolute path not allowed: '{path}'. File paths "
-                         f"are workspace-relative — e.g. work/rtl/<name>.sv."}
-    root = os.path.realpath(ctx.ws.root)
-    ap = os.path.realpath(os.path.join(root, path))
-    if ap != root and not ap.startswith(root + os.sep):
-        return {"error": f"path escapes the workspace: '{path}'. Use a "
-                         f"workspace-relative path under the project root."}
+    the contract instead, and refuse workspace escapes outright. (Shared
+    resolver: tools/paths.ws_path; kept as a thin wrapper for the call sites.)"""
+    try:
+        ws_path(ctx, path)
+    except PathRefused as e:
+        return e.payload
     return None
 
 
