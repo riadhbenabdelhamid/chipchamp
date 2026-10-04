@@ -16,6 +16,23 @@ class BudgetExceeded(Exception):
     is that it cannot be walked past inattentively."""
 
 
+# Ledger kind -> the key the user must edit under [budgets.default]. The
+# approver used to say "raise v3_submissions in config.toml" — a key that
+# does not exist (it is v3_submissions_per_task), with no section named:
+# the same bug class as the old [budget]/[budgets.default] mismatch.
+CONFIG_KEYS = {
+    "v3_submissions": "v3_submissions_per_task",
+    "license_hours": "license_hours",
+    "cpu_hours": "cpu_hours",
+    "model_tokens": "model_tokens",
+}
+
+
+def config_hint(kind: str) -> str:
+    """'[budgets.default] <key>' for a ledger kind — what to edit, where."""
+    return f"[budgets.default] {CONFIG_KEYS.get(kind, kind)}"
+
+
 @dataclass
 class Budget:
     v3_submissions: int = 3

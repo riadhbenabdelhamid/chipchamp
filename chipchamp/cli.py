@@ -22,7 +22,11 @@ from .tools.context import ToolContext
 try:
     from rich.console import Console
     from rich.table import Table
-    _con = Console()
+    from . import ui as _ui
+    # ONE console: ui.set_theme() pushes the theme onto ui's console, so a
+    # second Console here printed the banner, /help, /effort and model
+    # status in the default colours whatever [ui] theme said.
+    _con = _ui.console()
 except Exception:  # pragma: no cover
     _con = None
 
@@ -2045,12 +2049,14 @@ def _make_budget_approver(c):
     an overrun; a headless run cannot, and stops — which is the whole point of
     running one unattended."""
     from . import ui
+    from .policy.budgets import config_hint
 
     def approve(kind: str, why: str) -> bool:
         ui.warn(f"  [bold yellow]budget[/] {why}")
         if not sys.stdin.isatty():
-            ui.warn("  non-interactive → stopping at the ceiling "
-                    f"(raise [bold]{kind}[/] in .chipchamp/config.toml to go on)")
+            ui.warn("  non-interactive → stopping at the ceiling (raise "
+                    f"[bold]{config_hint(kind)}[/] in .chipchamp/config.toml "
+                    "to go on)")
             return False
         try:
             ans = input("     raise it for this task? type 'yes': ").strip().lower()
