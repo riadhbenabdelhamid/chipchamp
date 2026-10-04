@@ -27,7 +27,6 @@ def test_roles_are_least_privilege():
     roles = builtin_roles()
     for role in roles.values():
         # FR-MA-03: no subagent may report success or mint evidence
-        assert "report.done" not in role.tool_names or True
         assert "report.done" not in role.tools()
         assert "evidence.bundle" not in role.tools()
     # read-only roles cannot edit

@@ -1888,9 +1888,9 @@ def _session_commands(c=None) -> dict:
     return dict(sorted(cmds.items()))
 
 
-_GATE_PERMS = {"write", "submit"}
+_GATE_PERMS = {"write", "submit", "approve"}   # approve: waiver drafts
 _PLAN_SUFFIX = (
-    "PLAN MODE is ON: file writes/edits and job-launching tools require the "
+    "PLAN MODE is ON: file writes/edits, job-launching tools and waiver drafts require the "
     "human's approval before they run. Keep your plan.update checklist current "
     "and expect to be gated on each mutating action; if an action is declined, "
     "revise the plan rather than retrying it.")

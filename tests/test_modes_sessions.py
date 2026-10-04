@@ -26,7 +26,7 @@ def test_mode_cycle_order_and_gating():
     # normal -> auto -> plan -> normal
     assert m.cycle() == "auto" and loop.gate_permissions == set()
     assert m.cycle() == "plan"
-    assert loop.gate_permissions == {"write", "submit"}  # plan gates writes/jobs
+    assert loop.gate_permissions == {"write", "submit", "approve"}  # plan gates writes/jobs/waivers
     assert "PLAN MODE" in loop.system_suffix
     assert m.cycle() == "normal" and loop.gate_permissions == set()
     assert _MODE_ORDER == ["normal", "auto", "plan"]
@@ -36,7 +36,7 @@ def test_mode_set_explicit():
     from chipchamp.cli import _AutonomyMode
     loop = _Loop()
     m = _AutonomyMode(loop, "normal")
-    assert m.set("plan") and loop.gate_permissions == {"write", "submit"}
+    assert m.set("plan") and loop.gate_permissions == {"write", "submit", "approve"}
     assert m.set("auto") and loop.gate_permissions == set()
     assert not m.set("bogus") and m.name == "auto"  # unknown ignored
 
@@ -45,7 +45,7 @@ def test_plan_flag_maps_to_plan_mode():
     from chipchamp.cli import _AutonomyMode
     loop = _Loop()
     m = _AutonomyMode(loop, "plan")
-    assert m.name == "plan" and loop.gate_permissions == {"write", "submit"}
+    assert m.name == "plan" and loop.gate_permissions == {"write", "submit", "approve"}
 
 
 # ---- sessions ------------------------------------------------------------------

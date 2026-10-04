@@ -224,7 +224,10 @@ def test_fpga_live_vivado_bitstream(ctx):
     assert b["verdict"] == "pass" and b["packer"] == "write_bitstream"
     assert b["bitstream_bytes"] > 100_000          # a 7-series .bit is ~2 MB
     with open(os.path.join(str(ctx.ws.root), b["bitstream"]), "rb") as fh:
-        assert b"Xilinx" in fh.read(256) or True   # header is vendor-encoded
+        head = fh.read(256)
+        # the .bit header carries the design name and the part before the
+        # sync word — vendor-encoded, but these two strings are always there
+        assert b"counter" in head and b"7a35t" in head, head[:64]
 
 
 def test_fpga_run_rejects_a_missing_xdc(ctx):
