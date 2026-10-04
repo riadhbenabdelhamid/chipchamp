@@ -20,7 +20,18 @@ def to_anthropic_messages(transcript: list[dict]) -> list[dict]:
     for turn in transcript:
         role = turn["role"]
         if role == "user":
-            msgs.append({"role": "user", "content": turn.get("content", "")})
+            text = turn.get("content", "")
+            if msgs and msgs[-1]["role"] == "user":
+                # tool results ARE a user message here; a loop note that
+                # follows them becomes a text block in the same message —
+                # the canonical shape, not two consecutive user turns
+                prev = msgs[-1]["content"]
+                if isinstance(prev, str):
+                    prev = [{"type": "text", "text": prev}] if prev else []
+                prev.append({"type": "text", "text": text})
+                msgs[-1]["content"] = prev
+            else:
+                msgs.append({"role": "user", "content": text})
         elif role == "assistant":
             blocks = []
             if turn.get("content"):

@@ -355,10 +355,16 @@ def test_stall_handoff_stays_template_legal(ctx):
     assert any(s["reason"] == "stall" for s in out["switches"])
     # the fallback's first call: handoff present in SYSTEM, not the transcript
     assert "[router]" in g2.systems[0]
-    tr = g2.transcripts
-    for prev, cur in zip(tr, tr[1:]):
+    # Legality is a property of what the provider RECEIVES. The loop's own
+    # transcript legitimately carries user turns after tool results (the
+    # ledger, teachings); to_openai_messages bridges them for strict templates.
+    from chipchamp.agent.providers.openai_compat import to_openai_messages
+    wire = to_openai_messages("S", g2.transcripts)
+    for prev, cur in zip(wire, wire[1:]):
         assert not (prev["role"] == "tool" and cur["role"] == "user"), \
             "user turn directly after tool results breaks strict templates"
+        if prev["role"] == "assistant" and prev.get("tool_calls"):
+            assert cur["role"] == "tool"
 
 
 def test_plan_then_narrate_collapse_triggers_giveup_switch(ctx):

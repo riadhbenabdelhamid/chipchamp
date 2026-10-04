@@ -65,6 +65,11 @@ def _wire_id(raw: str) -> str:
     return hashlib.sha1(raw.encode()).hexdigest()[:9]
 
 
+# What the bridging assistant turn says. Neutral and short: the model later
+# reads it as its own prior utterance.
+BRIDGE_TEXT = "(continuing)"
+
+
 def to_openai_messages(system: str, transcript: list[dict]) -> list[dict]:
     msgs: list[dict] = []
     if system:
@@ -91,10 +96,20 @@ def to_openai_messages(system: str, transcript: list[dict]) -> list[dict]:
             continue
         else:
             continue
+        prev = msgs[-1] if msgs else None
+        # Strict templates (Mistral: "roles must alternate user and
+        # assistant ... except for tool calls and results") reject a user
+        # turn directly after tool results. The loop adds exactly such turns
+        # on purpose — the workspace ledger, the verification nudge, the
+        # scope and port-change teachings all land right after results —
+        # so the wire form bridges with a neutral assistant turn. One
+        # place, every path; the transcript itself stays as the loop wrote it.
+        if prev is not None and prev["role"] == "tool" and m["role"] == "user":
+            msgs.append({"role": "assistant", "content": BRIDGE_TEXT})
+            prev = msgs[-1]
         # Strict templates also demand user/assistant alternation. Adjacent
         # same-role text turns (e.g. a model narrating across several turns
         # after the nudges cap out) are template-invalid — coalesce them.
-        prev = msgs[-1] if msgs else None
         if (prev is not None and prev["role"] == m["role"]
                 and m["role"] in ("user", "assistant")
                 and not prev.get("tool_calls") and not m.get("tool_calls")):

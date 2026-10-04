@@ -141,3 +141,34 @@ def test_adhoc_provider_by_env_resolves_instead_of_raising(tmp_path, monkeypatch
     assert prov is not None and prov.config.name == "adhoc-box"
     assert prov.config.kind == "openai" and prov.config.local
     assert prov.config.base_url == "http://127.0.0.1:9/v1"
+
+
+def test_openai_wire_bridges_a_user_note_after_tool_results():
+    """The loop appends ledgers, nudges and teachings as user turns right
+    after tool results; strict templates reject that adjacency. The wire form
+    inserts a neutral assistant turn, and still coalesces user runs."""
+    from chipchamp.agent.providers.openai_compat import BRIDGE_TEXT
+    t = TRANSCRIPT + [{"role": "user", "content": "[workspace ledger] a.sv"},
+                      {"role": "user", "content": "Run lint.run NOW."},
+                      {"role": "assistant", "content": "ok"}]
+    wire = to_openai_messages("SYS", t)
+    roles = [m["role"] for m in wire]
+    assert roles == ["system", "user", "assistant", "tool", "assistant", "user", "assistant"]
+    assert wire[4]["content"] == BRIDGE_TEXT
+    assert "[workspace ledger]" in wire[5]["content"] and "lint.run NOW" in wire[5]["content"]
+    for a, b in zip(wire, wire[1:]):
+        assert not (a["role"] == "tool" and b["role"] == "user")
+
+
+def test_openai_wire_leaves_a_legal_transcript_alone():
+    wire = to_openai_messages("SYS", TRANSCRIPT + [{"role": "assistant", "content": "done"}])
+    assert [m["role"] for m in wire] == ["system", "user", "assistant", "tool", "assistant"]
+
+
+def test_anthropic_wire_joins_a_user_note_to_the_tool_result_message():
+    t = TRANSCRIPT + [{"role": "user", "content": "[workspace ledger] a.sv"}]
+    wire = to_anthropic_messages(t)
+    assert [m["role"] for m in wire] == ["user", "assistant", "user"]
+    blocks = wire[-1]["content"]
+    assert blocks[0]["type"] == "tool_result" and blocks[-1] == {
+        "type": "text", "text": "[workspace ledger] a.sv"}
