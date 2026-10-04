@@ -28,6 +28,11 @@ class FakeGateway:
         return self.script.pop(0)
 
 
+def _guard(messages, tag):
+    """The synthetic user turns a given guard injected (by tag, not wording)."""
+    return [m for m in messages if m.get("role") == "user" and m.get("guard") == tag]
+
+
 # --- 1. lenient resolution -------------------------------------------------
 
 def test_resolver_folds_separator_variants(ctx):
@@ -677,8 +682,7 @@ def test_verify_cadence_guard_fires_and_latches(ctx, tmp_path):
     sess = Session.new(str(tmp_path))
     loop = AgentLoop(ctx, gw, session=sess, verify_every_n_writes=2)
     loop.run("build things")
-    guard = [m for m in sess.messages if m.get("role") == "user"
-             and "without running any verification" in str(m.get("content"))]
+    guard = _guard(sess.messages, "verify_cadence")
     assert len(guard) == 1              # fired at write 2, latched (no nag at 3)
 
 
@@ -691,8 +695,7 @@ def test_verify_cadence_off_by_default(ctx, tmp_path):
     sess = Session.new(str(tmp_path))
     loop = AgentLoop(ctx, FakeGateway(script), session=sess)
     loop.run("write one file")
-    assert not any("without running any verification" in str(m.get("content"))
-                   for m in sess.messages)
+    assert not _guard(sess.messages, "verify_cadence")
 
 
 # --- 26. regression-aware debug teaching + pinned library cards -------------
@@ -719,9 +722,8 @@ def test_lint_regression_is_taught(ctx, tmp_path):
     sess = Session.new(str(tmp_path))
     loop = AgentLoop(ctx, FakeGateway(script), tools=cat, session=sess)
     loop.run("fix the lint")
-    msgs = [m for m in sess.messages if m.get("role") == "user"
-            and "Lint errors ROSE from 9 to 19" in str(m.get("content"))]
-    assert len(msgs) == 1
+    msgs = _guard(sess.messages, "lint_rose")
+    assert len(msgs) == 1 and "9 to 19" in msgs[0]["content"]
 
 
 def test_compaction_pins_lib_cards():
@@ -854,9 +856,8 @@ def test_green_checkpoint_snapshot_teach_restore(tmp_path):
     loop.run("build; finish with report.done")
     ck = tmp_path / ".chipchamp" / "checkpoints" / "J-0001"
     assert (ck / "files" / "work" / "rtl" / "m.sv").read_text() == "GREEN"
-    taught = [m for m in sess.messages if m.get("role") == "user"
-              and "checkpoint.restore(job='J-0001')" in str(m.get("content"))]
-    assert len(taught) == 1
+    taught = _guard(sess.messages, "checkpoint")
+    assert len(taught) == 1 and "J-0001" in taught[0]["content"]
     assert (tmp_path / "work" / "rtl" / "m.sv").read_text() == "BROKEN"
     out = checkpoint_restore(ctx, job="J-0001")
     assert out["restored"] == ["work/rtl/m.sv"]
@@ -895,9 +896,8 @@ def test_progress_guard_names_next_plan_step(tmp_path):
     loop = AgentLoop(ctx, FakeGateway(script), tools=cat, session=sess,
                      progress_guard_after=2)
     loop.run("build; finish with report.done")
-    taught = [m for m in sess.messages if m.get("role") == "user"
-              and "GREEN and UNCHANGED since J-0001" in str(m.get("content"))]
-    assert len(taught) == 1                             # once per idle streak
+    taught = _guard(sess.messages, "progress")
+    assert len(taught) == 1 and "J-0001" in taught[0]["content"]   # once per idle streak
     assert "write stream_merge_top" in taught[0]["content"]
 
 
@@ -911,8 +911,7 @@ def test_progress_guard_off_by_default(tmp_path):
     script = [rd, rd, rd, ModelResponse(text="done", tool_calls=[])]
     sess = Session.new(str(tmp_path / "s"))
     AgentLoop(ctx, FakeGateway(script), session=sess).run("look around")
-    assert not any("GREEN and UNCHANGED" in str(m.get("content"))
-                   for m in sess.messages)
+    assert not _guard(sess.messages, "progress")
 
 
 # --- 31. interface-change propagation + quote-back nudge --------------------
@@ -956,8 +955,7 @@ def test_narration_nudge_quotes_stated_plan(ctx, tmp_path):
     sess = Session.new(str(tmp_path))
     AgentLoop(ctx, FakeGateway(script), session=sess,
               require_report_done=True, max_narration_nudges=2).run("fix it")
-    nudges = [m for m in sess.messages if m.get("role") == "user"
-              and "that is a plan, not an action" in str(m.get("content"))]
+    nudges = _guard(sess.messages, "narration")
     assert nudges and "re-declare slice_s_ready" in nudges[0]["content"]
 
 
@@ -1158,8 +1156,7 @@ def test_authoring_into_lib_dir_is_taught(tmp_path):
         ModelResponse(text="done", tool_calls=[])]
     sess = Session.new(str(tmp_path / "s"))
     AgentLoop(ctx, FakeGateway(script), session=sess).run("build")
-    taught = [m for m in sess.messages if m.get("role") == "user"
-              and "fetched-library directory" in str(m.get("content"))]
+    taught = _guard(sess.messages, "libdir")
     assert len(taught) == 1 and "work/rtl/" in taught[0]["content"]
 
 
@@ -1187,9 +1184,7 @@ def test_deleting_a_checkpointed_file_teaches_restore(tmp_path):
         ModelResponse(text="done", tool_calls=[])]
     sess = Session.new(str(tmp_path / "s"))
     AgentLoop(ctx, FakeGateway(script), tools=cat, session=sess).run("build")
-    taught = [m for m in sess.messages if m.get("role") == "user"
-              and "which the GREEN checkpoint J-0001 contains"
-              in str(m.get("content"))]
+    taught = _guard(sess.messages, "wipe")
     assert len(taught) == 1                       # a wipe teaches immediately
     assert "checkpoint.restore(job='J-0001')" in taught[0]["content"]
 
@@ -1207,6 +1202,5 @@ def test_cadence_guard_rearms_every_n_writes(tmp_path):
     sess = Session.new(str(tmp_path / "s"))
     AgentLoop(ctx, FakeGateway(script), session=sess,
               verify_every_n_writes=2).run("write a lot")
-    nags = [m for m in sess.messages if m.get("role") == "user"
-            and "without running any verification" in str(m.get("content"))]
+    nags = _guard(sess.messages, "verify_cadence")
     assert len(nags) == 3          # at 2, 4, 6 writes — not latched at one

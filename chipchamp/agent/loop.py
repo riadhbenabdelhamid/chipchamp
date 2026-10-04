@@ -282,6 +282,11 @@ class AgentLoop:
                     if isinstance(v["errors"], int) else "FAILED"))
                 for v in sorted(cur, key=lambda v: -v["rank"]))
 
+        def _teach_later(tag: str, msg: str) -> None:
+            """Queue a teaching for after this step's tool results, tagged
+            with the guard that produced it."""
+            pending_teach.append((tag, msg))
+
         def _ledger_msg() -> str:
             return (f"{LEDGER_TAG} Authoritative record kept by the loop — "
                     f"trust it over your memory. Files you authored that "
@@ -359,7 +364,7 @@ class AgentLoop:
                         m.get("role") == "user" and str(
                             m.get("content", "")).startswith(LEDGER_TAG))]
                     if authored or deleted:
-                        transcript.append({"role": "user",
+                        transcript.append({"role": "user", "guard": "ledger",
                                            "content": _ledger_msg()})
                     if self.session:
                         self.session.messages = transcript
@@ -484,7 +489,7 @@ class AgentLoop:
                                 f"call. " if quoted else
                                 "You ended with a message but no tool call, "
                                 "and report.done has not accepted this task. ")
-                        transcript.append({"role": "user", "content": (
+                        transcript.append({"role": "user", "guard": "narration", "content": (
                             lead
                             + "If you are genuinely finished, call "
                             "report.done now — it is the ONLY way to complete "
@@ -569,7 +574,7 @@ class AgentLoop:
                              "either a tool call or a concise final answer as "
                              "plain message text. No further internal "
                              "deliberation. /no_think")
-                transcript.append({"role": "user", "content": nudge})
+                transcript.append({"role": "user", "guard": "continue", "content": nudge})
                 if self.session:
                     self.session.messages = transcript
                     self.session.save()
@@ -616,7 +621,7 @@ class AgentLoop:
                             and "/lib/" in "/" + _wp
                             and (_wp, "libdir") not in scope_taught):
                         scope_taught.add((_wp, "libdir"))
-                        pending_teach.append(
+                        _teach_later("libdir",
                             f"You wrote {_wp} into a fetched-library "
                             f"directory. That directory holds components "
                             f"copied by lib.fetch — files you author there "
@@ -628,7 +633,7 @@ class AgentLoop:
                     _teach = self._port_change_teaching(
                         str((call.get("input") or {}).get("path", "")))
                     if _teach:
-                        pending_teach.append(_teach)
+                        _teach_later("ports", _teach)
                     _p = str((call.get("input") or {}).get("path", ""))
                     if _p:
                         authored.add(_p)
@@ -648,7 +653,7 @@ class AgentLoop:
                         if (green_job and _p in self._checkpoint_files(green_job)
                                 and not checkpoint_taught):
                             checkpoint_taught = True
-                            pending_teach.append(
+                            _teach_later("wipe",
                                 f"You deleted {_p}, which the GREEN "
                                 f"checkpoint {green_job} contains. If that "
                                 f"was not deliberate, "
@@ -680,7 +685,7 @@ class AgentLoop:
                             # cheap, but it still cost a step and taught
                             # nothing — say so once
                             scope_taught.add((_key, epoch, "redo"))
-                            pending_teach.append(
+                            _teach_later("scope_redo",
                                 f"{real}({_scope}) already has a current "
                                 f"result on this unchanged tree: "
                                 f"{_prev['job']} "
@@ -717,7 +722,7 @@ class AgentLoop:
                                 scope_taught.add((_key, epoch, "gap"))
                                 w = max(weaker, key=lambda v: v["rank"])
                                 _e = result.get("errors")
-                                pending_teach.append(
+                                _teach_later("scope_gap",
                                     f"{w['tool']}({w['scope']}) {w['job']} is "
                                     f"green on this tree and need not be "
                                     f"repeated. {real}({_scope}) {_jid} FAILED "
@@ -739,8 +744,8 @@ class AgentLoop:
                                 "output": _stringify(result)})
                 self.on_event("tool_result", {"name": real, "result": result})
             transcript.append({"role": "tool", "content": results})
-            for _msg in pending_teach:
-                transcript.append({"role": "user", "content": _msg})
+            for _tag, _msg in pending_teach:
+                transcript.append({"role": "user", "guard": _tag, "content": _msg})
             pending_teach = []
             if ledger_active and (authored or deleted):
                 # refresh NOW, not only at the next compaction: a guard
@@ -749,7 +754,7 @@ class AgentLoop:
                 transcript = [m for m in transcript if not (
                     m.get("role") == "user" and str(
                         m.get("content", "")).startswith(LEDGER_TAG))]
-                transcript.append({"role": "user", "content": _ledger_msg()})
+                transcript.append({"role": "user", "guard": "ledger", "content": _ledger_msg()})
             if (self.verify_every_n_writes
                     and writes_since_verify >= self.verify_every_n_writes
                     and writes_since_verify >= verify_nudged_at
@@ -758,7 +763,7 @@ class AgentLoop:
                 # a run author 37 files against 6 checks — the teaching went
                 # quiet exactly when the drift got worse
                 verify_nudged_at = writes_since_verify
-                transcript.append({"role": "user", "content": (
+                transcript.append({"role": "user", "guard": "verify_cadence", "content": (
                     f"You have written or edited {writes_since_verify} files "
                     f"without running any verification. Run lint.run NOW and "
                     f"fix what it reports before writing anything new — "
@@ -783,7 +788,7 @@ class AgentLoop:
                          and last_lint_err is not None
                          and lint_err_this > last_lint_err)
             if lint_rose:
-                transcript.append({"role": "user", "content": (
+                transcript.append({"role": "user", "guard": "lint_rose", "content": (
                     f"Lint errors ROSE from {last_lint_err} to "
                     f"{lint_err_this} after your last change — the previous "
                     f"version was closer. Do NOT rewrite whole files. Make "
@@ -812,7 +817,7 @@ class AgentLoop:
                 progress_taught = True
                 nxt = next((str(p.get("step", "")) for p in (self.ctx.plan or [])
                             if p.get("status") != "done"), "")
-                transcript.append({"role": "user", "content": (
+                transcript.append({"role": "user", "guard": "progress", "content": (
                     f"The workspace is GREEN and UNCHANGED since "
                     f"{green_job} (checks on this tree: {_verify_summary()}) "
                     f"— re-reading or re-checking it adds nothing. "
@@ -832,7 +837,7 @@ class AgentLoop:
             if (green_job and fails_since_green >= 2
                     and not checkpoint_taught):
                 checkpoint_taught = True
-                transcript.append({"role": "user", "content": (
+                transcript.append({"role": "user", "guard": "checkpoint", "content": (
                     f"Your checks have failed {fails_since_green} times in a "
                     f"row since {green_job} was GREEN. A checkpoint of "
                     f"that green state exists: call "
@@ -869,7 +874,7 @@ class AgentLoop:
                 self.on_event("oracle_suspect", {
                     "test": sim_sig[0], "signature": sim_sig[1],
                     "count": sim_sig_count})
-                transcript.append({"role": "user", "content": (
+                transcript.append({"role": "user", "guard": "oracle", "content": (
                     f"The sim '{sim_sig[0]}' has now failed {sim_sig_count} "
                     "consecutive times with the IDENTICAL failure signature "
                     f"({sim_sig[1]!r}). When the signature never changes no "
@@ -1013,7 +1018,7 @@ class AgentLoop:
             # in the system prompt instead of the conversation.
             self._handoff_note = note
         else:
-            transcript.append({"role": "user", "content": note})
+            transcript.append({"role": "user", "guard": "handoff", "content": note})
         if self.session:
             self.session.messages = transcript
             self.session.save()
