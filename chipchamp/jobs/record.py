@@ -59,6 +59,10 @@ class JobRecord:
     # is the id of the real run this placeholder collected.
     detached: bool = False
     ran_as: str = ""
+    # the process running a detached job, and when it last said so — a
+    # reader can tell "still running" from "the worker died" (FR-JOB-04)
+    pid: int = 0
+    heartbeat_ts: float = 0.0
 
     @property
     def duration_s(self) -> float:

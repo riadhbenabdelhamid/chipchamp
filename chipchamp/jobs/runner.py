@@ -17,12 +17,14 @@ launched it — which is what makes "come back to it" possible at all.
 """
 from __future__ import annotations
 
+import atexit
 import collections
 import os
 import re
 import shutil
 import signal
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -77,6 +79,28 @@ class _BoundedText:
                 + f"\n[... {self.dropped} bytes omitted from memory — the full "
                   f"stream is in the step log ...]\n"
                 + "".join(self.tail))
+
+
+def _pid_alive(pid: int) -> bool:
+    """Is `pid` a live (non-zombie) process? Permission errors count as alive."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    try:
+        with open(f"/proc/{pid}/stat") as fh:
+            return fh.read().rsplit(")", 1)[-1].split()[0] != "Z"
+    except OSError:
+        return True
+
+
+def _builtin_adapter_names() -> set:
+    from ..adapters.registry import _BUILTIN
+    return set(_BUILTIN)
 
 
 def _kill_tree(p: subprocess.Popen) -> None:
@@ -151,7 +175,8 @@ class JobRunner:
         self.cache = JobCache(self.store_dir, enabled=cache)
         self._seq = self._load_seq()
         self._lock = threading.Lock()
-        self._async: dict[str, threading.Thread] = {}
+        self._async: dict[str, object] = {}     # job id -> Thread | Popen
+        self._atexit_armed = False
 
     def _load_seq(self) -> int:
         f = self.store_dir / "seq.txt"
@@ -298,15 +323,35 @@ class JobRunner:
 
     # ---- detached jobs (FR-JOB-04) -----------------------------------------
 
+    @staticmethod
+    def _adopt_outcome(placeholder: JobRecord, done: JobRecord) -> None:
+        """Copy a finished run's outcome onto the detached placeholder. The
+        real run mints its own id; `ran_as` records where the answer landed,
+        so either id leads a reader to the result."""
+        placeholder.status, placeholder.summary = done.status, done.summary
+        placeholder.artifacts = dict(done.artifacts)
+        placeholder.result = dict(done.result or {})
+        placeholder.steps, placeholder.cpu_seconds = list(done.steps), done.cpu_seconds
+        placeholder.license_seconds = done.license_seconds
+        placeholder.ran_as = done.id
+
     def submit_async(self, plan: Plan, adapter: Adapter, **kw) -> JobRecord:
         """Start a job and return its ``running`` record immediately.
 
-        The placeholder is persisted BEFORE the thread starts, so a crash
+        The placeholder is persisted BEFORE anything starts, so a crash
         between launch and completion leaves a job that can be found and
         reported rather than one that silently never existed.
+
+        The job runs in a separate worker PROCESS (jobs/worker.py) in its own
+        session, so it survives the launching process — the detach contract.
+        An adapter a fresh process cannot import (a class defined inside a
+        function) falls back to an in-process thread; those are marked
+        abandoned if the launcher exits first.
         """
+        from .worker import adapter_ref, plan_to_dict
         job_id = self._next_id()
-        (self.store_dir / job_id).mkdir(parents=True, exist_ok=True)
+        job_dir = self.store_dir / job_id
+        job_dir.mkdir(parents=True, exist_ok=True)
         rec = JobRecord(id=job_id, kind=plan.kind, adapter=adapter.name,
                         tool_version=adapter.version(), status="running",
                         submit_ts=time.time(), start_ts=time.time(),
@@ -317,16 +362,49 @@ class JobRunner:
         rec.detached = True
         self._persist(rec)
 
+        ref = adapter_ref(adapter)
+        importable = ref is not None or adapter.name in _builtin_adapter_names()
+        if importable:
+            launch = {"plan": plan_to_dict(plan), "kwargs": kw,
+                      "adapter_name": adapter.name, "adapter_ref": ref,
+                      "runner_kwargs": {"env_allowlist": self.env_allowlist,
+                                        "env_deny": self.env_deny,
+                                        "license_wait_s": self.license_wait_s,
+                                        "env_modules": self.env_modules,
+                                        "cache": self.cache.enabled}}
+            try:
+                atomic_write(job_dir / "launch.json", dump_json(launch))
+                env = dict(os.environ)
+                env["PYTHONPATH"] = os.pathsep.join(
+                    [p for p in sys.path if p] + [env.get("PYTHONPATH", "")]).strip(os.pathsep)
+                log = open(job_dir / "worker.log", "a")
+                p = subprocess.Popen(
+                    [sys.executable, "-m", "chipchamp.jobs.worker",
+                     str(self.store_dir), job_id],
+                    cwd=plan.workdir or None, env=env, stdin=subprocess.DEVNULL,
+                    stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+                log.close()
+            except (OSError, TypeError, ValueError) as e:
+                # could not start a worker: run in-process rather than lose the job
+                rec.summary = f"worker spawn failed ({type(e).__name__}: {e}); ran in-process"
+                importable = False
+            else:
+                rec.pid = p.pid
+                rec.heartbeat_ts = time.time()
+                self._persist(rec)
+                with self._lock:
+                    self._async[job_id] = p
+                return rec
+
+        # ---- in-process fallback ----
+        rec.pid = os.getpid()
+        rec.heartbeat_ts = time.time()
+        self._persist(rec)
+
         def _work():
             try:
-                # the real run mints its own id; the placeholder records where
-                # the answer landed, so either id leads a reader to the result
                 done, _res = self.submit(plan, adapter, **kw)
-                rec.status, rec.summary = done.status, done.summary
-                rec.artifacts, rec.result = dict(done.artifacts), dict(done.result)
-                rec.steps, rec.cpu_seconds = list(done.steps), done.cpu_seconds
-                rec.license_seconds = done.license_seconds
-                rec.ran_as = done.id
+                self._adopt_outcome(rec, done)
             except Exception as e:                  # a crash is a job outcome
                 rec.status = "error"
                 rec.summary = f"{type(e).__name__}: {e}"
@@ -340,8 +418,28 @@ class JobRunner:
                               name=f"chipchamp-{job_id}")
         with self._lock:
             self._async[job_id] = th
+            if not self._atexit_armed:
+                atexit.register(self._mark_abandoned)
+                self._atexit_armed = True
         th.start()
         return rec
+
+    def _mark_abandoned(self) -> None:
+        """At interpreter exit: in-process detached jobs die with us, so say so
+        instead of leaving `running` records that wake would park on forever."""
+        with self._lock:
+            items = list(self._async.items())
+        for job_id, h in items:
+            if isinstance(h, threading.Thread) and h.is_alive():
+                rec = self.get(job_id)
+                if rec and rec.status == "running":
+                    rec.status = "error"
+                    rec.summary = "abandoned: the launching process exited (in-process job)"
+                    rec.end_ts = time.time()
+                    try:
+                        self._persist(rec)
+                    except OSError:
+                        pass
 
     def poll(self, job_id: str) -> Optional[JobRecord]:
         """Current record. Reads from disk, so it works across processes —
@@ -351,12 +449,20 @@ class JobRunner:
     def wait(self, job_id: str, timeout: Optional[float] = None) -> Optional[JobRecord]:
         """Block until a detached job leaves ``running``. None on timeout."""
         with self._lock:
-            th = self._async.get(job_id)
-        if th is not None:
-            th.join(timeout=timeout)
+            h = self._async.get(job_id)
+        if isinstance(h, threading.Thread):
+            h.join(timeout=timeout)
             # still alive → the wait expired. Returning the record here would
             # hand back a `running` job as though it were an answer.
-            return None if th.is_alive() else self.get(job_id)
+            return None if h.is_alive() else self.get(job_id)
+        if isinstance(h, subprocess.Popen):
+            try:
+                h.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                return None
+            with self._lock:
+                self._async.pop(job_id, None)
+            return self.get(job_id)
         # launched by another process: poll the store instead of the thread
         deadline = time.time() + (timeout if timeout is not None else 1e9)
         while time.time() < deadline:
@@ -487,7 +593,24 @@ class JobRunner:
         f = self.store_dir / job_id / "record.json"
         if not f.exists():
             return None
-        return JobRecord.from_dict(load_json(f))
+        rec = JobRecord.from_dict(load_json(f))
+        if rec.status == "running" and rec.detached and rec.pid:
+            # a worker we own: reap it so a finished-but-unreaped pid is not
+            # mistaken for a live one
+            with self._lock:
+                h = self._async.get(job_id)
+            if isinstance(h, subprocess.Popen):
+                h.poll()
+            if not _pid_alive(rec.pid):
+                rec.status = "error"
+                rec.summary = (f"worker process {rec.pid} died before the job "
+                               f"finished (lost)")
+                rec.end_ts = time.time()
+                try:
+                    self._persist(rec)
+                except OSError:
+                    pass
+        return rec
 
     def list_jobs(self) -> list[JobRecord]:
         out = []
