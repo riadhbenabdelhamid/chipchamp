@@ -204,15 +204,25 @@ def result_from_record(rec) -> Optional["object"]:
                       artifacts=dict(rec.artifacts or {}))
 
 
-def reusable(rec, job_dir: Path, plan=None) -> bool:
+def reusable(rec, job_dir: Path, plan=None, *, inputs_hash: str = "",
+             adapter: str = "") -> bool:
     """Is this record safe to serve instead of re-running the tool?
 
     `plan`, when given, is the job that was ABOUT to run: its declared artifact
     paths are what the caller will go on to open, so if they are not already on
-    disk the run must actually happen.
+    disk the run must actually happen. `inputs_hash` and `adapter`, when given,
+    must match the record's own: the index maps a key to a job id, and an id
+    can be wrong (a stale index, a collision in a shared store) — a lint "hit"
+    must never hand back another job's verdict.
     """
     if not (rec and rec.status in REUSABLE and rec.result and rec.input_files
             and rec.kind in CACHEABLE_KINDS and job_dir.is_dir()):
+        return False
+    if plan is not None and getattr(plan, "kind", rec.kind) != rec.kind:
+        return False
+    if inputs_hash and rec.inputs_hash and rec.inputs_hash != inputs_hash:
+        return False
+    if adapter and rec.adapter and rec.adapter != adapter:
         return False
     for p in (rec.artifacts or {}).values():
         if p and not Path(p).exists():

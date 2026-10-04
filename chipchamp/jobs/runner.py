@@ -18,6 +18,7 @@ launched it — which is what makes "come back to it" possible at all.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import threading
 import time
@@ -30,6 +31,8 @@ from ..util.ids import new_job_id
 from ..util.jsonio import atomic_write, dump_json, load_json
 from .record import JobRecord, StepLog
 from .env import scrub_env
+
+_JOB_DIR_RX = re.compile(r"^J-(\d+)$")
 
 
 class LicensePool:
@@ -92,16 +95,52 @@ class JobRunner:
                 return 0
         return 0
 
+    def _highest_on_disk(self) -> int:
+        try:
+            names = os.listdir(self.store_dir)
+        except OSError:
+            return 0
+        best = 0
+        for n in names:
+            m = _JOB_DIR_RX.match(n)
+            if m:
+                best = max(best, int(m.group(1)))
+        return best
+
     def _next_id(self) -> str:
+        """Allocate the next job id by CLAIMING its directory.
+
+        seq.txt was read once per process and written non-atomically, so the
+        REPL and a cron `wake` (or two engineers on a shared [jobs] store)
+        could both hand out J-0042 and the second silently overwrote the
+        first's record and logs; an empty seq.txt after a crash restarted
+        numbering at J-0001 over jobs that evidence bundles still cite.
+        Now the candidate is one past the highest of (this process's
+        counter, seq.txt, the highest J-* directory on disk), and an
+        exclusive mkdir is the claim — a collision just moves on to the next
+        number. seq.txt stays as a hint for readers and is written atomically.
+        """
         with self._lock:
-            self._seq += 1
             # the store dir can vanish mid-process (an experiment harness
             # sequestering the archive, a cleanup script) — id allocation is
             # the first write of every submit, so it must not be the thing
             # that turns a missing directory into a failed job
             self.store_dir.mkdir(parents=True, exist_ok=True)
-            (self.store_dir / "seq.txt").write_text(str(self._seq))
-            return new_job_id(self._seq)
+            seq = max(self._seq, self._load_seq(), self._highest_on_disk())
+            for _ in range(100_000):
+                seq += 1
+                job_id = new_job_id(seq)
+                try:
+                    os.mkdir(self.store_dir / job_id)
+                except FileExistsError:
+                    continue
+                self._seq = seq
+                try:
+                    atomic_write(self.store_dir / "seq.txt", str(seq))
+                except OSError:
+                    pass   # the directory claim is the truth; the hint is best-effort
+                return job_id
+            raise RuntimeError("could not allocate a job id: store is full of claims")
 
     def submit(self, plan: Plan, adapter: Adapter, *,
                input_files: Optional[list[str]] = None,
@@ -112,17 +151,18 @@ class JobRunner:
         from .cache import cache_key, result_from_record, reusable
         key = ""
         if self.cache.enabled and not no_cache:
+            ih = ""
             try:
-                key = cache_key(plan, adapter,
-                                inputs_hash=hash_manifest(input_files or []),
-                                seed=seed, defines=defines,
-                                env_modules=env_modules)
+                ih = hash_manifest(input_files or [])
+                key = cache_key(plan, adapter, inputs_hash=ih, seed=seed,
+                                defines=defines, env_modules=env_modules)
             except Exception:
                 key = ""   # an unhashable plan just means no reuse, never a fail
             hit = self.cache.lookup(key) if key else None
             if hit:
                 rec = self.get(hit)
-                if rec is not None and reusable(rec, self.store_dir / hit, plan):
+                if rec is not None and reusable(rec, self.store_dir / hit, plan,
+                                                inputs_hash=ih, adapter=adapter.name):
                     result = result_from_record(rec)
                     if result is not None:
                         # the ORIGINAL record is returned, id and logs intact —
