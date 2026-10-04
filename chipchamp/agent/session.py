@@ -92,3 +92,32 @@ class Session:
         """Most recently modified session, or None."""
         pairs = cls._by_mtime(store_dir)
         return cls.load(pairs[0][0].stem, store_dir) if pairs else None
+
+
+def close_dangling_tool_calls(messages: list[dict],
+                              note: str = "interrupted by user") -> int:
+    """Give every unanswered assistant tool call a synthetic tool result.
+
+    A Ctrl-C during a long tool call used to leave the transcript ending on
+    an assistant turn whose tool_calls had no results. Both wire formats
+    reject that (Anthropic: "tool_use ids without tool_result"; OpenAI: HTTP
+    400, which the retry policy then retried three times), so every later
+    call in that session failed — and so did resuming it. Returns how many
+    tool turns were inserted; 0 means the transcript was already legal.
+    """
+    inserted = 0
+    i = 0
+    while i < len(messages):
+        m = messages[i]
+        calls = m.get("tool_calls") if m.get("role") == "assistant" else None
+        if calls:
+            nxt = messages[i + 1] if i + 1 < len(messages) else None
+            if not (nxt and nxt.get("role") == "tool"):
+                messages.insert(i + 1, {"role": "tool", "content": [
+                    {"id": tc.get("id", ""), "name": tc.get("name", ""),
+                     "output": f'{{"error": "{note} — this call never ran"}}'}
+                    for tc in calls]})
+                inserted += 1
+                i += 1
+        i += 1
+    return inserted

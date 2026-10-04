@@ -19,7 +19,7 @@ from . import disclosure, working_set
 from .gateway import ModelGateway
 from .prompts import build_system_prompt, policy_summary
 from .providers.base import ModelResponse
-from .session import Session
+from .session import Session, close_dangling_tool_calls
 
 
 _PLAN_CUE = re.compile(
@@ -240,6 +240,11 @@ class AgentLoop:
             return {"text": "no model configured; run `chipchamp model` to pick one, "
                     "or use a scripted playbook (chipchamp triage / lint)", "steps": 0}
         transcript: list[dict] = list(self.session.messages) if self.session else []
+        # A session saved mid-interrupt (older builds) may end on unanswered
+        # tool calls; repair before the provider ever sees it.
+        if close_dangling_tool_calls(transcript):
+            self.on_event("info", {"message": "repaired unanswered tool calls "
+                                              "left by an interrupted turn"})
         # `input: True` marks a GENUINE user turn — the loop also injects
         # synthetic "user" nudges/observations, so this flag is how a resumed
         # session tells real requests apart (for replay + up/down history).
@@ -578,7 +583,24 @@ class AgentLoop:
                 real = self._resolve_tool_name(call["name"])
                 tool_obj = self.tools.get(real)
                 self.on_event("tool_call", {"name": real, "input": call["input"]})
-                result = self._exec(real, call["input"])
+                try:
+                    result = self._exec(real, call["input"])
+                except KeyboardInterrupt:
+                    # Ctrl-C mid-tool: answer this call and every call after
+                    # it, persist, THEN propagate — the saved transcript must
+                    # stay legal or the whole session is dead.
+                    done = {r["id"] for r in results}
+                    for tc in resp.tool_calls:
+                        if tc["id"] not in done:
+                            results.append({"id": tc["id"], "name": tc["name"],
+                                            "output": '{"error": "interrupted '
+                                                      'by user — this call never '
+                                                      'ran"}'})
+                    transcript.append({"role": "tool", "content": results})
+                    if self.session:
+                        self.session.messages = transcript
+                        self.session.save()
+                    raise
                 ok = isinstance(result, dict) and not result.get("denied") \
                     and not result.get("error")
                 if ok and getattr(tool_obj, "permission", "") in ("write", "submit"):
