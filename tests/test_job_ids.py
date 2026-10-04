@@ -97,3 +97,36 @@ def test_a_stale_index_entry_pointing_at_the_wrong_job_is_not_served(tmp_path):
     rp.write_text(json.dumps(data))
     rec3, _ = r.submit(plan, ad, input_files=[str(src)])
     assert not rec3.cached and rec3.id != rec1.id and ad.parsed == 2
+
+
+# ---- the cache key knows which code produced the result ----------------------
+
+def test_cache_key_changes_when_the_adapter_code_changes(tmp_path, monkeypatch):
+    import importlib.util
+    import sys
+    from chipchamp.jobs import cache as cache_mod
+    src = tmp_path / "myadapter.py"
+    src.write_text("class Ad:\n    name = 'ad'\n    def version(self): return '1'\n")
+    spec = importlib.util.spec_from_file_location("myadapter", src)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["myadapter"] = mod
+    spec.loader.exec_module(mod)
+    ad = mod.Ad()
+    plan = Plan(kind="lint", adapter="ad", workdir=str(tmp_path), steps=[])
+    k1 = cache_mod.cache_key(plan, ad, inputs_hash="h")
+    assert cache_mod.cache_key(plan, ad, inputs_hash="h") == k1      # stable
+    # the parser changed: same binary version, same inputs, different code
+    src.write_text(src.read_text() + "    # parse() now reads a new field\n")
+    cache_mod._FINGERPRINTS.clear()
+    assert cache_mod.cache_key(plan, ad, inputs_hash="h") != k1
+
+
+def test_cache_key_changes_with_the_package_version(tmp_path, monkeypatch):
+    import chipchamp
+    from chipchamp.jobs import cache as cache_mod
+    ad = _Adapter()
+    plan = Plan(kind="lint", adapter="fake", workdir=str(tmp_path), steps=[])
+    k1 = cache_mod.cache_key(plan, ad, inputs_hash="h")
+    monkeypatch.setattr(chipchamp, "__version__", "9.9.9")
+    cache_mod._FINGERPRINTS.clear()
+    assert cache_mod.cache_key(plan, ad, inputs_hash="h") != k1

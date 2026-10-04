@@ -65,6 +65,37 @@ REUSABLE = {"passed", "failed"}
 CACHEABLE_KINDS = {"lint", "elab", "cdc", "format", "sim"}
 
 
+_FINGERPRINTS: dict[str, str] = {}
+
+
+def code_fingerprint(adapter) -> str:
+    """Identity of OUR code that shaped a cached result: the adapter's module,
+    the shared adapter base and diagnostics parsers, and the package version.
+    The key used to carry only the tool binary's version, so after an adapter's
+    parse() changed, a cache hit handed back a verdict parsed by the OLD code —
+    and the end-to-end tests saw whatever the machine's history said."""
+    import inspect
+    from .. import __version__
+    from ..adapters import base as _base, diagnostics as _diag
+    try:
+        mod_file = inspect.getsourcefile(type(adapter)) or "-"
+    except (TypeError, OSError):
+        mod_file = "-"
+    memo = f"{mod_file}|{__version__}"
+    hit = _FINGERPRINTS.get(memo)
+    if hit:
+        return hit
+    parts = [__version__]
+    for f in (mod_file, _base.__file__, _diag.__file__):
+        try:
+            parts.append(sha256_file(f) if f and f != "-" else "-")
+        except OSError:
+            parts.append("-")
+    fp = sha256_text("|".join(parts))[:16]
+    _FINGERPRINTS[memo] = fp
+    return fp
+
+
 def cache_key(plan, adapter, *, inputs_hash: str, seed=None,
               defines: Optional[dict] = None,
               env_modules: Optional[list[str]] = None) -> str:
@@ -91,6 +122,7 @@ def cache_key(plan, adapter, *, inputs_hash: str, seed=None,
         f"kind={plan.kind}",
         f"adapter={adapter.name}",
         f"version={adapter.version()}",
+        f"code={code_fingerprint(adapter)}",
         f"inputs={inputs_hash}",
         f"seed={seed}",
         f"defines={sorted((defines or {}).items())}",
