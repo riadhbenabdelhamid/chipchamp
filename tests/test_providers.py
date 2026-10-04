@@ -125,3 +125,19 @@ def test_parse_openai_reasoning_content_and_think_tags():
         "content": "<think>hmm</think>\nThe answer is 4."},
         "finish_reason": "stop"}], "usage": {}})
     assert r2.text == "The answer is 4." and "hmm" in r2.reasoning
+
+
+def test_adhoc_provider_by_env_resolves_instead_of_raising(tmp_path, monkeypatch):
+    """`CHIPCHAMP_PROVIDER=<name not in [providers]>` is the documented way to
+    point at an ad-hoc OpenAI-compatible endpoint. resolve() built that
+    config with `benv(...)`, a name that was only imported inside current()
+    — so the path raised NameError instead of returning a provider."""
+    from chipchamp.brand import env_name
+    monkeypatch.setenv(env_name("PROVIDER"), "adhoc-box")
+    monkeypatch.setenv(env_name("BASE_URL"), "http://127.0.0.1:9/v1")
+    monkeypatch.setenv(env_name("MODEL"), "local-7b")
+    prov, model, reason = ModelRegistry({}, str(tmp_path)).resolve()
+    assert reason == "ok" and model == "local-7b"
+    assert prov is not None and prov.config.name == "adhoc-box"
+    assert prov.config.kind == "openai" and prov.config.local
+    assert prov.config.base_url == "http://127.0.0.1:9/v1"

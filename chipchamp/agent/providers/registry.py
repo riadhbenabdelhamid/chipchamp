@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from ...util.jsonio import atomic_write, dump_json, load_json
-from ...brand import env_name as _env_name
+from ...brand import env as benv, env_name as _env_name
 from .anthropic_provider import AnthropicProvider
 from .base import PRESETS, ModelInfo, Provider, ProviderConfig
 from .openai_compat import OpenAICompatProvider
@@ -86,7 +86,6 @@ class ModelRegistry:
         sel = self.saved_selection()
         if sel:
             return sel
-        from ...brand import env as benv
         if benv("PROVIDER"):
             return {"provider": benv("PROVIDER"),
                     "model": benv("MODEL", ""),
