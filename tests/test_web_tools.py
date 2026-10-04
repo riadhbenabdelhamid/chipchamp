@@ -3,6 +3,7 @@ delegated web-researcher sub-agent — all offline (urllib is monkeypatched)."""
 from __future__ import annotations
 
 import pytest
+from fakes import FakeGateway as _FakeGateway
 
 from chipchamp.tools import web_tools as w
 
@@ -88,16 +89,6 @@ def test_web_fetch_truncates(monkeypatch, ctx):
 # ---- research delegation -------------------------------------------------------
 
 
-class _FakeGateway:
-    available = True
-    model = "fake"
-    ref = "fake:test"
-
-    def __init__(self, script):
-        self.script = list(script)
-
-    def complete(self, system, transcript, tools, audit_items=None):
-        return self.script.pop(0)
 
 
 def test_research_requires_a_gateway(ctx):

@@ -66,16 +66,7 @@ def test_unknown_names_rejected():
 
 
 def test_loop_executes_recovered_calls(ctx):
-    class FakeGateway:
-        available = True
-        ref = "fake:test"
-        model = "fake"
-
-        def __init__(self, script):
-            self.script = list(script)
-
-        def complete(self, system, transcript, tools, audit_items=None):
-            return self.script.pop(0)
+    from fakes import FakeGateway
 
     script = [
         ModelResponse(text='<tool_call>\n{"name": "design__module", '

@@ -8,19 +8,16 @@ import time
 from chipchamp.agent.orchestrator import Orchestrator, SubagentTask
 from chipchamp.agent.providers.base import ModelResponse
 from chipchamp.agent.roles import builtin_roles
+from fakes import ScriptedGateway as _ScriptedGateway
 
 
-class ScriptedGateway:
-    available = True
-    ref = "fake:sub"
+class ScriptedGateway(_ScriptedGateway):
+    """The shared fake, with a subagent ref and a 'done' answer once the
+    script runs out (tests subclass it, so it must stay a class)."""
 
     def __init__(self, script):
-        self.script = list(script)
-
-    def complete(self, system, transcript, tools, audit_items=None):
-        if not self.script:
-            return ModelResponse(text="done", tool_calls=[])
-        return self.script.pop(0)
+        super().__init__(script, ref="fake:sub",
+                         default=ModelResponse(text="done", tool_calls=[]))
 
 
 def test_roles_are_least_privilege():

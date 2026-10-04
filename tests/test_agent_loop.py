@@ -6,21 +6,7 @@ import json
 
 from chipchamp.agent.providers.base import ModelResponse
 from chipchamp.agent.loop import AgentLoop
-
-
-class FakeGateway:
-    """Returns a scripted sequence of responses; records audit items."""
-    available = True
-    model = "fake"
-    ref = "fake:test"
-
-    def __init__(self, script):
-        self.script = list(script)
-        self.audit_calls = []
-
-    def complete(self, system, transcript, tools, audit_items=None):
-        self.audit_calls.append(audit_items or [])
-        return self.script.pop(0)
+from fakes import FakeGateway, RefGateway, TimeoutGateway  # noqa: F401
 
 
 def test_loop_dispatches_tools_and_feeds_results(ctx):
@@ -255,23 +241,6 @@ def test_text_after_accepted_report_done_ends_cleanly(ctx):
 
 from chipchamp.agent.router import ModelRouter, RouterConfig       # noqa: E402
 from chipchamp.agent.providers.registry import ModelRegistry        # noqa: E402
-from chipchamp.agent.gateway import ModelTimeout                    # noqa: E402
-
-
-class RefGateway(FakeGateway):
-    """A FakeGateway with a distinct ref (so the router can tell models apart)."""
-    def __init__(self, script, ref):
-        super().__init__(script)
-        self.ref = ref
-        self.available = True
-        self.max_tokens = 16384
-        self.timeout = None
-        self.audit = None
-
-
-class TimeoutGateway(RefGateway):
-    def complete(self, *a, **k):
-        raise ModelTimeout("model call exceeded 1s")
 
 
 def _router_with(gws, pool):

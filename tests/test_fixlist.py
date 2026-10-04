@@ -14,18 +14,7 @@ from types import SimpleNamespace
 from chipchamp.agent.loop import AgentLoop
 from chipchamp.agent.providers.base import ModelResponse
 from chipchamp.tools import all_tools
-
-
-class FakeGateway:
-    available = True
-    model = "fake"
-    ref = "fake:test"
-
-    def __init__(self, script=()):
-        self.script = list(script)
-
-    def complete(self, system, transcript, tools, audit_items=None):
-        return self.script.pop(0)
+from fakes import FakeGateway, tmp_ctx as _tmp_ctx
 
 
 def _guard(messages, tag):
@@ -990,13 +979,6 @@ def test_token_budget_stop_is_surfaced(tmp_path):
 # A run alternated lint(work/rtl) [green] and lint(work/rtl, top=...) [15
 # errors] on an UNCHANGED tree; the progress guard said 'GREEN and UNCHANGED'
 # while the ledger (refreshed a step later) said 'failed (15 errors)'.
-
-def _tmp_ctx(tmp_path):
-    from chipchamp.config import Workspace
-    from chipchamp.tools.context import ToolContext
-    (tmp_path / ".chipchamp").mkdir(exist_ok=True)
-    return ToolContext(Workspace(str(tmp_path)))
-
 
 def _fake_lint_by_scope():
     from types import SimpleNamespace as NS

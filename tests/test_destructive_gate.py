@@ -11,30 +11,14 @@ import pytest
 from chipchamp.agent.providers.base import ModelResponse
 from chipchamp.agent.loop import AgentLoop
 from chipchamp.tools import all_tools
+from fakes import FakeGateway, tmp_ctx as _tmp_ctx
 
-
-class FakeGateway:
-    available = True
-    ref = "fake:test"
-    model = "fake"
-
-    def __init__(self, script):
-        self.script = list(script)
-
-    def complete(self, system, transcript, tools, audit_items=None):
-        return self.script.pop(0)
 
 
 @pytest.fixture()
 def tmp_ctx(tmp_path):
-    from chipchamp.config import Workspace
-    from chipchamp.tools.context import ToolContext
-    dot = tmp_path / ".chipchamp"
-    dot.mkdir()
-    (dot / "config.toml").write_text("[project]\nname='t'\n")
-    (tmp_path / "rtl").mkdir()
-    (tmp_path / "rtl" / "victim.sv").write_text("module victim; endmodule\n")
-    return ToolContext(Workspace(str(tmp_path)))
+    return _tmp_ctx(tmp_path, files={"rtl/victim.sv": "module victim; endmodule\n"})
+
 
 
 def _delete_script(path):
