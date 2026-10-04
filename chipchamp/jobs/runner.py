@@ -17,8 +17,11 @@ launched it — which is what makes "come back to it" possible at all.
 """
 from __future__ import annotations
 
+import collections
 import os
 import re
+import shutil
+import signal
 import subprocess
 import threading
 import time
@@ -33,6 +36,61 @@ from .record import JobRecord, StepLog
 from .env import scrub_env
 
 _JOB_DIR_RX = re.compile(r"^J-(\d+)$")
+
+# Bytes of a step's stdout/stderr kept in MEMORY (head + tail). The full
+# stream always goes to the step log on disk; this is what adapters parse
+# and what rides in StepResult. A simulation with $display in a loop put
+# gigabytes into a Python list before.
+STEP_TEXT_CAP = 4 * 1024 * 1024
+
+
+class _BoundedText:
+    """Head and tail of a stream within `cap` bytes; the middle is dropped
+    with a marker saying how much, and where the whole thing lives."""
+
+    def __init__(self, cap: int = STEP_TEXT_CAP):
+        self.head_cap = cap // 4
+        self.tail_cap = cap - self.head_cap
+        self.head: list[str] = []
+        self.head_n = 0
+        self.tail: collections.deque = collections.deque()
+        self.tail_n = 0
+        self.dropped = 0
+
+    def append(self, line: str) -> None:
+        n = len(line)
+        if not self.tail and self.head_n + n <= self.head_cap:
+            self.head.append(line)
+            self.head_n += n
+            return
+        self.tail.append(line)
+        self.tail_n += n
+        while self.tail_n > self.tail_cap and self.tail:
+            d = self.tail.popleft()
+            self.tail_n -= len(d)
+            self.dropped += len(d)
+
+    def text(self) -> str:
+        if not self.dropped:
+            return "".join(self.head) + "".join(self.tail)
+        return ("".join(self.head)
+                + f"\n[... {self.dropped} bytes omitted from memory — the full "
+                  f"stream is in the step log ...]\n"
+                + "".join(self.tail))
+
+
+def _kill_tree(p: subprocess.Popen) -> None:
+    """Kill the step and everything it spawned. Steps run in their own
+    session, so the group id is the step's pid; a plain p.kill() only took
+    the wrapper (bash -lc, a vendor launcher) and left the real tool
+    running, holding CPU, licenses and the pipe."""
+    try:
+        os.killpg(p.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, AttributeError, OSError):
+        try:
+            p.kill()
+        except OSError:
+            pass
 
 
 class LicensePool:
@@ -334,16 +392,25 @@ class JobRunner:
             except Exception:
                 pass  # a UI bug must never take down a job
         out, err = "", ""
+        # Each stream goes straight to its own file as it arrives; memory
+        # keeps only a bounded head+tail (what adapters parse). The two
+        # files are stitched into step<idx>.log at the end — same separated
+        # format readers always saw — without ever holding a log in RAM.
+        out_path, err_path = job_dir / f"step{idx}.out", job_dir / f"step{idx}.err"
         try:
-            with open(live_path, "a", errors="replace") as live:
+            with open(live_path, "a", errors="replace") as live, \
+                    open(out_path, "w", errors="replace") as out_fh, \
+                    open(err_path, "w", errors="replace") as err_fh:
                 live.write(f"$ {' '.join(st.argv)}\n")
                 live.flush()
                 lock = threading.Lock()
-                bufs = {"out": [], "err": []}
+                bufs = {"out": _BoundedText(), "err": _BoundedText()}
+                files = {"out": out_fh, "err": err_fh}
 
                 def pump(stream, key):
                     for line in iter(stream.readline, ""):
                         bufs[key].append(line)
+                        files[key].write(line)
                         try:
                             with lock:
                                 live.write(line)
@@ -355,7 +422,7 @@ class JobRunner:
                 p = subprocess.Popen(argv, cwd=st.cwd, env=env, text=True,
                                      stdout=subprocess.PIPE,
                                      stderr=subprocess.PIPE,
-                                     errors="replace")
+                                     errors="replace", start_new_session=True)
                 pumps = [threading.Thread(target=pump, args=(p.stdout, "out"),
                                           daemon=True),
                          threading.Thread(target=pump, args=(p.stderr, "err"),
@@ -365,21 +432,49 @@ class JobRunner:
                 try:
                     rc = p.wait(timeout=timeout)
                 except subprocess.TimeoutExpired:
-                    p.kill()
+                    _kill_tree(p)
                     p.wait()
                     rc, timed_out = 124, True
+                except KeyboardInterrupt:
+                    # own session => the terminal's SIGINT no longer reaches
+                    # the step; take the whole tree down ourselves
+                    _kill_tree(p)
+                    p.wait()
+                    raise
                 for t in pumps:
                     t.join(timeout=5)
-                out, err = "".join(bufs["out"]), "".join(bufs["err"])
+                out, err = bufs["out"].text(), bufs["err"].text()
                 if timed_out:
                     err += "\n[timed out]"
+                    err_fh.write("\n[timed out]")
         except (OSError, subprocess.SubprocessError) as e:
             rc, out, err = 127, "", f"{type(e).__name__}: {e}"
+            try:
+                err_path.write_text(err)
+            except OSError:
+                pass
         dur = time.time() - t0
         # persist the raw log (never streamed into model context — SPEC §8.5 FR-JOB-07)
-        log = f"$ {' '.join(st.argv)}\n[cwd={st.cwd}] [rc={rc}] [{dur:.2f}s]\n"
-        log += "--- stdout ---\n" + (out or "") + "\n--- stderr ---\n" + (err or "")
-        atomic_write(job_dir / f"step{idx}.log", log)
+        log_path = job_dir / f"step{idx}.log"
+        tmp = job_dir / f".step{idx}.log.tmp"
+        try:
+            with open(tmp, "w", errors="replace") as fh:
+                fh.write(f"$ {' '.join(st.argv)}\n[cwd={st.cwd}] [rc={rc}] [{dur:.2f}s]\n")
+                fh.write("--- stdout ---\n")
+                if out_path.exists():
+                    with open(out_path, errors="replace") as src:
+                        shutil.copyfileobj(src, fh)
+                fh.write("\n--- stderr ---\n")
+                if err_path.exists():
+                    with open(err_path, errors="replace") as src:
+                        shutil.copyfileobj(src, fh)
+            os.replace(tmp, log_path)
+        finally:
+            for f in (out_path, err_path, tmp):
+                try:
+                    f.unlink()
+                except OSError:
+                    pass
         return StepResult(argv=st.argv, rc=rc, stdout=out or "", stderr=err or "",
                           duration_s=dur, timed_out=timed_out)
 
@@ -421,17 +516,34 @@ class JobRunner:
         import re
         rx = re.compile(pattern)
         hits: list[str] = []
-        for st in self.get(job_id).steps if self.get(job_id) else []:
+        rec = self.get(job_id)
+        for st in rec.steps if rec else []:
             p = Path(st.log_path)
             if not p.exists():
                 continue
-            lines = p.read_text(errors="replace").splitlines()
-            for i, ln in enumerate(lines):
-                if rx.search(ln):
-                    lo, hi = max(0, i - window), min(len(lines), i + window + 1)
-                    hits.append("\n".join(lines[lo:hi]))
-                    if len(hits) >= max_hits:
-                        return hits
+            # streamed: a multi-GB sim log must not be read into memory to
+            # answer a grep. `prev` is the window before a hit; an open hit
+            # keeps collecting until `window` lines after it have passed.
+            prev: collections.deque = collections.deque(maxlen=window)
+            open_hits: list[list] = []     # [lines, remaining_after]
+            with open(p, errors="replace") as fh:
+                for raw in fh:
+                    ln = raw.rstrip("\n")
+                    for h in open_hits:
+                        h[0].append(ln)
+                        h[1] -= 1
+                    for h in [h for h in open_hits if h[1] <= 0]:
+                        open_hits.remove(h)
+                        hits.append("\n".join(h[0]))
+                        if len(hits) >= max_hits:
+                            return hits
+                    if rx.search(ln):
+                        open_hits.append([list(prev) + [ln], window])
+                    prev.append(ln)
+            for h in open_hits:            # hits near the end of the file
+                hits.append("\n".join(h[0]))
+                if len(hits) >= max_hits:
+                    return hits
         return hits
 
 
