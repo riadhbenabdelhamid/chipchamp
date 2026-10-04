@@ -414,7 +414,8 @@ class Workspace:
                                  env_allowlist=jobs.get("env_allowlist"),
                                  env_deny=jobs.get("env_deny"),
                                  farm=FarmConfig.from_config(self.config),
-                                 cache=jobs.get("cache", True))
+                                 cache=jobs.get("cache", True),
+                                 license_wait_s=jobs.get("license_wait_s"))
         return self._runner
 
     def context_acl(self) -> ContextACL:

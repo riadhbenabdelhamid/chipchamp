@@ -34,6 +34,7 @@ max_parallel = 4
 # while farm submissions never forward a model key. Tighten or go hermetic:
 # env_deny = ["MY_INTERNAL_*"]          # extra patterns to drop
 # env_allowlist = ["*_LICENSE_FILE", "XILINX*", "NIX_*", "MODULE*"]  # strict mode
+# license_wait_s = 600   # max queue time for a [licenses] seat (default: wait)
 
 [context]
 deny = ["pdk/**", "**/*.lic"]

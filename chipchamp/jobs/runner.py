@@ -44,8 +44,13 @@ class LicensePool:
         self._counts = dict(pools or {})
 
     def acquire(self, features: list[str], timeout: float | None = None) -> bool:
+        """Take one seat of every pooled feature, or none of them.
+
+        Features are taken in sorted order: two jobs asking for [A, B] and
+        [B, A] with no timeout each held one and waited for the other
+        forever. Features with no pool are unlimited and pass through."""
         acquired = []
-        for f in features:
+        for f in sorted(set(features)):
             if f in self._sem:
                 if not self._sem[f].acquire(timeout=timeout):
                     for a in acquired:
@@ -55,18 +60,19 @@ class LicensePool:
         return True
 
     def release(self, features: list[str]) -> None:
-        for f in features:
+        for f in sorted(set(features)):
             if f in self._sem:
                 try:
                     self._sem[f].release()
                 except ValueError:
-                    pass
+                    pass   # released more than held: should be unreachable now
 
 
 class JobRunner:
     def __init__(self, store_dir: str, registry, *, env_modules: dict | None = None,
                  licenses: dict | None = None, env_allowlist: list[str] | None = None,
-                 env_deny: list[str] | None = None, farm=None, cache: bool = True):
+                 env_deny: list[str] | None = None, farm=None, cache: bool = True,
+                 license_wait_s: float | None = None):
         from .cache import JobCache
         from .farm import FarmConfig
         self.store_dir = Path(store_dir)
@@ -80,6 +86,9 @@ class JobRunner:
         # ["PATH","HOME","USER"] default: honoured, it broke every EDA flow.
         self.env_allowlist = list(env_allowlist or [])
         self.env_deny = list(env_deny or [])
+        # How long a job may queue for a license seat — distinct from the run
+        # timeout, which used to double as the queue wait. None = wait.
+        self.license_wait_s = license_wait_s
         self.farm = farm or FarmConfig()
         self.cache = JobCache(self.store_dir, enabled=cache)
         self._seq = self._load_seq()
@@ -183,7 +192,20 @@ class JobRunner:
         rec.compute_inputs_hash()
         rec.start_ts = time.time()
 
-        got_license = self.licenses.acquire(rec.license_features, timeout=timeout)
+        if not self.licenses.acquire(rec.license_features,
+                                     timeout=self.license_wait_s):
+            # A job used to wait, then RUN ANYWAY without a seat — and its
+            # release in `finally` handed the pool a seat it never took, so
+            # concurrent jobs oversubscribed the real licenses from then on.
+            rec.end_ts = time.time()
+            rec.status = "error"
+            rec.summary = (f"no license seat for {sorted(rec.license_features)} "
+                           f"within {self.license_wait_s}s — not run")
+            rec.result = {"ok": False, "status": "error", "metrics": {},
+                          "summary": rec.summary, "diagnostics": []}
+            self._persist(rec)
+            return rec, ToolResult(ok=False, kind=plan.kind, adapter=adapter.name,
+                                   status="error", summary=rec.summary)
         results: list[StepResult] = []
         try:
             for idx, st in enumerate(plan.steps):
