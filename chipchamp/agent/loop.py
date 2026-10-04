@@ -15,7 +15,7 @@ from typing import Callable, Optional
 from ..policy.budgets import BudgetExceeded
 from ..tools import all_tools
 from ..tools.context import ToolContext
-from . import disclosure, working_set
+from . import disclosure, retry, working_set
 from .gateway import ModelGateway
 from .prompts import build_system_prompt, policy_summary
 from .providers.base import ModelResponse
@@ -1019,10 +1019,6 @@ class AgentLoop:
             self.session.save()
         return True
 
-    _RETRYABLE = ("HTTP 5", "HTTP 400", "HTTP 429", "peg-native", "format",
-                  "Connection", "RemoteDisconnected", "IncompleteRead",
-                  "JSONDecodeError")
-    _NOT_RETRYABLE = ("HTTP 401", "HTTP 403", "HTTP 404")
 
     def _call_with_retry(self, system: str, transcript: list[dict],
                          attempts: int = 3) -> ModelResponse:
@@ -1047,15 +1043,15 @@ class AgentLoop:
             except TimeoutError:
                 raise
             except Exception as e:
-                s = str(e)
-                if any(k in s for k in self._NOT_RETRYABLE) or \
-                        not any(k in s for k in self._RETRYABLE):
+                ok, why = retry.classify(e)
+                if not ok:
                     raise
                 last = e
-                self.on_event("error", {"message": f"model call glitched "
-                              f"(attempt {attempt + 1}/{attempts}), retrying: "
-                              f"{s[:120]}"})
-                _time.sleep(1.5 * (attempt + 1))
+                self.on_event("error", {"message": f"model call failed "
+                              f"({why}; attempt {attempt + 1}/{attempts}), "
+                              f"retrying: {str(e)[:120]}"})
+                if attempt + 1 < attempts:
+                    _time.sleep(retry.backoff(e, attempt))
         raise last  # type: ignore[misc]
 
     def _call(self, system: str, transcript: list[dict]) -> ModelResponse:
