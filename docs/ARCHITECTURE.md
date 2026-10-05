@@ -16,7 +16,7 @@ cites the spec section and requirement ids it realizes.
 | `chipchamp/evidence/` | Evidence store | §8.8, §11.3 | `bundle.py` (build+sign+verify+markdown) |
 | `chipchamp/tools/` | Agent tool catalog | §9 | `base.py` (Tool+registry+truncate), `context.py`, `design_tools.py`, `verif_tools.py`, `build_tools.py`, `fs_tools.py`, `meta_tools.py`, `catalog.py` |
 | `chipchamp/agent/` | Agent core | §8.2, §14 | `providers/` (Anthropic + OpenAI-compatible backends, registry, neutral-transcript translation), `gateway.py` (facade + audit log), `prompts.py`, `loop.py`, `session.py`, `playbooks.py` |
-| `chipchamp/` | Wiring + surface | §7.1, §12 | `config.py` (Workspace), `filelist.py`, `cli.py` |
+| `chipchamp/` | Wiring + surface | §7.1, §12 | `config.py` (Workspace), `filelist.py`, `cli/` (package: _core, design, physical, riscv, verify, model, repl, knowledge) |
 
 ## The trust chain (why a claim is believable)
 
