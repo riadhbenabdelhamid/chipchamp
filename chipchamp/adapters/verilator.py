@@ -162,24 +162,8 @@ class VerilatorAdapter(Adapter):
                               diagnostics=diags, artifacts=plan.artifacts,
                               summary="coverage collected" if ok else "coverage failed")
         if plan.kind == "sim":
-            if results[0].rc != 0:
-                return ToolResult(ok=False, kind="sim", adapter=self.name,
-                                  status="error", diagnostics=diags,
-                                  summary="verilate/build failed",
-                                  metrics={"phase": "compile"})
-            run_res = results[1] if len(results) > 1 else None
-            if run_res is None:
-                return ToolResult(ok=False, kind="sim", adapter=self.name,
-                                  status="error", summary="did not run")
-            from .icarus import _status_from_log
-            from .uvm import enrich_sim_result
-            log = run_res.stdout + "\n" + run_res.stderr
-            status, msg = _status_from_log(log, run_res)
-            artifacts = {k: v for k, v in plan.artifacts.items() if os.path.exists(v)}
-            result = ToolResult(
-                ok=(status == "pass"), kind="sim", adapter=self.name,
-                status=status, diagnostics=diags, artifacts=artifacts,
-                metrics={"seed": plan.meta.get("seed")}, summary=msg)
-            return enrich_sim_result(result, log)
+            from .simparse import parse_compile_run_sim
+            return parse_compile_run_sim(self.name, plan, results, diags,
+                                         compile_failed="verilate/build failed")
         return ToolResult(ok=not errs, kind=plan.kind, adapter=self.name,
                           diagnostics=diags, summary="")

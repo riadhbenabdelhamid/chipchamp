@@ -10,7 +10,6 @@ waveform service.
 from __future__ import annotations
 
 import os
-import re
 
 from ..brand import marker, markers
 from .base import (Adapter, CapabilityManifest, NormalizedDiagnostic, Plan,
@@ -69,61 +68,17 @@ class IcarusAdapter(Adapter):
             meta={"tb_top": tb_top, "seed": seed})
 
     def parse(self, plan: Plan, results: list[StepResult]) -> ToolResult:
-        diags: list[NormalizedDiagnostic] = []
-        compile_res = results[0]
-        diags += parse_icarus(compile_res.stdout + "\n" + compile_res.stderr)
-        if compile_res.rc != 0:
-            return ToolResult(
-                ok=False, kind="sim", adapter=self.name, status="error",
-                diagnostics=diags, summary="compile failed",
-                metrics={"phase": "compile"})
-        run_res = results[1] if len(results) > 1 else None
-        if run_res is None:
-            return ToolResult(ok=False, kind="sim", adapter=self.name,
-                              status="error", summary="did not run")
-        log = run_res.stdout + "\n" + run_res.stderr
-        diags += _runtime_diags(log)
-        status, msg = _status_from_log(log, run_res)
-        artifacts = dict(plan.artifacts)
-        if not os.path.exists(artifacts.get("waves", "")):
-            artifacts.pop("waves", None)
-        result = ToolResult(
-            ok=(status == "pass"), kind="sim", adapter=self.name, status=status,
-            diagnostics=diags, artifacts=artifacts,
-            metrics={"seed": plan.meta.get("seed"),
-                     "assertion_failures": sum(1 for d in diags if d.category == "sim")},
-            summary=msg)
-        from .uvm import enrich_sim_result
-        return enrich_sim_result(result, log)
+        from .simparse import parse_compile_run_sim, run_log
+        diags = parse_icarus(run_log(results[0])) if results else []
+        return parse_compile_run_sim(self.name, plan, results, diags,
+                                     runtime_tool="iverilog")
 
 
-def _status_from_log(log: str, run_res: StepResult) -> tuple[str, str]:
-    if run_res.timed_out:
-        return "timeout", "simulation timed out"
-    # UVM report-summary tallies ("UVM_FATAL :    0") are counts, not events —
-    # drop them before keyword checks; uvm.enrich_sim_result folds in the real
-    # UVM verdict (and never upgrades a failure).
-    log = re.sub(r"(?m)^[#\s]*UVM_(?:INFO|WARNING|ERROR|FATAL)\s*:\s*\d+\s*$", "", log)
-    fail_hit = next((mk for mk in markers("FAIL") if mk in log), None)
-    if fail_hit:
-        m = re.search(rf"{fail_hit}:?\s*(.*)", log)
-        return "fail", (m.group(1).strip() if m else "testbench reported failure")
-    if re.search(r"\$fatal|FATAL|UVM_FATAL", log):
-        return "fail", "fatal error in simulation"
-    if re.search(r"UVM_ERROR\s*[:@]", log) or re.search(r"\bError\b.*assert", log):
-        return "fail", "errors during simulation"
-    if any(mk in log for mk in markers("PASS")):
-        return "pass", "testbench reported pass"
-    if run_res.rc == 0:
-        return "pass", "completed (no failure markers)"
-    return "fail", f"non-zero exit ({run_res.rc})"
+# The compile-then-run verdict lives in simparse; these names stay importable
+# for callers that reached in.
+from .simparse import runtime_diags as _runtime_diags_impl  # noqa: E402
+from .simparse import status_from_log as _status_from_log  # noqa: E402,F401
 
 
 def _runtime_diags(log: str) -> list[NormalizedDiagnostic]:
-    out = []
-    for m in re.finditer(r"(?P<file>[\w./-]+):(?P<line>\d+):\s*(?P<msg>.*(?:assert|ERROR|mismatch|FAIL).*)",
-                         log, re.I):
-        out.append(NormalizedDiagnostic(
-            tool="iverilog", severity="error", category="sim", code="SIM",
-            file=m["file"], line=int(m["line"]), message=m["msg"].strip()))
-    return out
+    return _runtime_diags_impl(log, "iverilog")
