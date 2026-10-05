@@ -15,7 +15,8 @@ from typing import Callable, Optional
 from ..tools import all_tools
 from ..tools.context import ToolContext
 from ..tools.executor import coerce_args, invoke, stringify  # noqa: F401
-from . import disclosure, retry, working_set
+from . import disclosure, retry, teachings, working_set
+from .runstate import LEDGER_TAG, RunState, VerificationTracker, WorkspaceLedger  # noqa: F401
 from .gateway import ModelGateway
 from .prompts import build_system_prompt, policy_summary
 from .providers.base import ModelResponse
@@ -86,7 +87,6 @@ def _truncated_write_target(resp) -> str:
     return ""
 
 
-LEDGER_TAG = "[workspace ledger]"
 
 
 class AgentLoop:
@@ -235,6 +235,17 @@ class AgentLoop:
             base += "\n\n## Role\n" + self.system_suffix
         return base
 
+    def _persist(self, transcript: list) -> None:
+        if self.session:
+            self.session.messages = transcript
+            self.session.save()
+
+    def _nudge(self, transcript: list, guard: str, text: str) -> None:
+        """Inject a synthetic user turn tagged with the guard that wrote it,
+        and persist — the seven inlined copies of this are now one."""
+        transcript.append({"role": "user", "guard": guard, "content": text})
+        self._persist(transcript)
+
     def run(self, user_prompt: str) -> dict:
         if not self.gateway.available:
             return {"text": "no model configured; run `chipchamp model` to pick one, "
@@ -246,73 +257,20 @@ class AgentLoop:
             self.on_event("info", {"message": "repaired unanswered tool calls "
                                               "left by an interrupted turn"})
         # `input: True` marks a GENUINE user turn — the loop also injects
-        # synthetic "user" nudges/observations, so this flag is how a resumed
-        # session tells real requests apart (for replay + up/down history).
-        # Providers read only role/content/tool_calls, so the extra key is inert.
+        # synthetic "user" nudges/observations (each tagged `guard`), so a
+        # resumed session tells real requests apart. Providers read only
+        # role/content/tool_calls, so the extra keys are inert.
         transcript.append({"role": "user", "content": user_prompt, "input": True})
         system = self.system_prompt(task=user_prompt)
         self._warn_if_window_too_small(system)
-        final_text = ""
-        budget_stop = ""
-        step = 0
-        empty_turns = 0
-        length_stops = 0
-        recovered_calls = 0
-        narration_nudges = 0   # consecutive text-only turns nudged to act
-        writes_since_verify = 0  # authored files since the last lint/sim job
-        authored: set = set()    # files this run wrote/edited and not deleted
-        deleted: set = set()     # files this run deleted
-        ledger_active = False    # once anything was evicted, keep it current
-        epoch = 0                # bumps on every mutation of the tree
-        checks: dict = {}        # (tool, scope) -> result stamped with its epoch
-        green_epoch = -1         # epoch at which the tree was last fully green
-        green_job = ""           # strongest passing job at that green
-        fails_since_green = 0    # consecutive failing checks since that green
-        checkpoint_taught = False
-        scope_taught: set = set()   # (key, epoch, kind) already taught
-
-        def _verify_summary() -> str:
-            cur = [v for v in checks.values() if v["epoch"] == epoch]
-            if not cur:
-                return "none yet on this tree (re-run your checks after edits)"
-            return "; ".join(
-                f"{v['tool']}({v['scope']}) {v['job']} "
-                + ("passed" if v["passed"] else
-                   (f"FAILED ({v['errors']} errors)"
-                    if isinstance(v["errors"], int) else "FAILED"))
-                for v in sorted(cur, key=lambda v: -v["rank"]))
-
-        def _teach_later(tag: str, msg: str) -> None:
-            """Queue a teaching for after this step's tool results, tagged
-            with the guard that produced it."""
-            pending_teach.append((tag, msg))
-
-        def _ledger_msg() -> str:
-            return (f"{LEDGER_TAG} Authoritative record kept by the loop — "
-                    f"trust it over your memory. Files you authored that "
-                    f"still exist: {', '.join(sorted(authored)) or '(none)'}. "
-                    f"Files you deleted: {', '.join(sorted(deleted)) or '(none)'}. "
-                    f"Verification on the CURRENT tree: {_verify_summary()}. "
-                    f"A file not listed as authored does NOT exist — fs.list "
-                    f"before assuming.")
-        idle_turns = 0           # consecutive turns with no constructive call
-        progress_taught = False
-        pending_teach: list = []  # interface-change teachings for this step
-        verify_nudged_at = 0     # writes count at the last cadence teaching
-        reported_done = False  # report.done accepted → text is a real answer
-        made_mutating_call = False  # wrote a file / ran a job → needs report.done
-        last_reasoning = ""
+        st = RunState()
+        led = WorkspaceLedger()
+        ver = VerificationTracker()
         known_names = set(self._name_map) | set(self._name_map.values())
-        call_retries = 0
         self._tried = set()          # model refs already used/skipped this run
         self._handoff_note = ""      # a stale note must not outlive its run
         self._switches = []          # [{from, to, reason}] for the return dict
         self._models_used = [self.gateway.ref]
-        stall = 0                    # consecutive failing checks with no progress
-        last_lint_err = None         # for detecting productive vs stuck iteration
-        sim_sig = None               # (test, normalized summary) of last sim fail
-        sim_sig_count = 0            # consecutive sim fails with IDENTICAL sig
-        sim_sigs_nudged = set()      # signatures already flagged as oracle-suspect
         # proactive layer: start on the best model for this task's need (not just
         # switch on failure). Reactive stall-switching still hands debug work to
         # the best debugger from here.
@@ -326,7 +284,7 @@ class AgentLoop:
                                                     "to": best, "reason": "proactive"})
                     self.gateway = gw
                     self._models_used.append(best)
-        for step in range(self.max_steps):
+        for st.step in range(self.max_steps):
             # the token ceiling is checked HERE, not advertised in the prompt:
             # telling a model its budget is not a budget (§12.4 FR-BUDG-01)
             ok, why = self.ctx.ledger.can_spend_tokens()
@@ -335,8 +293,8 @@ class AgentLoop:
                 # A whole campaign misread this exit as 'died narrating':
                 # the model's last prose stood in for the reason. Keep the
                 # prose, but make the stop itself unmistakable in the result.
-                budget_stop = why
-                final_text = (final_text + "\n\n" if final_text else "") + \
+                st.budget_stop = why
+                st.final_text = (st.final_text + "\n\n" if st.final_text else "") + \
                     f"(stopped: model token budget exhausted — {why})"
                 break
             if self._prompt_dirty:
@@ -352,20 +310,18 @@ class AgentLoop:
                     pinned=self.fetched_paths)
                 if moved["compacted"]:
                     self.on_event("compacted", moved)
-                    ledger_active = True
-                if ledger_active:
+                    led.active = True
+                if led.active:
                     # Pinned workspace inventory: after 21 compactions a
                     # model claimed 'top module written, lint at 0 errors'
                     # over a tree holding two files — it trusted evicted
-                    # memory over the filesystem. The loop's own ledger
-                    # is authoritative; keep exactly one copy, refreshed
-                    # at every compaction (user turns are never evicted).
-                    transcript = [m for m in transcript if not (
-                        m.get("role") == "user" and str(
-                            m.get("content", "")).startswith(LEDGER_TAG))]
-                    if authored or deleted:
-                        transcript.append({"role": "user", "guard": "ledger",
-                                           "content": _ledger_msg()})
+                    # memory over the filesystem. The loop's own ledger is
+                    # authoritative; keep exactly one copy, refreshed at
+                    # every compaction (user turns are never evicted).
+                    if led.dirty:
+                        led.refresh(transcript, ver.summary(led.epoch))
+                    else:
+                        led.strip(transcript)
                     if self.session:
                         self.session.messages = transcript
             # the size of what is about to be sent rides on the event: it is the
@@ -399,8 +355,8 @@ class AgentLoop:
                     msg = f"model call failed ({self.gateway.ref}): {type(e).__name__}: {str(e)[:200]}"
                 self.on_event("error", {"message": msg})
                 if self.router is not None:
-                    self._record_telemetry(reported_done)  # capture the failure too
-                out = {"text": msg, "steps": step, "error": True,
+                    self._record_telemetry(st.reported_done)  # capture the failure too
+                out = {"text": msg, "steps": st.step, "error": True,
                        "models_used": self._models_used, "switches": self._switches,
                        "jobs": [r.id for r in self.ctx.task_jobs]}
                 if isinstance(e, TimeoutError):
@@ -408,16 +364,16 @@ class AgentLoop:
                     out.update(timed_out=True, ref=self.gateway.ref,
                                timeout=getattr(self.gateway, "timeout", None))
                 return out
-            call_retries += getattr(resp, "_retries", 0)
+            st.call_retries += getattr(resp, "_retries", 0)
             # the usage rides on the event so a live status line can count the
             # task's tokens exactly, rather than estimating from characters
             self.on_event("thinking_done", {"input_tokens": resp.input_tokens,
                                             "output_tokens": resp.output_tokens})
             self.ctx.ledger.record_tokens(resp.input_tokens + resp.output_tokens)
             if resp.stop_reason == "length":
-                length_stops += 1
+                st.length_stops += 1
             if getattr(resp, "reasoning", ""):
-                last_reasoning = resp.reasoning
+                st.last_reasoning = resp.reasoning
             if not resp.tool_calls:
                 # The server-side template parser can miss a model's tool-call
                 # syntax (variant tags, calls emitted in the think channel,
@@ -427,169 +383,35 @@ class AgentLoop:
                 recovered = recover_tool_calls(
                     resp.text, getattr(resp, "reasoning", ""), known_names)
                 if recovered:
-                    recovered_calls += len(recovered)
+                    st.recovered_calls += len(recovered)
                     resp.tool_calls = recovered
                     resp.text = strip_tool_call_text(resp.text)
                     self.on_event("tool_calls_recovered",
                                   {"count": len(recovered),
                                    "names": [c["name"] for c in recovered]})
             if resp.text:
-                final_text = resp.text
+                st.final_text = resp.text
                 self.on_event("assistant", {"text": resp.text})
             transcript.append({"role": "assistant", "content": resp.text,
                                "tool_calls": resp.tool_calls})
             if not resp.tool_calls:
-                truncated = resp.stop_reason == "length"
-                # A bare refusal ("I can't continue with this task") is not a
-                # final answer — swap to a model that will do the work.
-                if (self.router and self.router.trigger_on("refusal")
-                        and self.router.is_refusal(resp.text)
-                        and self._try_switch("refusal", self.need, transcript)):
+                if self._handle_text_only_turn(st, resp, transcript):
                     continue
-                if resp.text and not truncated:
-                    # A non-truncated text-only turn LOOKS like a final answer.
-                    # But a weak agentic model routinely NARRATES its plan /
-                    # next-steps — or even fabricates a completion report
-                    # ("lint passes … CHIPCHAMP_PASS") — as prose instead of
-                    # acting or calling report.done, and we would accept that
-                    # as the answer: ending prematurely, or worse, on false
-                    # success. Unless the completion gate was actually
-                    # satisfied (report.done accepted), nudge ONCE to force a
-                    # real action or a gate-validated report.done. The counter
-                    # resets whenever the model does act, so every narration
-                    # that is followed by progress is rescued; two text-only
-                    # turns in a row are accepted as the genuine final answer.
-                    # Only once the model has done MUTATING work (wrote a file
-                    # or ran a job) — that is the task class that must finish
-                    # through report.done. A read-only query/investigation
-                    # ("describe X" → design.module → prose answer) is a
-                    # genuine final answer and must end cleanly, no spurious
-                    # nudge.
-                    # "Engaged" with a build = made a mutating call OR declared
-                    # a plan that still has unfinished steps. A model that
-                    # plans, narrates and stops (gpt-oss's signature collapse)
-                    # must get the nudge/switch treatment, not read as a
-                    # genuine final answer — while a read-only Q&A reply
-                    # (no plan, no writes) still ends cleanly.
-                    plan_pending = any(s.get("status") != "done"
-                                       for s in (self.ctx.plan or []))
-                    engaged = (made_mutating_call or plan_pending
-                               or self.require_report_done)
-                    if (engaged and not reported_done
-                            and narration_nudges < self.max_narration_nudges):
-                        narration_nudges += 1
-                        # A run died narrating a fix it had already
-                        # diagnosed ('the proportional fix is ...') three
-                        # times through this nudge. Quote the model's own
-                        # plan back as the directive — the knowledge is
-                        # there; only the act is missing.
-                        quoted = _stated_plan(resp.text or "")
-                        lead = (f"You wrote: \"{quoted}\" — that is a plan, "
-                                f"not an action. Execute it NOW as a tool "
-                                f"call. " if quoted else
-                                "You ended with a message but no tool call, "
-                                "and report.done has not accepted this task. ")
-                        transcript.append({"role": "user", "guard": "narration", "content": (
-                            lead
-                            + "If you are genuinely finished, call "
-                            "report.done now — it is the ONLY way to complete "
-                            "and it validates your work against the required "
-                            "gates against real job records. Otherwise take "
-                            "the NEXT concrete action as a tool call. Do NOT "
-                            "describe what you will do, and do NOT claim "
-                            "success in prose — act.")})
-                        if self.session:
-                            self.session.messages = transcript
-                            self.session.save()
-                        continue
-                    # A build task that narrated twice without finishing: before
-                    # accepting it, let the router hand off to another model.
-                    if (engaged and not reported_done
-                            and self._try_switch("giveup", self.need, transcript)):
-                        narration_nudges = 0
-                        continue
-                    break  # a genuine, complete final answer
-                # Otherwise the turn produced no actionable output: it was
-                # either empty, or CUT OFF at the token ceiling
-                # (finish_reason=length) — a reasoning model can emit a scrap
-                # of text ("let me rewrite this…") and then burn the rest of
-                # the budget planning, never reaching its tool call. A
-                # truncated turn is NOT a final answer: nudge it to continue,
-                # bounded, then fail loudly instead of ending silently.
-                empty_turns += 1
-                if empty_turns > 2:
-                    # exhausted the continue-nudges → try another model before
-                    # giving up on the task entirely.
-                    if self._try_switch("giveup", self.need, transcript):
-                        empty_turns = 0
-                        continue
-                    if last_reasoning and not final_text:
-                        # The answer often exists but stayed trapped in the
-                        # reasoning channel — surface it, clearly labeled.
-                        final_text = ("(recovered from the model's reasoning "
-                                      "channel — it never emitted a final "
-                                      "message)\n" + last_reasoning[-2000:])
-                        # synthesized here, not model-emitted: no assistant
-                        # event has carried it, so fire one — every surface
-                        # renders events, and re-echoing out["text"] on top
-                        # duplicated whole answers
-                        self.on_event("assistant", {"text": final_text,
-                                                    "synthetic": True})
-                    else:
-                        note = ("(stopped: the model kept hitting the token "
-                                "limit before finishing"
-                                + (" — raise [model] max_tokens or pick a less "
-                                   "verbose model" if truncated else "") + ")")
-                        # Keep any partial text, but ALWAYS surface the failure
-                        # — never let a truncated fragment pose as the answer.
-                        final_text = (final_text + "\n\n" + note
-                                      if final_text else note)
-                        self.on_event("assistant", {"text": note,
-                                                    "synthetic": True})
-                    break
-                if truncated:
-                    target = _truncated_write_target(resp)
-                    if target or length_stops >= 2:
-                        what = target or "the file you were writing"
-                        nudge = (
-                            f"Your turn was cut off at the token limit "
-                            f"(finish_reason=length) while writing {what}. "
-                            f"The content does NOT fit in one turn — emitting "
-                            f"it again the same way will be cut off again "
-                            f"(this has now happened {length_stops}x). Write "
-                            f"it in PARTS instead: first fs.write a compact "
-                            f"skeleton (includes, module/class declaration, "
-                            f"function stubs with TODO bodies), then fill one "
-                            f"section per turn with fs.edit, verifying as you "
-                            f"go. Start with the skeleton NOW.")
-                    else:
-                        nudge = ("Your previous message was cut off at the "
-                                 "token limit (finish_reason=length) before "
-                                 "you finished. Continue from where you "
-                                 "stopped — if you were about to call a tool, "
-                                 "emit that tool call now. Be concise; do not "
-                                 "restart or re-plan from scratch.")
-                else:
-                    nudge = ("Your previous reply was empty. Respond now with "
-                             "either a tool call or a concise final answer as "
-                             "plain message text. No further internal "
-                             "deliberation. /no_think")
-                transcript.append({"role": "user", "guard": "continue", "content": nudge})
-                if self.session:
-                    self.session.messages = transcript
-                    self.session.save()
-                continue
-            narration_nudges = 0  # the model acted — reset the narration guard
-            results = []
+                break  # a genuine, complete final answer, or an explicit stop
+            st.narration_nudges = 0  # the model acted — reset the narration guard
+            results: list[dict] = []
+            pending_teach: list[tuple[str, str]] = []
             lint_err_this = None   # this step's lint error count (if any)
             job_failed = job_passed = False
             sim_fail_sig = None    # signature of a sim failure seen this step
             for call in resp.tool_calls:
                 real = self._resolve_tool_name(call["name"])
                 tool_obj = self.tools.get(real)
-                self.on_event("tool_call", {"name": real, "input": call["input"]})
+                inp = call.get("input") or {}
+                path = str(inp.get("path", ""))
+                self.on_event("tool_call", {"name": real, "input": inp})
                 try:
-                    result = self._exec(real, call["input"])
+                    result = self._exec(real, inp)
                 except KeyboardInterrupt:
                     # Ctrl-C mid-tool: answer this call and every call after
                     # it, persist, THEN propagate — the saved transcript must
@@ -602,172 +424,83 @@ class AgentLoop:
                                                       'by user — this call never '
                                                       'ran"}'})
                     transcript.append({"role": "tool", "content": results})
-                    if self.session:
-                        self.session.messages = transcript
-                        self.session.save()
+                    self._persist(transcript)
                     raise
                 ok = isinstance(result, dict) and not result.get("denied") \
                     and not result.get("error")
                 if ok and getattr(tool_obj, "permission", "") in ("write", "submit"):
-                    made_mutating_call = True  # real state change → needs report.done
+                    st.made_mutating_call = True  # real state change → needs report.done
                 if ok and real == "lib.fetch" and isinstance(result, dict):
                     for _f in (list(result.get("written") or [])
                                + list(result.get("unchanged") or [])):
                         self.fetched_paths.add(str(_f))
                 if ok and real in ("fs.write", "fs.edit"):
-                    writes_since_verify += 1
-                    _wp = str((call.get("input") or {}).get("path", ""))
-                    if (_wp and _wp not in self.fetched_paths
-                            and "/lib/" in "/" + _wp
-                            and (_wp, "libdir") not in scope_taught):
-                        scope_taught.add((_wp, "libdir"))
-                        _teach_later("libdir",
-                            f"You wrote {_wp} into a fetched-library "
-                            f"directory. That directory holds components "
-                            f"copied by lib.fetch — files you author there "
-                            f"are NOT library components and will confuse "
-                            f"you later (a previous run wrote its own "
-                            f"modules there, judged them corrupt, and lost "
-                            f"most of its budget). Put your own modules "
-                            f"under work/rtl/ and re-run the write there.")
-                    _teach = self._port_change_teaching(
-                        str((call.get("input") or {}).get("path", "")))
+                    st.writes_since_verify += 1
+                    if (path and path not in self.fetched_paths
+                            and "/lib/" in "/" + path
+                            and (path, "libdir") not in ver.scope_taught):
+                        ver.scope_taught.add((path, "libdir"))
+                        pending_teach.append(("libdir", teachings.libdir(path)))
+                    _teach = self._port_change_teaching(path)
                     if _teach:
-                        _teach_later("ports", _teach)
-                    _p = str((call.get("input") or {}).get("path", ""))
-                    if _p:
-                        authored.add(_p)
-                        deleted.discard(_p)
+                        pending_teach.append(("ports", _teach))
+                    led.wrote(path)
                 if ok and real in ("fs.write", "fs.edit", "fs.delete",
                                    "checkpoint.restore"):
-                    epoch += 1
-                if ok and real == "fs.delete":
-                    _p = str((call.get("input") or {}).get("path", ""))
-                    if _p:
-                        authored.discard(_p)
-                        deleted.add(_p)
-                        # A run deleted the very RTL its green checkpoint
-                        # held; no teaching fired because the restore path
-                        # only watched for FAILING checks. A wipe is just as
-                        # much a way to lose a good state.
-                        if (green_job and _p in self._checkpoint_files(green_job)
-                                and not checkpoint_taught):
-                            checkpoint_taught = True
-                            _teach_later("wipe",
-                                f"You deleted {_p}, which the GREEN "
-                                f"checkpoint {green_job} contains. If that "
-                                f"was not deliberate, "
-                                f"checkpoint.restore(job='{green_job}') puts "
-                                f"the whole green state back; otherwise say "
-                                f"why the rewrite is necessary and keep the "
-                                f"change minimal.")
+                    led.bump()
+                if ok and real == "fs.delete" and path:
+                    led.removed(path)
+                    # A run deleted the very RTL its green checkpoint held;
+                    # no teaching fired because the restore path only watched
+                    # for FAILING checks. A wipe loses a good state just as well.
+                    if (ver.green_job and path in self._checkpoint_files(ver.green_job)
+                            and not ver.checkpoint_taught):
+                        ver.checkpoint_taught = True
+                        pending_teach.append(("wipe", teachings.wipe(path, ver.green_job)))
                 if real in ("lint.run", "sim.run", "cov.run", "lec.run"):
-                    writes_since_verify = 0   # ran a check (pass or fail):
-                    verify_nudged_at = 0      # the loop is closing loops
+                    st.writes_since_verify = 0   # ran a check (pass or fail):
+                    st.verify_nudged_at = 0      # the loop is closing loops
                 if real == "report.done" and ok and result.get("accepted"):
-                    reported_done = True  # gates satisfied — a later text turn
-                    #                       is now a legitimate final answer
+                    st.reported_done = True  # gates satisfied — a later text turn
+                    #                          is now a legitimate final answer
                 if real == "lint.run" and isinstance(result, dict) \
                         and isinstance(result.get("errors"), int):
                     lint_err_this = result["errors"]
                 if real in ("lint.run", "sim.run") and isinstance(result, dict):
-                    _st = result.get("status")
-                    _passed = _st == "passed" or result.get("sim_status") == "pass"
-                    _failed = _st in ("failed", "error")
-                    if _passed or _failed:
-                        _jid = str(result.get("job") or "")
-                        _key, _scope, _rank = _verify_key(
-                            real, call.get("input") or {})
-                        _prev = checks.get(_key)
-                        if (_prev and _prev["epoch"] == epoch
-                                and (_key, epoch, "redo") not in scope_taught):
-                            # same check, same tree: the job cache made it
-                            # cheap, but it still cost a step and taught
-                            # nothing — say so once
-                            scope_taught.add((_key, epoch, "redo"))
-                            _teach_later("scope_redo",
-                                f"{real}({_scope}) already has a current "
-                                f"result on this unchanged tree: "
-                                f"{_prev['job']} "
-                                f"{'passed' if _prev['passed'] else 'FAILED'}. "
-                                f"Re-running it adds nothing — act on the "
-                                f"open problem instead.")
-                        checks[_key] = {"job": _jid, "passed": _passed,
-                                        "epoch": epoch, "rank": _rank,
-                                        "scope": _scope, "tool": real,
-                                        "errors": result.get("errors")}
-                        cur = [v for v in checks.values()
-                               if v["epoch"] == epoch]
-                        if _passed:
-                            if all(v["passed"] for v in cur):
-                                # green means EVERY current check passes;
-                                # checkpoint under the strongest of them
-                                strongest = max(cur, key=lambda v: v["rank"])
-                                if strongest["job"]:
-                                    self._save_green_checkpoint(
-                                        strongest["job"], authored)
-                                    green_job = strongest["job"]
-                                green_epoch = epoch
-                                fails_since_green = 0
-                                checkpoint_taught = False
-                        else:
-                            fails_since_green += 1
-                            # the tree is now KNOWN not-green: stop calling it
-                            # green — but keep the weaker pass on record, it
-                            # is still a valid fact about this same tree
-                            green_epoch = -1
-                            weaker = [v for v in cur
-                                      if v["passed"] and v["rank"] < _rank]
-                            if weaker and (_key, epoch, "gap") not in scope_taught:
-                                scope_taught.add((_key, epoch, "gap"))
-                                w = max(weaker, key=lambda v: v["rank"])
-                                _e = result.get("errors")
-                                _teach_later("scope_gap",
-                                    f"{w['tool']}({w['scope']}) {w['job']} is "
-                                    f"green on this tree and need not be "
-                                    f"repeated. {real}({_scope}) {_jid} FAILED "
-                                    f"on the SAME tree"
-                                    + (f" with {_e} errors" if isinstance(_e, int) else "")
-                                    + " — that is the open problem: fix it, "
-                                    "then re-run that scope only.")
+                    key, scope, rank = _verify_key(real, inp)
+                    pending_teach += ver.observe(
+                        real, key, scope, rank, result, led.epoch,
+                        on_green=lambda job: self._save_green_checkpoint(job, led.authored))
                 if real in ("sim.run", "synth.run", "fpga.run") \
                         and isinstance(result, dict):
-                    st = result.get("status")
-                    if st == "passed" or result.get("sim_status") == "pass":
+                    _st = result.get("status")
+                    if _st == "passed" or result.get("sim_status") == "pass":
                         job_passed = True
-                    elif st in ("failed", "error"):
+                    elif _st in ("failed", "error"):
                         job_failed = True
                         if real == "sim.run":
-                            sim_fail_sig = _sim_failure_signature(
-                                call["input"], result)
+                            sim_fail_sig = _sim_failure_signature(inp, result)
                 results.append({"id": call["id"], "name": real,
                                 "output": _stringify(result)})
                 self.on_event("tool_result", {"name": real, "result": result})
             transcript.append({"role": "tool", "content": results})
-            for _tag, _msg in pending_teach:
-                transcript.append({"role": "user", "guard": _tag, "content": _msg})
-            pending_teach = []
-            if ledger_active and (authored or deleted):
+            for tag, msg in pending_teach:
+                transcript.append({"role": "user", "guard": tag, "content": msg})
+            if led.active and led.dirty:
                 # refresh NOW, not only at the next compaction: a guard
                 # message appended this step must never sit next to a
                 # ledger that still describes the previous step
-                transcript = [m for m in transcript if not (
-                    m.get("role") == "user" and str(
-                        m.get("content", "")).startswith(LEDGER_TAG))]
-                transcript.append({"role": "user", "guard": "ledger", "content": _ledger_msg()})
+                led.refresh(transcript, ver.summary(led.epoch))
             if (self.verify_every_n_writes
-                    and writes_since_verify >= self.verify_every_n_writes
-                    and writes_since_verify >= verify_nudged_at
+                    and st.writes_since_verify >= self.verify_every_n_writes
+                    and st.writes_since_verify >= st.verify_nudged_at
                             + self.verify_every_n_writes):
                 # RE-ARMS every N further writes: latching once per breach let
                 # a run author 37 files against 6 checks — the teaching went
                 # quiet exactly when the drift got worse
-                verify_nudged_at = writes_since_verify
-                transcript.append({"role": "user", "guard": "verify_cadence", "content": (
-                    f"You have written or edited {writes_since_verify} files "
-                    f"without running any verification. Run lint.run NOW and "
-                    f"fix what it reports before writing anything new — "
-                    f"unverified authoring compounds errors.")})
+                st.verify_nudged_at = st.writes_since_verify
+                transcript.append({"role": "user", "guard": "verify_cadence",
+                                   "content": teachings.verify_cadence(st.writes_since_verify)})
             if self.session:
                 self.session.messages = transcript
                 self.session.task_frame["plan"] = list(self.ctx.plan)
@@ -778,128 +511,72 @@ class AgentLoop:
             # falling, or any pass) resets the counter, so a model grinding lint
             # 8→6→2→0 is never penalised.
             improved = bool(job_passed) or lint_err_this == 0 or (
-                lint_err_this is not None and last_lint_err is not None
-                and lint_err_this < last_lint_err)
+                lint_err_this is not None and st.last_lint_err is not None
+                and lint_err_this < st.last_lint_err)
             # A model rewriting whole files rarely NOTICES it is regressing —
             # one run drove a lint queue 3->9->19, each "fix" breaking more.
             # State the scoreboard at the moment of drift and demand the
             # minimal-edit protocol, exactly like the narration nudge does.
-            lint_rose = (lint_err_this is not None
-                         and last_lint_err is not None
-                         and lint_err_this > last_lint_err)
-            if lint_rose:
-                transcript.append({"role": "user", "guard": "lint_rose", "content": (
-                    f"Lint errors ROSE from {last_lint_err} to "
-                    f"{lint_err_this} after your last change — the previous "
-                    f"version was closer. Do NOT rewrite whole files. Make "
-                    f"one minimal fs.edit that addresses ONLY the FIRST "
-                    f"reported error, then lint.run again. One error per "
-                    f"edit.")})
-                if self.session:
-                    self.session.messages = transcript
-                    self.session.save()
+            if (lint_err_this is not None and st.last_lint_err is not None
+                    and lint_err_this > st.last_lint_err):
+                self._nudge(transcript, "lint_rose",
+                            teachings.lint_rose(st.last_lint_err, lint_err_this))
             if lint_err_this is not None:
-                last_lint_err = lint_err_this
+                st.last_lint_err = lint_err_this
             constructive = any(
                 self._resolve_tool_name(c["name"]) in (
                     "fs.write", "fs.edit", "fs.delete", "lib.fetch",
                     "checkpoint.restore", "report.done")
                 for c in resp.tool_calls)
             if constructive:
-                idle_turns = 0
-                progress_taught = False
+                st.idle_turns = 0
+                st.progress_taught = False
             else:
-                idle_turns += 1
-            if (self.progress_guard_after and green_job
-                    and green_epoch == epoch
-                    and idle_turns >= self.progress_guard_after
-                    and not progress_taught):
-                progress_taught = True
+                st.idle_turns += 1
+            if (self.progress_guard_after and ver.is_green(led.epoch)
+                    and st.idle_turns >= self.progress_guard_after
+                    and not st.progress_taught):
+                st.progress_taught = True
                 nxt = next((str(p.get("step", "")) for p in (self.ctx.plan or [])
                             if p.get("status") != "done"), "")
-                transcript.append({"role": "user", "guard": "progress", "content": (
-                    f"The workspace is GREEN and UNCHANGED since "
-                    f"{green_job} (checks on this tree: {_verify_summary()}) "
-                    f"— re-reading or re-checking it adds nothing. "
-                    + (f"The plan's next unfinished step is: {nxt!r}. "
-                       if nxt else "Your plan has no unfinished step listed. ")
-                    + "Take it NOW with a constructive tool call (write the "
-                    "next file, fetch the next component, or report.done "
-                    "if the task is complete).")})
-                if self.session:
-                    self.session.messages = transcript
-                    self.session.save()
+                self._nudge(transcript, "progress",
+                            teachings.progress(ver.green_job, ver.summary(led.epoch), nxt))
             # Post-green regression tangle: a run went green at J-0004, then
             # revised itself into five straight failing lints and said "my
             # files have drifted into a tangle... I can't see the actual
             # on-disk wiring". Green states are checkpointed — teach the way
             # back instead of watching the tangle grow.
-            if (green_job and fails_since_green >= 2
-                    and not checkpoint_taught):
-                checkpoint_taught = True
-                transcript.append({"role": "user", "guard": "checkpoint", "content": (
-                    f"Your checks have failed {fails_since_green} times in a "
-                    f"row since {green_job} was GREEN. A checkpoint of "
-                    f"that green state exists: call "
-                    f"checkpoint.restore(job='{green_job}') to put the "
-                    f"files back exactly as they were, then make MINIMAL "
-                    f"changes from there — one error per edit, re-check "
-                    f"after each.")})
-                if self.session:
-                    self.session.messages = transcript
-                    self.session.save()
+            if (ver.green_job and ver.fails_since_green >= 2
+                    and not ver.checkpoint_taught):
+                ver.checkpoint_taught = True
+                self._nudge(transcript, "checkpoint",
+                            teachings.checkpoint(ver.fails_since_green, ver.green_job))
             if improved:
-                stall = 0
+                st.stall = 0
             elif job_failed or (lint_err_this is not None and lint_err_this > 0):
-                stall += 1
+                st.stall += 1
             # BAD-ORACLE GUARD: the same sim failing with the IDENTICAL
             # signature over and over, across RTL edits, is the classic
-            # symptom of a broken testbench oracle (e.g. a reference that
-            # gates valid on ready, or a per-cycle compare against an elastic
-            # DUT) — no RTL fix can ever satisfy it, and a model (or a whole
-            # relay of models) will grind sim-edit-sim forever. Detect the
-            # unchanging signature and inject a one-time nudge redirecting
-            # suspicion to the harness. The nudge lives in the transcript, so
-            # a later stall-switch hands the fallback model the same warning.
-            if sim_fail_sig is not None:
-                if sim_fail_sig == sim_sig:
-                    sim_sig_count += 1
-                else:
-                    sim_sig, sim_sig_count = sim_fail_sig, 1
-            elif job_passed:
-                sim_sig, sim_sig_count = None, 0
-            if (sim_sig is not None and sim_sig_count >= 3
-                    and sim_sig not in sim_sigs_nudged):
-                sim_sigs_nudged.add(sim_sig)
+            # symptom of a broken testbench oracle — no RTL fix can ever
+            # satisfy it, and a model (or a whole relay of models) will grind
+            # sim-edit-sim forever. Detect the unchanging signature and
+            # redirect suspicion to the harness, once. The nudge lives in the
+            # transcript, so a later stall-switch hands the fallback model
+            # the same warning.
+            st.saw_sim_signature(sim_fail_sig, job_passed)
+            if st.oracle_suspect():
+                st.sim_sigs_nudged.add(st.sim_sig)
                 self.on_event("oracle_suspect", {
-                    "test": sim_sig[0], "signature": sim_sig[1],
-                    "count": sim_sig_count})
-                transcript.append({"role": "user", "guard": "oracle", "content": (
-                    f"The sim '{sim_sig[0]}' has now failed {sim_sig_count} "
-                    "consecutive times with the IDENTICAL failure signature "
-                    f"({sim_sig[1]!r}). When the signature never changes no "
-                    "matter what you fix, the TESTBENCH ORACLE is the prime "
-                    "suspect — re-read the harness before touching the RTL "
-                    "again, and check it against these laws: (1) a reference "
-                    "model's valid must NEVER depend on ready — gating "
-                    "expected valid on m_ready is a handshake modelling "
-                    "error; (2) elastic / latency-insensitive components "
-                    "(skid buffers, elastic pipelines, FIFOs) must be checked "
-                    "by STREAM EQUALITY (every beat accepted at an input "
-                    "handshake appears at the output, in order, sampled at "
-                    "the DUT's OWN handshakes), never by per-cycle "
-                    "valid/data comparison against a hand-rolled "
-                    "fixed-latency model. If the oracle violates either law, "
-                    "fix the HARNESS, not the RTL.")})
-                if self.session:
-                    self.session.messages = transcript
-                    self.session.save()
-            if (self.router and self.router.trigger_on("stall") and stall >= 3
+                    "test": st.sim_sig[0], "signature": st.sim_sig[1],
+                    "count": st.sim_sig_count})
+                self._nudge(transcript, "oracle",
+                            teachings.oracle(st.sim_sig[0], st.sim_sig[1], st.sim_sig_count))
+            if (self.router and self.router.trigger_on("stall") and st.stall >= 3
                     and self._try_switch("stall", "debugger", transcript)):
-                stall = 0
-                last_lint_err = None
+                st.stall = 0
+                st.last_lint_err = None
         if self.router is not None:
-            self._record_telemetry(reported_done)
+            self._record_telemetry(st.reported_done)
         # Park on anything still running (FR-JOB-04). The session records it so
         # a later `chipchamp wake` can collect the verdict and carry on — the
         # half of detachment that makes it more than fire-and-forget. Note that
@@ -909,16 +586,100 @@ class AgentLoop:
             self.session.task_frame["pending_jobs"] = list(self.ctx.pending_jobs)
             self.session.task_frame["parked_task"] = user_prompt
             self.session.save()
-        return {"text": final_text, "steps": step + 1,
-                "budget_stop": budget_stop,
+        return {"text": st.final_text, "steps": st.step + 1,
+                "budget_stop": st.budget_stop,
                 "pending_jobs": list(self.ctx.pending_jobs),
                 "tokens": self.ctx.ledger.tokens_used,
                 "model": self.gateway.ref,
                 "models_used": self._models_used, "switches": self._switches,
-                "empty_turns": empty_turns, "length_stops": length_stops,
-                "recovered_calls": recovered_calls,
-                "call_retries": call_retries,
+                "empty_turns": st.empty_turns, "length_stops": st.length_stops,
+                "recovered_calls": st.recovered_calls,
+                "call_retries": st.call_retries,
                 "jobs": [r.id for r in self.ctx.task_jobs]}
+
+    def _handle_text_only_turn(self, st: RunState, resp, transcript: list) -> bool:
+        """A turn with no tool call. Returns True to take another step
+        (a nudge or a model switch was issued), False to end the run —
+        either on a genuine final answer or an explicit, loud stop."""
+        truncated = resp.stop_reason == "length"
+        # A bare refusal ("I can't continue with this task") is not a final
+        # answer — swap to a model that will do the work.
+        if (self.router and self.router.trigger_on("refusal")
+                and self.router.is_refusal(resp.text)
+                and self._try_switch("refusal", self.need, transcript)):
+            return True
+        if resp.text and not truncated:
+            # A non-truncated text-only turn LOOKS like a final answer. But a
+            # weak agentic model routinely NARRATES its plan — or fabricates a
+            # completion report — as prose instead of acting or calling
+            # report.done. Unless the completion gate was actually satisfied,
+            # nudge (bounded) to force a real action or a gate-validated
+            # report.done; the counter resets whenever the model acts.
+            # "Engaged" = made a mutating call OR declared a plan that still
+            # has unfinished steps OR this run must end on report.done. A
+            # read-only Q&A reply (no plan, no writes) ends cleanly.
+            plan_pending = any(s.get("status") != "done"
+                               for s in (self.ctx.plan or []))
+            engaged = (st.made_mutating_call or plan_pending
+                       or self.require_report_done)
+            if (engaged and not st.reported_done
+                    and st.narration_nudges < self.max_narration_nudges):
+                st.narration_nudges += 1
+                # Quote the model's own plan back as the directive — the
+                # knowledge is there; only the act is missing.
+                self._nudge(transcript, "narration",
+                            teachings.narration(_stated_plan(resp.text or "")))
+                return True
+            # A build task that narrated past the nudges without finishing:
+            # before accepting it, let the router hand off to another model.
+            if (engaged and not st.reported_done
+                    and self._try_switch("giveup", self.need, transcript)):
+                st.narration_nudges = 0
+                return True
+            return False  # a genuine, complete final answer
+        # Otherwise the turn produced no actionable output: it was either
+        # empty, or CUT OFF at the token ceiling (finish_reason=length) — a
+        # reasoning model can emit a scrap of text and then burn the rest of
+        # the budget planning, never reaching its tool call. A truncated turn
+        # is NOT a final answer: nudge it to continue, bounded, then fail
+        # loudly instead of ending silently.
+        st.empty_turns += 1
+        if st.empty_turns > 2:
+            # exhausted the continue-nudges → try another model before
+            # giving up on the task entirely.
+            if self._try_switch("giveup", self.need, transcript):
+                st.empty_turns = 0
+                return True
+            if st.last_reasoning and not st.final_text:
+                # The answer often exists but stayed trapped in the reasoning
+                # channel — surface it, clearly labeled.
+                st.final_text = ("(recovered from the model's reasoning "
+                                 "channel — it never emitted a final "
+                                 "message)\n" + st.last_reasoning[-2000:])
+                # synthesized here, not model-emitted: fire the event so every
+                # surface renders it exactly once
+                self.on_event("assistant", {"text": st.final_text, "synthetic": True})
+            else:
+                note = ("(stopped: the model kept hitting the token limit "
+                        "before finishing"
+                        + (" — raise [model] max_tokens or pick a less "
+                           "verbose model" if truncated else "") + ")")
+                # Keep any partial text, but ALWAYS surface the failure —
+                # never let a truncated fragment pose as the answer.
+                st.final_text = (st.final_text + "\n\n" + note
+                                 if st.final_text else note)
+                self.on_event("assistant", {"text": note, "synthetic": True})
+            return False
+        if truncated:
+            target = _truncated_write_target(resp)
+            if target or st.length_stops >= 2:
+                nudge = teachings.chunked_write(target, st.length_stops)
+            else:
+                nudge = teachings.continue_after_cutoff()
+        else:
+            nudge = teachings.empty_turn()
+        self._nudge(transcript, "continue", nudge)
+        return True
 
     def _warn_if_window_too_small(self, system: str) -> None:
         """Say so when the prompt cannot fit the model's declared window.
