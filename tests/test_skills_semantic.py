@@ -113,7 +113,6 @@ def test_mention_is_word_bounded_not_substring():
 def test_short_name_does_not_hijack_selection(sem_ws, monkeypatch):
     # add a skill literally named "run"; a task merely containing "running"
     # must not force it to the top via a spurious mention bonus
-    from chipchamp.config import Workspace
     ws, _ = sem_ws
     (Path(ws.root).parent / "skills" / "run").mkdir(parents=True, exist_ok=True)
     (Path(ws.root).parent / "skills" / "run" / "SKILL.md").write_text(

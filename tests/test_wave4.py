@@ -7,7 +7,6 @@ a team pays for once.
 """
 from __future__ import annotations
 
-import pytest
 
 from chipchamp.notebook import Notebook
 from chipchamp.tools import all_tools

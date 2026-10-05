@@ -21,7 +21,7 @@ from pathlib import Path
 from ..config import Workspace
 from ..tools.context import ToolContext
 from ..tools.verif_tools import _resolve_sim
-from .mutators import Mutant, generate_mutants
+from .mutators import generate_mutants
 
 
 def _fresh_workspace(src_root: str, dest: Path) -> Workspace:

@@ -9,7 +9,7 @@ import shutil
 import pytest
 
 from chipchamp.adapters import AdapterRegistry
-from chipchamp.adapters.base import Plan, StepResult
+from chipchamp.adapters.base import StepResult
 from chipchamp.adapters.fabulous import FabulousAdapter
 from chipchamp.policy.gates import Evidence, evaluate
 

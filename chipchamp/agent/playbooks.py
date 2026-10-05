@@ -11,9 +11,7 @@ import os
 
 from ..brand import markers
 from ..jobs import RegressionManager
-from ..jobs.regression import normalize_signature
 from ..tools.context import ToolContext
-from ..tools.verif_tools import _resolve_sim
 
 
 def run_optimize(ctx: ToolContext, top: str = "", cov_set: str = "default") -> dict:

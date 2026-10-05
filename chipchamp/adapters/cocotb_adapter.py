@@ -104,7 +104,6 @@ class CocotbAdapter(Adapter):
                     meta={"module": test_module, "seed": seed})
 
     def parse(self, plan: Plan, results: list[StepResult]) -> ToolResult:
-        r = results[0]
         xml = plan.artifacts.get("results", "")
         diags: list[NormalizedDiagnostic] = []
         n_pass = n_fail = 0

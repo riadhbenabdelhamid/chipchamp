@@ -20,7 +20,7 @@ from typing import Callable, Optional
 
 from ..tools.context import ToolContext
 from .loop import AgentLoop
-from .roles import Role, builtin_roles
+from .roles import builtin_roles
 
 
 @dataclass

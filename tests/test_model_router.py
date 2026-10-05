@@ -2,7 +2,6 @@
 refusal detection, and telemetry aggregation."""
 from __future__ import annotations
 
-import json
 
 from chipchamp.agent.model_profiles import load_profiles, default_profile
 from chipchamp.agent.providers.registry import ModelRegistry

@@ -9,7 +9,6 @@ one (SPEC §11.4).
 from __future__ import annotations
 
 import socket
-import time
 from dataclasses import asdict, dataclass, field
 from typing import Optional
 

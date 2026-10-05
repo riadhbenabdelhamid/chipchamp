@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import time
 
-import pytest
 
 from chipchamp.adapters.base import Adapter, Plan, Step, ToolResult
 from chipchamp.agent import working_set

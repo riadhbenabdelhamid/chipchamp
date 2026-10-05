@@ -19,7 +19,7 @@ def test_plan_update_normalizes_and_stores(ctx):
     assert r["total"] == 3 and r["done"] == 1
     assert ctx.plan[2] == {"step": "verify", "status": "pending"}
     # bad status coerced to pending
-    r2 = all_tools()["plan.update"].handler(ctx, steps=[{"step": "x", "status": "bogus"}])
+    all_tools()["plan.update"].handler(ctx, steps=[{"step": "x", "status": "bogus"}])
     assert ctx.plan[0]["status"] == "pending"
 
 

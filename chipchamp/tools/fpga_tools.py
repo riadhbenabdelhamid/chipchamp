@@ -539,7 +539,9 @@ def _crop_device_canvas(img, pad: int = 6):
                      "description": "seconds to let the GUI render after opening the checkpoint"}}})
 def fpga_snapshot(ctx: ToolContext, module: str = "", highlight: list | None = None,
                   wait_s: int = 75) -> dict:
-    import subprocess, tempfile, time
+    import subprocess
+    import tempfile
+    import time
     rec = _latest_fpga(ctx, module)
     if rec is None:
         return {"error": "no fpga run recorded — call fpga.run first"}

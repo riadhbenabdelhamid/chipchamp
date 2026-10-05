@@ -230,7 +230,6 @@ def test_skills_cli_add_list_remove(tmp_path):
 def test_bang_runs_shell_passthrough_without_session_noise(tmp_path):
     """`!<cmd>` is a plain terminal passthrough: the command's own output
     appears, and nothing about it enters the session transcript."""
-    import json
     import pathlib
     r = _run(["--root", str(EXAMPLE)],
              stdin="!echo PASSTHROUGH_MARKER_42\n/exit\n")

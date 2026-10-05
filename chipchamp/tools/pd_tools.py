@@ -117,7 +117,7 @@ def pd_power(ctx: ToolContext, module: str = "", activity_from: str = "",
     from ..physical import find_run_dir
     from ..physical.area import find_liberty
     from ..physical.power import (aggregate_by_module, find_dut_scope,
-                                  parse_power_report, power_tcl)
+                                  power_tcl)
     from ..physical.reports import find_synth_netlist
     from ..physical.xprobe import GateNetlist, resolve_hier, rtl_net_of
     module = module or (ctx.db.tops()[0] if ctx.db.tops() else "")

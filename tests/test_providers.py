@@ -3,7 +3,7 @@ Anthropic wire formats, tool-call parsing, and registry selection/persistence.
 Pure functions + a mocked HTTP — no network."""
 from __future__ import annotations
 
-from chipchamp.agent.providers import ModelRegistry, ProviderConfig
+from chipchamp.agent.providers import ModelRegistry
 from chipchamp.agent.providers.anthropic_provider import (to_anthropic_messages,
                                                          to_anthropic_tools)
 from chipchamp.agent.providers.openai_compat import (parse_openai_response,

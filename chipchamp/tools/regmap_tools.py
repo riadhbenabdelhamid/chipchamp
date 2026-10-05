@@ -106,7 +106,6 @@ def regen_check(ctx: ToolContext) -> bool | None:
     """The regmap_regen gate (SPEC §11.1): regenerate every regmap-kind
     [[generated]] entry in memory and byte-compare with the workspace. Returns
     None when no regmap entries exist (gate reports 'missing')."""
-    import fnmatch
     import glob as _g
     checked = False
     for entry in ctx.ws.generated:

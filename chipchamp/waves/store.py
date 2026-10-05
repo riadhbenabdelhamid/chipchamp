@@ -110,8 +110,6 @@ class WaveStore:
              occurrence: int = 1) -> dict:
         se = SignalExpr(expr)
         codes = {name: self.data.id_for(name) for name in se.names}
-        missing = [n for n, c in codes.items() if c is None
-                   and not n.replace(".", "").isidentifier() is False]
         real_missing = [n for n, c in codes.items() if c is None]
         # candidate times = union of change times of referenced signals
         cand: set[int] = {0}

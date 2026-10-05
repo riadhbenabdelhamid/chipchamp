@@ -1,7 +1,6 @@
 """Autonomy modes (item 3) + session resume (item 6)."""
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 from chipchamp.agent.session import Session

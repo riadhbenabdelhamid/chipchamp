@@ -286,7 +286,8 @@ def test_skill_dir_with_root_manifest(tmp_path, monkeypatch):
         "---\nname: tool-driver\ndescription: drives the tool\n---\nbody\n")
     ws = Workspace(str(tmp_path / "ws"))
     monkeypatch.setattr(sk, "skill_dirs", lambda ws: [(root, "registry")])
-    rep = sk.discover_report(ws) if hasattr(sk, "discover_report") else None
+    if hasattr(sk, "discover_report"):
+        sk.discover_report(ws)                     # must not raise
     found = sk.discover(ws)
     assert "tool-driver" in found
 
@@ -818,7 +819,6 @@ def test_mutating_fs_tools_teach_relative_paths(ctx):
 # are now snapshotted; a post-green failing streak teaches checkpoint.restore.
 
 def test_green_checkpoint_snapshot_teach_restore(tmp_path):
-    import os
     from types import SimpleNamespace as NS
     from chipchamp.agent import Session
     from chipchamp.config import Workspace

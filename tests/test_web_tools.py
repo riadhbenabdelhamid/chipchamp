@@ -2,7 +2,6 @@
 delegated web-researcher sub-agent — all offline (urllib is monkeypatched)."""
 from __future__ import annotations
 
-import pytest
 from fakes import FakeGateway as _FakeGateway
 
 from chipchamp.tools import web_tools as w

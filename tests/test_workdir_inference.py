@@ -6,7 +6,6 @@ so every sim/synth failed on uvm_macros.svh."""
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 from chipchamp.config import (Workspace, is_testbench, rtl_only, _glob_rtl,  # noqa: F401
                              WORK_DIRNAME)

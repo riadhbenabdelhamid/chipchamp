@@ -2,7 +2,6 @@
 Icarus, plus results.xml parsing (fixture)."""
 from __future__ import annotations
 
-import shutil
 
 import pytest
 

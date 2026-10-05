@@ -69,7 +69,6 @@ def uvm_scaffold(ctx: ToolContext, module: str, out_dir: str = "",
     }
     manifest_note = "not added (add_test=false)"
     if add_test:
-        import yaml
         from ..util.jsonio import atomic_write
         tpath = ctx.ws.dot / "tests.yaml"
         old = tpath.read_text() if tpath.exists() else ""

@@ -71,7 +71,6 @@ class CoverageService:
 
     def baseline_check(self, baseline: CoverageModel, tol: float = 0.0) -> BaselineVerdict:
         """FR-COV-05: fail if total or any section coverage regressed."""
-        base_svc = CoverageService(baseline)
         cur_total = self.model.total()
         base_total = baseline.total()
         regressed = []

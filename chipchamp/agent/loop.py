@@ -729,7 +729,7 @@ class AgentLoop:
                                     f"on the SAME tree"
                                     + (f" with {_e} errors" if isinstance(_e, int) else "")
                                     + " — that is the open problem: fix it, "
-                                    f"then re-run that scope only.")
+                                    "then re-run that scope only.")
                 if real in ("sim.run", "synth.run", "fpga.run") \
                         and isinstance(result, dict):
                     st = result.get("status")
@@ -823,9 +823,9 @@ class AgentLoop:
                     f"— re-reading or re-checking it adds nothing. "
                     + (f"The plan's next unfinished step is: {nxt!r}. "
                        if nxt else "Your plan has no unfinished step listed. ")
-                    + f"Take it NOW with a constructive tool call (write the "
-                    f"next file, fetch the next component, or report.done "
-                    f"if the task is complete).")})
+                    + "Take it NOW with a constructive tool call (write the "
+                    "next file, fetch the next component, or report.done "
+                    "if the task is complete).")})
                 if self.session:
                     self.session.messages = transcript
                     self.session.save()

@@ -11,7 +11,6 @@ resource, power) so ``fpga.ppa`` can answer "what did that RTL edit cost" and
 from __future__ import annotations
 
 import json
-import os
 import re
 
 # ---- nextpnr -------------------------------------------------------------------

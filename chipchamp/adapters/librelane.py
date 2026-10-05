@@ -17,7 +17,6 @@ import json
 import os
 import shlex
 import shutil
-from dataclasses import dataclass
 
 from .base import (Adapter, CapabilityManifest, NormalizedDiagnostic, Plan,
                    Step, StepResult, ToolResult)

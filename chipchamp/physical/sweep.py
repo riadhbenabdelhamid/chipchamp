@@ -15,7 +15,6 @@ at least as good on every axis and better on one.
 """
 from __future__ import annotations
 
-import os
 
 from ..adapters.base import Plan, Step
 

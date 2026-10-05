@@ -2,15 +2,14 @@
 dead-width (toggle coverage × flop cost). Live on yosys + sky130 liberty."""
 from __future__ import annotations
 
-import os
 import shutil
 
 import pytest
 
 from chipchamp.coverage import Bin, CoverageModel
 from chipchamp.physical.area import find_liberty
-from chipchamp.physical.insights import (area_by_line, dead_bits,
-                                        liberty_cell_areas, load_mapped_cells)
+from chipchamp.physical.insights import (dead_bits,
+                                        liberty_cell_areas)
 from chipchamp.tools import all_tools
 
 requires_yosys_liberty = pytest.mark.skipif(
@@ -48,7 +47,7 @@ def test_dead_bits_pricing_and_hints():
         for edge in ("0->1", "1->0"):
             m.add_bin(Bin(id=f"toggle:rtl/x.sv:9:ctr[{bit}]:{edge}:tb.dut",
                           group="toggle", point="rtl/x.sv",
-                          name=f"rtl/x.sv:9", count=5 if bit < 2 else 0,
+                          name="rtl/x.sv:9", count=5 if bit < 2 else 0,
                           source="rtl/x.sv:9", kind="toggle"))
     cells = [{"name": "_1_", "type": "sky130_fd_sc_hd__dfrtp_1", "src": "",
               "out_bits": [2], "in_bits": [], "is_seq": True,

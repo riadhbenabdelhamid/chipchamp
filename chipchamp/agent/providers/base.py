@@ -65,7 +65,6 @@ class ProviderConfig:
     extra_headers: dict = field(default_factory=dict)
 
     def resolved_key(self) -> str:
-        import os
         if self.api_key:
             return self.api_key
         if self.api_key_env:

@@ -1,7 +1,6 @@
 """Working-repo resolution (launch from any repo): auto-detect, pin, override."""
 from __future__ import annotations
 
-import os
 import subprocess
 
 import pytest

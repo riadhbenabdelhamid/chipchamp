@@ -4,7 +4,6 @@ the suite doesn't need Vivado installed."""
 from __future__ import annotations
 
 import json
-import os
 from types import SimpleNamespace as NS
 
 from chipchamp.physical.pins import (Board, board_from_constraints,

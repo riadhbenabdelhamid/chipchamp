@@ -8,7 +8,7 @@ detectable. This is what rides on every MR and makes review cheap.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 

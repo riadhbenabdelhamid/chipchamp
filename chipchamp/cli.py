@@ -20,7 +20,6 @@ from .tools import all_tools, catalog_summary
 from .tools.context import ToolContext
 
 try:
-    from rich.console import Console
     from rich.table import Table
     from . import ui as _ui
     # ONE console: ui.set_theme() pushes the theme onto ui's console, so a
@@ -525,7 +524,7 @@ def riscv_info_cmd(ctx):
     echo(f"  default ISA   {r['default_march']} / {r['default_mabi']}")
     echo(f"  multilibs     {', '.join(r['multilibs']) or '(single)'}")
     model = r.get("reference_model")
-    echo(f"  reference     " + (f"[green]{model}[/] {r.get('reference_exe','')}"
+    echo("  reference     " + (f"[green]{model}[/] {r.get('reference_exe','')}"
                                 if model else "[yellow]none[/]"))
     if r.get("note"):
         echo(f"  [dim]{r['note']}[/]")
@@ -846,7 +845,7 @@ def tools(ctx):
 def _build_gateway(c, model_override=None, provider_override=None, role=None):
     """Resolve provider+model from the registry (selection file > env > config).
     `role` consults [model.routing] (§14) — e.g. subagents on a cheaper model."""
-    from .agent import ModelGateway, ModelRegistry, NullGateway
+    from .agent import ModelGateway, ModelRegistry
     reg = ModelRegistry(c.ws.config, str(c.ws.dot))
     audit = str(c.ws.dot / "audit.jsonl")
     if provider_override:
@@ -859,7 +858,6 @@ def _build_gateway(c, model_override=None, provider_override=None, role=None):
     if prov is None:
         return None, reason, audit
     mcfg = c.ws.config.get("model", {}) or {}
-    import os as _os
     # 16K output ceiling by default: enough for a reasoning model to plan AND
     # emit a full RTL module in one turn (4K was too low — it burned the budget
     # on reasoning and truncated), but bounded so a single call can't run away
@@ -905,7 +903,7 @@ def _build_router(c):
 def _router_status(c, r) -> None:
     from .agent.model_profiles import CAPABILITIES
     cfg = r.cfg
-    echo(f"[bold]router[/] " + ("[green]on[/]" if cfg.enabled else "[yellow]off[/]")
+    echo("[bold]router[/] " + ("[green]on[/]" if cfg.enabled else "[yellow]off[/]")
          + "   layers: " + " ".join(f"{k}{'✓' if v else '✗'}" for k, v in cfg.layers.items())
          + "   triggers: " + " ".join(f"{k}{'✓' if v else '✗'}" for k, v in cfg.triggers.items()))
     if cfg.pool:
@@ -3112,7 +3110,7 @@ def wake(ctx, session_id, timeout, model, provider, max_steps):
                      on_event=events, router=_build_router(c),
                      context_budget=_context_budget(c, gw),
                      **c.ws.guards(headless=True).as_kwargs())
-    out = loop.run("The detached jobs you launched have finished:\n"
+    loop.run("The detached jobs you launched have finished:\n"
                    + "\n".join(lines)
                    + f"\n\nContinue the task from here: {task}")
     sess.save()
@@ -3139,7 +3137,6 @@ def flaky(ctx, test):
     only place nondeterminism can hide."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
     if test:
-        runs = c.history.runs(test) or []
         seeds = {k.rpartition("#")[2] for k in c.history._load()
                  if k.rpartition("#")[0] == test}
         if not seeds:
@@ -3728,7 +3725,7 @@ def workspace(ctx, path, unpin):
     `chipchamp workspace .`          → pin the current directory
     `chipchamp workspace --unpin`    → clear the pinned default
     """
-    from .config import find_project_root, pin_root, pinned_root, resolve_root, unpin_root
+    from .config import find_project_root, pin_root, pinned_root, unpin_root
     if unpin:
         echo("[green]unpinned[/]" if unpin_root() else "[dim]no pinned default[/]")
         return

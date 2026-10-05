@@ -7,9 +7,8 @@ that a syntax linter misses.
 from __future__ import annotations
 
 import os
-import re
 
-from .base import (Adapter, CapabilityManifest, NormalizedDiagnostic, Plan,
+from .base import (Adapter, CapabilityManifest, Plan,
                    Step, StepResult, ToolResult)
 from .diagnostics import parse_verilator
 

@@ -2,7 +2,6 @@
 mapping-script knob + real OpenSTA delays per config)."""
 from __future__ import annotations
 
-import os
 import shutil
 
 import pytest

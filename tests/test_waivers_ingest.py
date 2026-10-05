@@ -2,7 +2,6 @@
 (§12.2), env-modules wrapping (FR-PROJ-03)."""
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 

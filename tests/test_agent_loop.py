@@ -2,7 +2,6 @@
 tool dispatch → execute → feed result back → final text, plus audit logging."""
 from __future__ import annotations
 
-import json
 
 from chipchamp.agent.providers.base import ModelResponse
 from chipchamp.agent.loop import AgentLoop
@@ -431,8 +430,8 @@ def test_bad_oracle_nudge_after_identical_sim_failures(ctx):
         transcripts.append([dict(t) for t in transcript])
         return orig(system, transcript, tools_, audit_items)
     g.complete = complete
-    out = AgentLoop(ctx, g, tools=tools,
-                    on_event=lambda k, d: events.append((k, d))).run("debug")
+    AgentLoop(ctx, g, tools=tools,
+              on_event=lambda k, d: events.append((k, d))).run("debug")
     suspects = [d for k, d in events if k == "oracle_suspect"]
     assert len(suspects) == 1
     assert suspects[0]["test"] == "stream_merge_system_test"

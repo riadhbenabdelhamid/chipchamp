@@ -3,7 +3,6 @@ Each test is one attack an over-eager or manipulated agent could try; the
 platform must block it in CODE, not by model goodwill."""
 from __future__ import annotations
 
-import yaml
 
 from chipchamp.policy import Diff, Evidence, FileChange, PolicyEngine
 from chipchamp.policy.waivers import Waiver, apply_waivers

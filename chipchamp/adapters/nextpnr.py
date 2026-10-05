@@ -9,7 +9,6 @@ utilization per bel, and critical paths with **native RTL source refs** (yosys
 """
 from __future__ import annotations
 
-import json
 import os
 import shutil
 

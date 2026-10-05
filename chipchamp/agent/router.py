@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Optional
 
 from .gateway import ModelGateway
-from .model_profiles import CAPABILITIES, load_profiles
+from .model_profiles import load_profiles
 from .providers.registry import ModelRegistry, _make
 
 TRIGGERS = ["refusal", "timeout", "stall", "giveup", "error"]

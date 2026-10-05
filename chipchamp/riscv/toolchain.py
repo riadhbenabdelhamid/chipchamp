@@ -11,7 +11,6 @@ matching multilib has to say so rather than silently link the wrong ABI.
 """
 from __future__ import annotations
 
-import glob
 import os
 import re
 import shutil

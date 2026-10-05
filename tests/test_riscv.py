@@ -4,7 +4,6 @@ and reference-model half needs a riscv gcc and skips cleanly without one."""
 from __future__ import annotations
 
 import os
-import shutil
 
 import pytest
 

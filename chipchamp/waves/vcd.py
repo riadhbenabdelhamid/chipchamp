@@ -61,7 +61,6 @@ _TS_RE = re.compile(r"\$timescale\s+(.+?)\s+\$end")
 def parse_vcd(path: str) -> VcdData:
     data = VcdData()
     scope_stack: list[str] = []
-    in_defs = True
     cur_time = 0
     with open(path, "r", errors="replace") as fh:
         content = fh.read()

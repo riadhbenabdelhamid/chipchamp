@@ -24,7 +24,7 @@ from typing import Optional
 
 from .model import (AlwaysBlock, ContinuousAssign, EnumDef, Instance, Module,
                     Net, Parameter, Port)
-from .parser import _lhs_rhs, _parse_sens, _refine_resets, signal_names
+from .parser import _lhs_rhs, _refine_resets, signal_names
 
 
 def available() -> bool:
@@ -83,14 +83,9 @@ def compile_design(files: list[str], defines: Optional[dict] = None,
     """Compile all SV files together and return {module_name: Module}.
 
     Raises SlangError on a hard failure so the caller can fall back."""
-    import pyslang
     from pyslang.ast import Compilation
     from pyslang.syntax import SyntaxTree
 
-    try:
-        options = pyslang.Bag()
-    except Exception:
-        options = None
     comp = Compilation()
     sm = None
     added = 0

@@ -560,7 +560,6 @@ class Workspace:
         """semantic (embedding-selected, the default) | compact | full | off.
         CHIPCHAMP_SKILLS_INDEX overrides config (CI/tests pin 'compact' to
         stay network-free; users can force a mode per shell)."""
-        import os as _os
 
         from . import skills as _sk
         from .brand import env as _benv
