@@ -12,9 +12,9 @@ from __future__ import annotations
 import re
 from typing import Callable, Optional
 
-from ..policy.budgets import BudgetExceeded
 from ..tools import all_tools
 from ..tools.context import ToolContext
+from ..tools.executor import coerce_args, invoke, stringify  # noqa: F401
 from . import disclosure, retry, working_set
 from .gateway import ModelGateway
 from .prompts import build_system_prompt, policy_summary
@@ -1251,47 +1251,12 @@ class AgentLoop:
         is_job = tool.cost in ("metered", "licensed")
         if is_job:
             self.on_event("job_start", {"name": name, "input": args or {}})
-        before = len(self.ctx.task_jobs)
-        try:
-            result = tool.handler(self.ctx, **coerce_args(args, tool.schema))
-        except BudgetExceeded as e:
-            # FR-BUDG-01: a ceiling pauses the task and asks the human. The
-            # model is told plainly that retrying cannot help, so it reports
-            # what it has instead of grinding against a wall.
-            self.on_event("budget_block", {"name": name, "reason": str(e)})
-            result = {"denied": True, "budget": True, "tool": name,
-                      "note": f"{e}. Retrying will not help — no further jobs "
-                              f"of this kind can run. Summarize what the "
-                              f"evidence so far supports and stop."}
-        except TypeError as e:
-            # Name what is accepted, not just what was rejected. A live run had
-            # a model pass `wave=True` for `waves` and get back only "got an
-            # unexpected keyword" — true, unactionable, and it did not recover.
-            # The valid names are right here; withholding them makes a
-            # self-correctable mistake terminal.
-            ok = sorted((tool.schema.get("properties") or {}))
-            result = {"error": f"bad arguments for {name}: {e}",
-                      "accepts": ok,
-                      "required": list(tool.schema.get("required") or []),
-                      "note": "call it again using only the parameter names in "
-                              "'accepts'"}
-        except Exception as e:  # a tool crash must not kill the loop
-            result = {"error": f"{type(e).__name__}: {e}"}
-        # A reused verdict is real evidence but not fresh work: say so in the
-        # result, so neither the model nor a reader of the transcript can
-        # mistake a cache hit for a tool that just ran.
-        if isinstance(result, dict) and any(
-                getattr(r, "cached", False) for r in self.ctx.task_jobs[before:]):
-            result["cached"] = True
+        # the execution policy itself (coercion, budget, bad-args teaching,
+        # crash shaping, cached flag, injection scan) lives in tools.executor
+        # so the MCP server and the CLI run tools the same way
+        result = invoke(self.ctx, tool, args, on_event=self.on_event, name=name)
         if is_job:
             self.on_event("job_done", {"name": name, "result": result})
-        # FR-SEC-05: flag instruction-shaped content inside tool output — it is
-        # data from the design/logs, never instructions.
-        from ..policy.injection import annotate_result, scan_text
-        findings = scan_text(_stringify(result))
-        if findings:
-            result = annotate_result(result, findings)
-            self.on_event("security", {"tool": name, "findings": findings})
         return result
 
     def _audit_items(self, last_turn: dict) -> list[dict]:
@@ -1309,38 +1274,6 @@ class AgentLoop:
         return items
 
 
-def coerce_args(args: dict, schema: dict) -> dict:
-    """Coerce JSON-quoted scalars to what the tool's schema declares.
-
-    Local models constantly quote scalars — `"time": "825000"`,
-    `"waves": "True"` — and a handler comparing that string to an int raises a
-    raw TypeError from somewhere deep ('< not supported…'), which the
-    bad-argument path then mislabels: the parameter NAMES are right, so the
-    `accepts` hint cannot help, and a model retries the same call verbatim.
-    The best run of the demo campaign burned its last six steps exactly there.
-
-    Only unambiguous coercions happen: digit-strings to int, numeric strings
-    to float, true/false spellings to bool, and integral floats to int where
-    the schema says integer. Anything else passes through untouched so the
-    tool's own validation still speaks."""
-    props = (schema or {}).get("properties") or {}
-    out = dict(args or {})
-    for k, v in out.items():
-        want = (props.get(k) or {}).get("type")
-        try:
-            if want == "integer":
-                if isinstance(v, str) and re.fullmatch(r"[+-]?\d+", v.strip()):
-                    out[k] = int(v)
-                elif isinstance(v, float) and v.is_integer():
-                    out[k] = int(v)
-            elif want == "number" and isinstance(v, str):
-                out[k] = float(v.strip())
-            elif want == "boolean" and isinstance(v, str) \
-                    and v.strip().lower() in ("true", "false"):
-                out[k] = v.strip().lower() == "true"
-        except (ValueError, TypeError):
-            continue
-    return out
 
 
 def transcript_size(transcript: list[dict]) -> dict:
@@ -1365,11 +1298,7 @@ def transcript_size(transcript: list[dict]) -> dict:
 
 
 def _stringify(result) -> str:
-    import json
-    try:
-        return json.dumps(result)[:12000]
-    except (TypeError, ValueError):
-        return str(result)[:12000]
+    return stringify(result)
 
 
 def _sim_failure_signature(call_input, result) -> tuple[str, str]:

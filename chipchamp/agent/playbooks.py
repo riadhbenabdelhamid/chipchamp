@@ -24,16 +24,20 @@ def run_optimize(ctx: ToolContext, top: str = "", cov_set: str = "default") -> d
     item here names the tools for that loop."""
     from ..tools import all_tools
     t = all_tools()
+
+    def _run(name, **kw):
+        from ..tools.executor import invoke
+        return invoke(ctx, t[name], kw)
     top = top or (ctx.db.tops()[0] if ctx.db.tops() else "")
     brief: dict = {"top": top, "worklist": []}
 
-    area = t["pd.area"].handler(ctx, top=top, by_line=True)
+    area = _run("pd.area", top=top, by_line=True)
     if "error" not in area:
         brief["total_area_um2"] = area.get("total_area_um2")
         brief["area_hotspots"] = list(area.get("by_line", {}).items())[:5]
         brief["by_module"] = area.get("by_module", [])[:5]
 
-    dw = t["pd.deadwidth"].handler(ctx, top=top, set=cov_set)
+    dw = _run("pd.deadwidth", top=top, set=cov_set)
     if "error" in dw:
         brief["worklist"].append({
             "kind": "measurement", "target": "toggle coverage",
@@ -48,7 +52,7 @@ def run_optimize(ctx: ToolContext, top: str = "", cov_set: str = "default") -> d
                 "est_saving_um2": f["wasted_area_um2"] or None,
                 "loop": "fs.edit (narrow the width) → lec.run → pd.area"})
 
-    sweep = t["pd.sweep"].handler(ctx, top=top)
+    sweep = _run("pd.sweep", top=top)
     if "error" not in sweep:
         brief["sweep"] = {"table": sweep.get("table"),
                           "pareto": sweep.get("pareto")}
@@ -61,7 +65,7 @@ def run_optimize(ctx: ToolContext, top: str = "", cov_set: str = "default") -> d
                 "evidence": f"{best['area_um2']} µm² (sweep Pareto)",
                 "loop": "pd.run with SYNTH_STRATEGY → pd.ppa"})
 
-    pwr = t["pd.power"].handler(ctx, module=top)
+    pwr = _run("pd.power", module=top)
     if "error" in pwr:
         brief["worklist"].append({
             "kind": "measurement", "target": "power",

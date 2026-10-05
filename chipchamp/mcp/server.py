@@ -87,8 +87,10 @@ class McpServer:
             return {"content": [{"type": "text",
                                  "text": json.dumps({"error": f"unknown tool {wire_name}"})}],
                     "isError": True}
-        result = tool.handler(self.ctx, **args)
-        return {"content": [{"type": "text", "text": json.dumps(result, default=str)}]}
+        from ..tools.executor import invoke
+        result = invoke(self.ctx, tool, args)     # same policy as the agent loop
+        return {"content": [{"type": "text", "text": json.dumps(result, default=str)}],
+                **({"isError": True} if result.get("error") else {})}
 
     # ---- stdio loop -----------------------------------------------------------
 

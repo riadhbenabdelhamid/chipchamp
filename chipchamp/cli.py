@@ -17,6 +17,7 @@ from . import __version__
 from . import brand as _brand
 from .config import Workspace
 from .tools import all_tools, catalog_summary
+from .tools.executor import invoke as _invoke
 from .tools.context import ToolContext
 
 try:
@@ -28,6 +29,12 @@ try:
     _con = _ui.console()
 except Exception:  # pragma: no cover
     _con = None
+
+
+def _run_tool(c, name: str, **kw) -> dict:
+    """Run a catalog tool from a CLI command under the same execution policy
+    as the agent loop (argument coercion, budget stop, injection scan)."""
+    return _invoke(c, all_tools()[name], kw)
 
 
 def echo(msg="", **kw):
@@ -120,7 +127,7 @@ def index(ctx, rebuild):
 def hier(ctx, top, depth):
     """Show the elaborated design hierarchy."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
-    r = all_tools()["design.hierarchy"].handler(c, top=top, depth=depth)
+    r = _run_tool(c, "design.hierarchy", top=top, depth=depth)
     if ctx.obj["as_json"]:
         _emit(r, True)
         return
@@ -145,7 +152,7 @@ def _print_hier(node, ind):
 def module(ctx, module):
     """Show a module card (ports, params, domains, instances)."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
-    r = all_tools()["design.module"].handler(c, module=module)
+    r = _run_tool(c, "design.module", module=module)
     _emit(r if ctx.obj["as_json"] else r.get("card", r), ctx.obj["as_json"])
 
 
@@ -158,7 +165,7 @@ def module(ctx, module):
 def cone(ctx, module, signal, direction, depth):
     """Extract a signal's fan-in/out cone as a source slice."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
-    r = all_tools()["design.cone"].handler(c, module=module, signal=signal,
+    r = _run_tool(c, "design.cone", module=module, signal=signal,
                                            direction=direction, depth=depth)
     if ctx.obj["as_json"]:
         _emit(r, True)
@@ -178,7 +185,7 @@ def cone(ctx, module, signal, direction, depth):
 def cdc(ctx, module):
     """Report clock-domain crossings (CDC-lite)."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
-    r = all_tools()["cdc.run"].handler(c, module=module)
+    r = _run_tool(c, "cdc.run", module=module)
     _emit(r, ctx.obj["as_json"])
 
 
@@ -188,7 +195,7 @@ def cdc(ctx, module):
 def fsm(ctx, module):
     """Show extracted FSM(s) of a module."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
-    _emit(all_tools()["design.fsm"].handler(c, module=module), ctx.obj["as_json"])
+    _emit(_run_tool(c, "design.fsm", module=module), ctx.obj["as_json"])
 
 
 @cli.command()
@@ -197,7 +204,7 @@ def fsm(ctx, module):
 def diagram(ctx, top):
     """ASCII block diagram of a hierarchy scope."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
-    r = all_tools()["doc.blockdiagram"].handler(c, top=top)
+    r = _run_tool(c, "doc.blockdiagram", top=top)
     echo(r.get("diagram", r))
 
 
@@ -209,7 +216,7 @@ def diagram(ctx, top):
 def lint(ctx, paths):
     """Run lint on the design (or given paths)."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
-    r = all_tools()["lint.run"].handler(c, paths=list(paths) or None)
+    r = _run_tool(c, "lint.run", paths=list(paths) or None)
     if ctx.obj["as_json"]:
         _emit(r, True)
         return
@@ -228,7 +235,7 @@ def lint(ctx, paths):
 def sim(ctx, test, seed, no_waves):
     """Compile + run one test on the inner-loop simulator."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
-    r = all_tools()["sim.run"].handler(c, test=test, seed=seed, waves=not no_waves)
+    r = _run_tool(c, "sim.run", test=test, seed=seed, waves=not no_waves)
     if ctx.obj["as_json"]:
         _emit(r, True)
         return
@@ -250,7 +257,7 @@ def efpga_fabric_cmd(ctx, project):
     """Generate the eFPGA-FABulous fabric HDL for a FABulous project."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
     echo("[dim]generating eFPGA-FABulous fabric (minutes)…[/]")
-    r = all_tools()["efpga-fabulous.fabric"].handler(c, project=project)
+    r = _run_tool(c, "efpga-fabulous.fabric", project=project)
     _emit(r, ctx.obj["as_json"]) if ctx.obj["as_json"] else echo(
         f"[red]{r['error']}[/]" if "error" in r else
         f"{r['job']}: {r['summary']}")
@@ -265,8 +272,7 @@ def efpga_bitstream_cmd(ctx, design, project, with_fabric):
     """Map a user RTL design onto the fabric → bitstream (synth→P&R→bit_gen)."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
     echo(f"[dim]mapping {design} onto the eFPGA-FABulous fabric (minutes)…[/]")
-    r = all_tools()["efpga-fabulous.bitstream"].handler(
-        c, design=design, project=project, with_fabric=with_fabric)
+    r = _run_tool(c, "efpga-fabulous.bitstream", design=design, project=project, with_fabric=with_fabric)
     if ctx.obj["as_json"]:
         _emit(r, True)
         return
@@ -289,7 +295,7 @@ def pnr(ctx, module, clock_period, clock_port):
     """Run RTL-to-GDSII for a module (LibreLane) and report signoff."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
     echo(f"[dim]running RTL-to-GDSII for {module} (this takes minutes)…[/]")
-    r = all_tools()["pd.run"].handler(c, module=module, clock_period=clock_period,
+    r = _run_tool(c, "pd.run", module=module, clock_period=clock_period,
                                       clock_port=clock_port)
     if ctx.obj["as_json"]:
         _emit(r, True)
@@ -363,7 +369,7 @@ def fpga(ctx, module, flow, family, part, freq_mhz, baseline, bitstream):
     Vivado .dcp), then report PPA vs baseline and the worst path in RTL terms."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
     echo(f"[dim]implementing {module} ({flow})…[/]")
-    r = all_tools()["fpga.run"].handler(c, module=module,
+    r = _run_tool(c, "fpga.run", module=module,
                                         flow="" if flow == "auto" else flow,
                                         family=family, part=part,
                                         freq_mhz=freq_mhz)
@@ -379,14 +385,14 @@ def fpga(ctx, module, flow, family, part, freq_mhz, baseline, bitstream):
     for k, v in r["checkpoints"].items():
         echo(f"    {k:18} {v}")
     if bitstream:
-        b = all_tools()["fpga.bitstream"].handler(c, module=module, job=r["job"])
+        b = _run_tool(c, "fpga.bitstream", module=module, job=r["job"])
         if "error" in b:
             echo(f"  [red]bitstream: {b['error']}[/]"
                  + (f"\n    [dim]{b['hint']}[/]" if b.get("hint") else ""))
         else:
             echo(f"  [green]bitstream[/] {b['bitstream']} "
                  f"[dim]({b['bitstream_bytes']} bytes via {b['packer']})[/]")
-    ppa = all_tools()["fpga.ppa"].handler(c, module=module, job=r["job"],
+    ppa = _run_tool(c, "fpga.ppa", module=module, job=r["job"],
                                           save_baseline=baseline)
     if "delta" in ppa:
         regs = ppa.get("regressions", [])
@@ -397,7 +403,7 @@ def fpga(ctx, module, flow, family, part, freq_mhz, baseline, bitstream):
                 echo(f"    {k:22} {v['from']} → {v['to']}  {arrow}")
     if ppa.get("baseline_saved"):
         echo(f"  baseline saved: {ppa['baseline_saved']}")
-    crit = all_tools()["fpga.critical"].handler(c, module=module, job=r["job"], n=1)
+    crit = _run_tool(c, "fpga.critical", module=module, job=r["job"], n=1)
     for p in crit.get("paths", [])[:1]:
         if crit["flow"] == "vivado":
             echo(f"  worst path: slack {p['slack_ns']} ns  "
@@ -512,7 +518,7 @@ def riscv_grp(ctx):
 def riscv_info_cmd(ctx):
     """Show the RISC-V toolchain and reference model on this machine."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
-    r = all_tools()["riscv.toolchain"].handler(c)
+    r = _run_tool(c, "riscv.toolchain")
     if ctx.obj["as_json"]:
         _emit(r, True)
         return
@@ -541,8 +547,7 @@ def riscv_info_cmd(ctx):
 def riscv_compile_cmd(ctx, sources, name, march, mabi, base, hex_width):
     """Build SOURCES into an ELF + $readmemh image + disassembly."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
-    r = all_tools()["riscv.compile"].handler(
-        c, sources=list(sources), name=name, march=march, mabi=mabi,
+    r = _run_tool(c, "riscv.compile", sources=list(sources), name=name, march=march, mabi=mabi,
         base=base, hex_width=hex_width)
     if ctx.obj["as_json"]:
         _emit(r, True)
@@ -571,7 +576,7 @@ def riscv_compile_cmd(ctx, sources, name, march, mabi, base, hex_width):
 def riscv_refrun_cmd(ctx, elf, max_steps, region, timeout):
     """Run ELF on the reference model and save its trace."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
-    r = all_tools()["riscv.refrun"].handler(c, elf=elf, max_steps=max_steps,
+    r = _run_tool(c, "riscv.refrun", elf=elf, max_steps=max_steps,
                                             region=region, timeout=timeout)
     if ctx.obj["as_json"]:
         _emit(r, True)
@@ -599,8 +604,7 @@ def riscv_refrun_cmd(ctx, elf, max_steps, region, timeout):
 def riscv_cosim_cmd(ctx, core_trace, elf, reference_trace, skip, max_steps, region):
     """Compare a core's trace with the reference and report the first divergence."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
-    r = all_tools()["riscv.cosim"].handler(
-        c, core_trace=core_trace, elf=elf, reference_trace=reference_trace,
+    r = _run_tool(c, "riscv.cosim", core_trace=core_trace, elf=elf, reference_trace=reference_trace,
         skip=skip, max_steps=max_steps, region=region)
     if ctx.obj["as_json"]:
         _emit(r, True)
@@ -635,8 +639,7 @@ def riscv_cosim_cmd(ctx, core_trace, elf, reference_trace, skip, max_steps, regi
 def riscv_compliance_cmd(ctx, config, arch_test, suite, env_dir, testfile, timeout):
     """Run riscv-arch-test through RISCOF (the isa_compliant gate's evidence)."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
-    r = all_tools()["riscv.compliance"].handler(
-        c, config=config, arch_test=arch_test, suite=suite, env=env_dir,
+    r = _run_tool(c, "riscv.compliance", config=config, arch_test=arch_test, suite=suite, env=env_dir,
         testfile=testfile, timeout=timeout)
     if ctx.obj["as_json"]:
         _emit(r, True)
@@ -665,7 +668,7 @@ def uvm(ctx, module, out_dir, no_test):
     """Scaffold a runnable UVM bench for MODULE (agent+env+test+tb, filelist,
     manifest entry). Runs license-free on Verilator 5 + Accellera uvm-core."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
-    r = all_tools()["uvm.scaffold"].handler(c, module=module, out_dir=out_dir,
+    r = _run_tool(c, "uvm.scaffold", module=module, out_dir=out_dir,
                                             add_test=not no_test)
     if ctx.obj["as_json"]:
         _emit(r, True)
@@ -689,7 +692,7 @@ def uvm(ctx, module, out_dir, no_test):
 def synth(ctx, top):
     """Synthesis snapshot (cells/area + inferred-latch warnings)."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
-    r = all_tools()["synth.run"].handler(c, top=top)
+    r = _run_tool(c, "synth.run", top=top)
     if ctx.obj["as_json"]:
         _emit(r, True)
         return
@@ -705,7 +708,7 @@ def synth(ctx, top):
 def cov(ctx, test, cset):
     """Run a coverage sim and summarize."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
-    r = all_tools()["cov.run"].handler(c, test=test, set=cset)
+    r = _run_tool(c, "cov.run", test=test, set=cset)
     _emit(r, ctx.obj["as_json"])
 
 
@@ -791,7 +794,7 @@ def jobs(ctx):
 def repro(ctx, job):
     """Print the reproduction command for a job."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
-    r = all_tools()["repro"].handler(c, job=job)
+    r = _run_tool(c, "repro", job=job)
     echo(r.get("repro", r.get("error")))
 
 
@@ -3693,7 +3696,7 @@ def library_reindex_cmd(ctx):
 def library_fetch_cmd(ctx, name, view, dest):
     """Copy a component into the workspace (rtl fileset or C++ ref model)."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
-    res = all_tools()["lib.fetch"].handler(c, name=name, view=view, dest=dest)
+    res = _run_tool(c, "lib.fetch", name=name, view=view, dest=dest)
     if ctx.obj["as_json"]:
         _emit(res, True)
         return
