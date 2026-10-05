@@ -35,7 +35,7 @@ def test_yosys_read_prefix_defines_synthesis():
 # ---- live reuse: fetch a component, then lint/synth (needs the library) --------
 
 
-LIB = Path("/home/riadh/rtllib-pillars")
+LIB = Path("~/rtllib-pillars").expanduser()
 
 
 def _ws_with_fetched_fifo(tmp_path):

@@ -22,6 +22,7 @@ Transport: newline-delimited JSON-RPC 2.0 over the child's stdio.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import threading
 from queue import Empty, Queue
@@ -39,9 +40,17 @@ class McpClient:
         from pathlib import Path
         self.image_dir = Path(image_dir or ((Path(cwd) if cwd else Path.cwd())
                                             / ".chipchamp" / "mcp-images"))
+        # stderr used to go to DEVNULL: a server that died on startup left no
+        # trace, and the client sat on the handshake for the full timeout.
+        self.stderr_log = self.image_dir.parent / f"mcp-{name}.stderr.log"
+        try:
+            self.stderr_log.parent.mkdir(parents=True, exist_ok=True)
+            err = open(self.stderr_log, "a")
+        except OSError:
+            err = subprocess.DEVNULL
         self._proc = subprocess.Popen(
             command, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, text=True, bufsize=1)
+            stderr=err, text=True, bufsize=1)
         self._q: Queue = Queue()
         self._reader = threading.Thread(target=self._read_loop, daemon=True)
         self._reader.start()
@@ -160,24 +169,49 @@ class McpClient:
             self._proc.kill()
 
 
+def _precheck(cmd: list[str]) -> Optional[str]:
+    """Why this server command cannot possibly start, or None. Cheap checks
+    before a spawn that would otherwise stall on the handshake timeout."""
+    import shutil
+    exe = cmd[0]
+    if (os.sep in exe and not os.path.exists(exe)) or \
+            (os.sep not in exe and shutil.which(exe) is None):
+        return f"executable not found: {exe}"
+    for tok in cmd[1:]:
+        if os.sep in tok and not tok.startswith("-") and not os.path.exists(tok):
+            return f"path does not exist: {tok}"
+    return None
+
+
 def load_mcp_tools(config: dict, cwd: Optional[str] = None,
-                   image_dir: Optional[str] = None) -> tuple[dict, list]:
+                   image_dir: Optional[str] = None,
+                   on_warning=None) -> tuple[dict, list]:
     """Spawn configured MCP servers and wrap their tools as agent Tool objects.
-    Returns (tools_dict, clients) — callers own closing the clients."""
+    Returns (tools_dict, clients) — callers own closing the clients. A server
+    that cannot start is skipped and reported through `on_warning(text)`;
+    before, it was skipped silently after a 20 s stall."""
     from ..tools.base import Tool
     servers = (config.get("mcp") or {}).get("servers") or {}
     tools: dict = {}
     clients: list[McpClient] = []
+    warn = on_warning or (lambda _m: None)
     for name, spec in servers.items():
         cmd = spec.get("command")
         if isinstance(cmd, str):
             cmd = cmd.split()
         if not cmd:
             continue
+        cmd = [os.path.expanduser(tok) for tok in cmd]   # "~/tool.py" works
+        why = _precheck(cmd)
+        if why:
+            warn(f"MCP server '{name}' not started — {why} "
+                 f"(check [mcp.servers.{name}] command in config.toml)")
+            continue
         try:
             client = McpClient(name, cmd, cwd=cwd, image_dir=image_dir)
-        except Exception:
-            continue  # unreachable server: skip, don't break the agent
+        except Exception as e:   # unreachable server: skip, don't break the agent
+            warn(f"MCP server '{name}' failed to start: {type(e).__name__}: {e}")
+            continue
         clients.append(client)
         for t in client.list_tools():
             wire = t["name"]

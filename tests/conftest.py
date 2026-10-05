@@ -66,7 +66,8 @@ atexit.register(shutil.rmtree, _SESSION_COPY, True)
 os.environ.setdefault("CHIPCHAMP_SKILLS_INDEX", "compact")
 
 # make common OSS toolchains discoverable without an activated shell
-for cand in ("/home/riadh/oss-cad-suite/bin", "/home/riadh/verible/bin"):
+for cand in (os.path.expanduser("~/oss-cad-suite/bin"),
+             os.path.expanduser("~/verible/bin")):
     if os.path.isdir(cand) and cand not in os.environ.get("PATH", ""):
         os.environ["PATH"] = cand + os.pathsep + os.environ["PATH"]
 

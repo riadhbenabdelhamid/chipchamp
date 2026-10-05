@@ -246,6 +246,17 @@ _TOOL_ROLE = {"sim_inner": "sim", "sim_signoff": "sim_signoff", "lint": "lint",
               "cdc": "cdc", "coverage": "coverage"}
 
 
+def _deep_merge(base: dict, over: dict) -> dict:
+    """`over` on top of `base`: nested tables merge, other values replace."""
+    out = dict(base)
+    for k, v in over.items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
 class Workspace:
     def __init__(self, root: str = "."):
         self.root = str(Path(root).resolve())
@@ -306,6 +317,13 @@ class Workspace:
         if cfg_path.exists():
             with open(cfg_path, "rb") as fh:
                 self.config = tomllib.load(fh)
+        # Machine-local overlay: tool paths, MCP servers, model endpoints —
+        # anything that is true on THIS machine and not part of the project.
+        # Tables merge key by key; everything else is replaced. Ignored by git.
+        local = self.dot / "config.local.toml"
+        if local.exists():
+            with open(local, "rb") as fh:
+                self.config = _deep_merge(self.config, tomllib.load(fh))
         # source-of-truth map (SPEC §12.5): which files are generated, from what
         self.generated: list[dict] = self.config.get("generated", [])
         self._load_targets()

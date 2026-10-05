@@ -69,3 +69,28 @@ def test_load_mcp_tools_wraps_as_agent_tools(tmp_path):
     finally:
         for c in clients:
             c.close()
+
+
+def test_a_missing_server_is_reported_not_stalled(tmp_path):
+    """A tracked example config once pointed at a path on one machine; on a
+    fresh clone every session stalled on the handshake and said nothing."""
+    import time
+    from chipchamp.mcp.client import load_mcp_tools
+    warnings = []
+    cfg = {"mcp": {"servers": {
+        "waves": {"command": "python3 ~/definitely/not/here/server.py --mcp"},
+        "ghost": {"command": "no-such-executable-xyz --mcp"}}}}
+    t0 = time.time()
+    tools, clients = load_mcp_tools(cfg, cwd=str(tmp_path), on_warning=warnings.append)
+    assert time.time() - t0 < 2.0 and tools == {} and clients == []
+    assert any("waves" in w and "path does not exist" in w for w in warnings)
+    assert any("ghost" in w and "executable not found" in w for w in warnings)
+
+
+def test_tilde_in_a_server_command_is_expanded(tmp_path, monkeypatch):
+    from chipchamp.mcp.client import _precheck
+    import os
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "srv.py").write_text("print('hi')\n")
+    cmd = [os.path.expanduser(t) for t in "python3 ~/srv.py --mcp".split()]
+    assert cmd[1] == str(tmp_path / "srv.py") and _precheck(cmd) is None

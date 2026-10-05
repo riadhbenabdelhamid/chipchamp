@@ -122,8 +122,12 @@ retention_days = 14
 # api_key_env = "CORP_LLM_KEY"
 # default_model = "llama-3.1-70b-instruct"
 
-[mcp.servers.wavelets]
-command = "python3 /home/riadh/wavelet/alwavelets.py --mcp"
+# External tools over the Model Context Protocol (stdio). Put machine-specific
+# servers in .chipchamp/config.local.toml (ignored by git, merged over this
+# file); a server whose command or script is missing is skipped with a
+# warning at session start instead of stalling the handshake.
+# [mcp.servers.<name>]
+# command = "<program> <args>"
 
 [ui]
 # lime-phosphor CRT theme, matching the status bar (unset = rich defaults)

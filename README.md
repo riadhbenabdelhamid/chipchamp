@@ -367,6 +367,10 @@ chipchamp --root ~/work/other sim …    # one-off override (beats the pin)
 ```
 
 Precedence: `--root` > `CHIPCHAMP_ROOT` > pinned default > auto-detected repo root.
+Machine-specific settings — MCP servers, tool paths, local model endpoints —
+go in `.chipchamp/config.local.toml` (ignored by git), deep-merged over the
+tracked `config.toml`.
+
 With no `.chipchamp/config.toml`, Chipchamp infers a target named after the repo by
 scanning conventional RTL dirs (`rtl/`, `hdl/`, `src/`…) **plus a `work/` scratch
 dir**, globbed *live* so a design the agent writes this session is immediately
@@ -530,6 +534,7 @@ makes the on-prem / air-gapped deployment modes real.
 chipchamp model                       # discover reachable providers + models, pick one interactively
 chipchamp model --list                # just list what's accessible
 chipchamp model --set ollama:qwen3.5:9b   # or lmstudio:…, openai:gpt-4o, anthropic:claude-sonnet-5
+# the hosted Anthropic provider needs its SDK: pip install -e '.[model]' (setup.sh does this)
 chipchamp --root examples/soc agent -p "why does fifo_smoke fail?"   # uses the selection
 ```
 

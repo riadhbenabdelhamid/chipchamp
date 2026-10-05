@@ -25,9 +25,10 @@ fi
 . "$VENV/bin/activate"
 echo "==> upgrading pip"
 python -m pip install --quiet --upgrade pip
-echo "==> installing chipchamp (editable, with slang + TUI + dev extras)"
-python -m pip install --quiet -e ".[dev,tui,slang]" || \
-  python -m pip install --quiet -e ".[dev,tui]" || \
+echo "==> installing chipchamp (editable, with slang + TUI + model SDK + dev extras)"
+python -m pip install --quiet -e ".[dev,tui,slang,model]" || \
+  python -m pip install --quiet -e ".[dev,tui,model]" || \
+  python -m pip install --quiet -e ".[dev,model]" || \
   python -m pip install --quiet -e ".[dev]" || \
   python -m pip install --quiet -e .
 

@@ -2150,7 +2150,8 @@ def _interactive(ctx_obj, prompt=None, model=None, provider=None, max_steps=40,
 
     mcp_tools, mcp_clients = load_mcp_tools(
         c.ws.config, cwd=c.ws.root,
-        image_dir=str(c.ws.dot / "mcp-images"))
+        image_dir=str(c.ws.dot / "mcp-images"),
+        on_warning=lambda m: ui.warn(f"  [yellow]mcp[/] {m}"))
     tool_set = {**_all(), **mcp_tools} if mcp_tools else None
     store = str(c.ws.dot / "sessions")
     sess, resumed = None, None
@@ -2844,8 +2845,12 @@ def _list_models(reg):
     echo("[dim]probing providers (this can take a moment for local servers)…[/]")
     found = reg.discover()
     if not found:
+        import importlib.util
+        sdk = ("" if importlib.util.find_spec("anthropic") else
+               " The anthropic SDK is not installed — `pip install -e '.[model]'`"
+               " — so ANTHROPIC_API_KEY alone cannot enable it.")
         echo("[yellow]No reachable providers.[/] Set ANTHROPIC_API_KEY or OPENAI_API_KEY, "
-             "or start a local server (Ollama :11434, LM Studio :1234).")
+             "or start a local server (Ollama :11434, LM Studio :1234)." + sdk)
         return found
     for prov, models in found:
         loc = " [dim](local)[/]" if prov.config.local else ""
