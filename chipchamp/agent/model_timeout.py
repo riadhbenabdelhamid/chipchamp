@@ -7,7 +7,7 @@ the budget is stored PER MODEL REF (with a ``*`` global default), mirroring the
     per-ref  →  global ``*``  →  config [model].request_timeout  →  None
 
 ``None`` means "use the provider default" (env ``CHIPCHAMP_MODEL_TIMEOUT`` or
-300s). A stored ``0`` means **off** — no wall-clock limit (rely on streaming
+600s). A stored ``0`` means **off** — no wall-clock limit (rely on streaming
 content-liveness to catch a truly wedged endpoint).
 """
 from __future__ import annotations

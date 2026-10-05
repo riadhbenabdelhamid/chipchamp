@@ -2138,6 +2138,8 @@ def _interactive(ctx_obj, prompt=None, model=None, provider=None, max_steps=40,
     from .tools import all_tools as _all
     c = _ctx(ctx_obj["root"], ctx_obj["target"])
     c.ws.ensure_work_dir()  # the agent's scratch/design dir (item: work dir)
+    for w in getattr(c.ws, "config_warnings", []):
+        ui.warn(f"  [yellow]config[/] {w}")
     gw, reason, audit = _build_gateway(c, model, provider)
     has_model = gw is not None
     if not has_model:

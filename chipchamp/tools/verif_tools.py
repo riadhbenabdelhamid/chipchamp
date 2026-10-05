@@ -76,6 +76,15 @@ def _idle_for(ctx: ToolContext, t: dict | None):
     return float(v) if v else None
 
 
+def _seeds_for(ctx: ToolContext, seeds) -> list:
+    """Explicit seeds, else tests.yaml `defaults.seeds` (documented since the
+    first example and never read until now), else [1]."""
+    if seeds:
+        return list(seeds)
+    d = getattr(ctx.ws, "test_defaults", {}) or {}
+    return list(d.get("seeds") or [1])
+
+
 def _timeout_hint(after_s: float, source: str, reason: str) -> str:
     if reason == "idle":
         return (f"Killed after {after_s:g}s with no output (idle_timeout_s) — the "
@@ -311,7 +320,7 @@ def regress_run(ctx: ToolContext, tag: str = "", tests=None, seeds=None,
     names = [n for n in names if n]
     if not names:
         return {"error": "no tests selected", "tag": tag}
-    seeds = seeds or [1]
+    seeds = _seeds_for(ctx, seeds)
 
     timeouts: list[dict] = []
 

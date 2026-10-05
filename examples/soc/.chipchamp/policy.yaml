@@ -1,3 +1,6 @@
+# autonomy.<glob>.max is enforced (what the agent may do unattended per path).
+# `approvers` and the `approvals` block are informational — who should sign —
+# and are not read by the engine.
 autonomy:
   default: L1
   "rtl/soc_top.sv": { max: L1, approvers: [dana, sam] }

@@ -246,6 +246,17 @@ _TOOL_ROLE = {"sim_inner": "sim", "sim_signoff": "sim_signoff", "lint": "lint",
               "cdc": "cdc", "coverage": "coverage"}
 
 
+# Top-level config.toml sections the code reads. Anything else is silently
+# ignored by every `.get()` in the codebase — which is how [waves] and
+# [budget] (sic) sat in example configs for months doing nothing. Workspace
+# records the unknown ones in `config_warnings` and the CLI shows them once.
+KNOWN_SECTIONS = {
+    "project", "targets", "generated", "tools", "runner", "jobs", "licenses",
+    "context", "budgets", "agent", "skills", "library", "model", "providers",
+    "web", "riscv", "efpga-fabulous", "fpga", "mcp", "ui",
+}
+
+
 def _deep_merge(base: dict, over: dict) -> dict:
     """`over` on top of `base`: nested tables merge, other values replace."""
     out = dict(base)
@@ -324,6 +335,9 @@ class Workspace:
         if local.exists():
             with open(local, "rb") as fh:
                 self.config = _deep_merge(self.config, tomllib.load(fh))
+        self.config_warnings: list[str] = [
+            f"config.toml: section [{k}] is not a setting Chipchamp reads — ignored"
+            for k in self.config if k not in KNOWN_SECTIONS]
         # source-of-truth map (SPEC §12.5): which files are generated, from what
         self.generated: list[dict] = self.config.get("generated", [])
         self._load_targets()
@@ -477,7 +491,7 @@ class Workspace:
                             generated=self.generated,
                             # a workspace that declares [riscv] is a core: RTL
                             # edits then owe ISA evidence (classify → rung R)
-                            riscv_core=bool(self.config.get("riscv")))
+                            riscv_core="riscv" in self.config)
 
     def target(self, name: Optional[str] = None) -> Target:
         return self.targets[name or self.default_target]

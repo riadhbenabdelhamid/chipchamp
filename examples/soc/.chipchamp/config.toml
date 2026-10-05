@@ -17,11 +17,17 @@ outputs = ["rtl/gen/timer_reg_top.sv", "sw/include/timer_regs.h", "docs/gen/time
 generator = "chipchamp regmap hw/regs/timer.yaml"
 
 [tools]
+# One adapter per role. (A list is accepted but only its FIRST entry is used.)
 sim_inner = "icarus"
-lint = ["verilator", "verible"]
+lint = "verilator"
 synth = "yosys"
 lec = "eqy"
 formal = "symbiyosys"
+# sim_signoff = "questa"   # roles with no default: sim_signoff, sta, cdc, coverage
+# env_modules = { questa = ["questa/2024.3"] }   # `module load` per adapter (farms)
+# sta_liberty = "…/sky130_fd_sc_hd__tt_025C_1v80.lib"   # STA inputs when not
+# sta_netlist = "…/netlist.v"                           # derived from a job
+# sta_sdc = "…/design.sdc"
 
 # Simulation time limits, lowest to highest precedence: these, then
 # tests.yaml `defaults.timeout_s`, then a test's own `timeout_s`, then the
@@ -31,10 +37,15 @@ formal = "symbiyosys"
 # max_timeout_s = 14400    # ceiling on anything the agent asks for
 
 [runner]
-kind = "local"
+kind = "local"           # local | lsf | slurm (farm submission wraps each step)
 max_parallel = 4
+# queue = "normal"       # farm queue/partition
+# resources = "rusage[mem=8000]"
+# extra_args = ["-P", "proj"]
 
 [jobs]
+# store = "~/shared/chipchamp-runs"   # shared job store (default: .chipchamp/runs)
+# cache = true                        # reuse identical lint/sim verdicts
 # Steps inherit the environment minus anything that looks like a credential
 # (*_API_KEY, *_TOKEN, *_SECRET*, *_PASSWORD, AWS_*, ANTHROPIC_*, OPENAI_* ...),
 # so license servers, vendor roots, MODULEPATH and nix devshells keep working
@@ -44,13 +55,13 @@ max_parallel = 4
 # license_wait_s = 600   # max queue time for a [licenses] seat (default: wait)
 
 [context]
-deny = ["pdk/**", "**/*.lic"]
-module_card_tokens = 220
+deny = ["pdk/**", "**/*.lic"]   # never read into model context (IP/PDK)
+# allow = ["pdk/README.md"]      # exceptions to deny
 
 [budgets.default]
-v3_submissions_per_task = 8
+v3_submissions_per_task = 8   # heavy jobs (regression, FPGA, RTL-to-GDSII) per task
 license_hours = 24
-cpu_hours = 200
+cpu_hours = 200               # reported in budget snapshots; not enforced
 model_tokens = 5000000
 
 [agent.guards]
@@ -60,10 +71,6 @@ model_tokens = 5000000
 max_narration_nudges = 3     # "that is a plan, not an action" nudges per run
 verify_every_n_writes = 3    # N writes with no lint/sim -> teach to verify now
 progress_guard_after = 2     # idle turns on a green, unchanged tree -> next step
-
-[waves]
-prefer = "vcd"
-retention_days = 14
 
 # Agent skills (SPEC §15.3): expert playbooks in SKILL.md format. Directories
 # here are versioned team intent; `chipchamp skills add <dir>` registers ad-hoc
@@ -98,6 +105,7 @@ retention_days = 14
 #
 # [library]
 # dirs = ["~/rtllib-pillars"]
+# index = "semantic"    # semantic | lexical
 # embed_provider = ""   # blank = auto-probe (same endpoint as skills)
 # embed_model = ""      # blank = first model id containing "embed"
 # top_k = 6
@@ -111,16 +119,31 @@ retention_days = 14
 # [model]
 # provider = "ollama"        # any built-in or custom [providers.*] name
 # model = "qwen3.5:9b"       # blank -> the provider's default
-# request_timeout = 300      # total wall-clock budget per model call, seconds
+# request_timeout = 600      # total wall-clock budget per model call, seconds
 #                            # (also CHIPCHAMP_MODEL_TIMEOUT env; a slow/wedged
 #                            #  model times out cleanly instead of hanging)
+# max_tokens = 16384         # output cap per call
+# reasoning_effort = "low"   # for models that take one (see [model.effort_support])
+# context_chars = 0          # transcript budget before compaction (0 = never evict)
+# tool_disclosure = true     # progressive tool disclosure (default: on for local servers)
+# [model.routing]            # role -> provider:model (planner / subagent / summarizer / bulk)
+# subagent = "ollama:qwen3.5:9b"
 #
 # Example custom OpenAI-compatible endpoint (e.g. an in-house/on-prem gateway):
 # [providers.corp]
 # kind = "openai"
 # base_url = "https://llm.corp.internal/v1"
-# api_key_env = "CORP_LLM_KEY"
+# api_key_env = "CORP_LLM_KEY"   # or api_key = "…" (prefer the env var)
 # default_model = "llama-3.1-70b-instruct"
+# local = false                  # true: no key needed, probed for discovery
+# extra_headers = { X-Team = "rtl" }
+#
+# Other sections the code reads:
+# [web]              provider / api_key_env / base_url / timeout — the research tool
+# [riscv]            declaring this table marks the workspace as a RISC-V core;
+#                    toolchain / riscof_config / arch_test point at the toolchain
+# [efpga-fabulous]   project = "…"  — the fabric project dir for the eFPGA tools
+# [fpga]             max_utilization = 0.8
 
 # External tools over the Model Context Protocol (stdio). Put machine-specific
 # servers in .chipchamp/config.local.toml (ignored by git, merged over this
@@ -132,6 +155,8 @@ retention_days = 14
 [ui]
 # lime-phosphor CRT theme, matching the status bar (unset = rich defaults)
 theme = "phosphor"
+# mcp_images = true     # render image blocks returned by MCP tools inline
+# chip_fill = "▓"       # glyph for the chip banner's fill
 
 [model.effort_support]
 # qwen3.8 is a hybrid-thinking generation: ollama accepts reasoning_effort
