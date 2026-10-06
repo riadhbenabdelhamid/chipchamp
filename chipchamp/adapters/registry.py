@@ -17,6 +17,7 @@ from .librelane import LibreLaneAdapter
 from .nextpnr import NextpnrAdapter
 from .opensta import OpenStaAdapter
 from .questa import QuestaAdapter
+from .rapidwright import RapidWrightAdapter
 from .symbiyosys import SymbiYosysAdapter
 from .vcs import PrimeTimeAdapter, VcsAdapter
 from .verible import VeribleAdapter
@@ -38,6 +39,7 @@ _BUILTIN: dict[str, type[Adapter]] = {
     "fabulous": FabulousAdapter,
     "nextpnr": NextpnrAdapter,
     "vivado": VivadoAdapter,
+    "rapidwright": RapidWrightAdapter,   # headless checkpoint analysis
     # commercial tier (M2): glue for customer-licensed installs; normalizers
     # are fixture-validated in the test suite
     "questa": QuestaAdapter,
@@ -59,6 +61,7 @@ _ROLE_DEFAULTS = {
     "pnr": ["librelane"],          # RTL-to-GDSII (physical vertical)
     "efpga-fabulous": ["fabulous"],         # embedded FPGA fabrics + bitstreams
     "fpga": ["nextpnr", "vivado"],  # FPGA checkpoints (open flow first)
+    "dcp": ["rapidwright"],          # read a vendor checkpoint headlessly
 }
 
 

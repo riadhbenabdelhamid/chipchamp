@@ -24,6 +24,7 @@ synth = "yosys"
 lec = "eqy"
 formal = "symbiyosys"
 # sim_signoff = "questa"   # roles with no default: sim_signoff, sta, cdc, coverage
+# dcp = "rapidwright"      # headless checkpoint analysis (fpga.stats / placement / interchange)
 # env_modules = { questa = ["questa/2024.3"] }   # `module load` per adapter (farms)
 # sta_liberty = "…/sky130_fd_sc_hd__tt_025C_1v80.lib"   # STA inputs when not
 # sta_netlist = "…/netlist.v"                           # derived from a job

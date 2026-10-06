@@ -555,7 +555,8 @@ def fpga_snapshot(ctx: ToolContext, module: str = "", highlight: list | None = N
         return {"error": f"post_route checkpoint not found: {dcp}"}
     vivado = shutil.which("vivado") or os.path.expanduser("~/Xilinx/2025.1/Vivado/bin/vivado")
     if not shutil.which("Xvfb") or not os.path.exists(vivado):
-        return {"error": "needs Xvfb and vivado on this machine"}
+        return {"error": "needs Xvfb and vivado on this machine",
+                "hint": "fpga.placement draws the same checkpoint headlessly via RapidWright"}
     try:
         from PIL import ImageGrab  # noqa: F401
     except ImportError:
@@ -597,3 +598,112 @@ def fpga_snapshot(ctx: ToolContext, module: str = "", highlight: list | None = N
             "size": list(crop.size), "checkpoint": ctx.rel(dcp), "from_job": rec.id,
             "highlights": len(highlight or []),
             "note": "device view of the routed design; open the PNG to see placement"}
+
+
+# ---- RapidWright: headless work on the post-route checkpoint ----------------
+
+def _rw_adapter(ctx: ToolContext):
+    ad = ctx.registry.get("rapidwright")
+    if not ad.available():
+        from ..adapters.rapidwright import INSTALL_HINT
+        return None, {"error": "RapidWright is not available on this machine",
+                      "hint": INSTALL_HINT}
+    return ad, None
+
+
+def _rw_checkpoint(ctx: ToolContext, module: str, job: str, dcp: str):
+    """(abs dcp path, module name, source job id) or an error dict. An
+    explicit `dcp` is workspace-relative; otherwise the latest FPGA run's
+    post-route checkpoint — any vendor flow that wrote one."""
+    from .paths import PathRefused, ws_path
+    if dcp:
+        try:
+            ap, rel = ws_path(ctx, dcp)
+        except PathRefused as e:
+            return None, None, None, e.payload
+        if not os.path.exists(ap):
+            return None, None, None, {"error": f"checkpoint not found: {rel}"}
+        return ap, module or os.path.splitext(os.path.basename(ap))[0], "", None
+    rec = ctx.runner.get(job) if job else _latest_fpga(ctx, module)
+    if rec is None or rec.kind != "fpga":
+        return None, None, None, {"error": "no fpga run recorded — call fpga.run "
+                                           "first, or pass dcp=<path to a .dcp>"}
+    path = rec.artifacts.get("post_route_dcp") or ""
+    top = (rec.result.get("metrics", {}) or {}).get("top", "") or module
+    if not path:
+        path = os.path.join(_workdir(ctx, top, "vivado"), "checkpoints", "post_route.dcp")
+    if not os.path.exists(path):
+        return None, None, None, {"error": f"post_route checkpoint not found: {ctx.rel(path)}",
+                                  "job": rec.id}
+    return path, top or "design", rec.id, None
+
+
+def _rw_run(ctx: ToolContext, action: str, module: str, job: str, dcp: str,
+            highlights=None, timeout: float = 900) -> dict:
+    ad, err = _rw_adapter(ctx)
+    if err:
+        return err
+    path, top, src_job, err = _rw_checkpoint(ctx, module, job, dcp)
+    if err:
+        return err
+    out_dir = os.path.join(str(ctx.ws.dot), "fpga", top, "rapidwright")
+    plan = ad.plan(action, path, out_dir, highlights=highlights)
+    rec, res = ctx.submit(plan, ad, input_files=[path], timeout=timeout)
+    out = {"job": rec.id, "status": rec.status, "summary": res.summary,
+           "checkpoint": ctx.rel(path), "from_job": src_job}
+    if res.status == "error":
+        out["error"] = res.summary
+        return out
+    report = plan.artifacts.get("report", "")
+    try:
+        with open(report) as fh:
+            out["report"] = _json.load(fh)
+    except (OSError, ValueError):
+        pass
+    out["artifacts"] = {k: ctx.rel(v) for k, v in res.artifacts.items()}
+    return truncate(out, max_items=80)
+
+
+@tool("fpga.stats", "Statistics of a routed FPGA design from its post-route "
+      "checkpoint, headless via RapidWright: cells by type and site family, "
+      "sites/tiles used, clock regions touched, and a structural routing "
+      "summary (nets with routing vs nets left unrouted). Latest fpga.run by "
+      "default; `dcp` names any checkpoint in the workspace.",
+      cost="metered", permission="submit", group="fpga",
+      schema={"type": "object", "properties": {
+          "module": {"type": "string", "description": "defaults to the latest run"},
+          "job": {"type": "string", "description": "a specific fpga.run job id"},
+          "dcp": {"type": "string", "description": "workspace-relative .dcp path"}}})
+def fpga_stats(ctx: ToolContext, module: str = "", job: str = "", dcp: str = "") -> dict:
+    return _rw_run(ctx, "stats", module, job, dcp)
+
+
+@tool("fpga.placement", "Picture of WHERE the design landed on the device, "
+      "headless via RapidWright: every placed cell drawn at its tile, coloured "
+      "by site family (logic/bram/dsp/io/clock/hard) and shaded by density, "
+      "with optional highlights — a list of {match, color, label} where match "
+      "is a substring or regex over hierarchical cell names. Writes a PNG plus "
+      "the bounding box and per-family counts, plus a magnified crop of the "
+      "used area when the design is small. No GUI, no display needed.",
+      cost="metered", permission="submit", group="fpga",
+      schema={"type": "object", "properties": {
+          "module": {"type": "string"}, "job": {"type": "string"},
+          "dcp": {"type": "string", "description": "workspace-relative .dcp path"},
+          "highlights": {"type": "array", "items": {"type": "object", "properties": {
+              "match": {"type": "string"}, "color": {"type": "string"},
+              "label": {"type": "string"}}, "required": ["match"]}}}})
+def fpga_placement(ctx: ToolContext, module: str = "", job: str = "", dcp: str = "",
+                   highlights: list | None = None) -> dict:
+    return _rw_run(ctx, "placement", module, job, dcp, highlights=highlights or None)
+
+
+@tool("fpga.interchange", "Export the post-route checkpoint to the FPGA "
+      "Interchange Format (<top>.netlist + <top>.phys) via RapidWright — the "
+      "vendor-neutral form nextpnr's fpga_interchange backend, VTR and "
+      "RapidWright all read.",
+      cost="metered", permission="submit", group="fpga",
+      schema={"type": "object", "properties": {
+          "module": {"type": "string"}, "job": {"type": "string"},
+          "dcp": {"type": "string", "description": "workspace-relative .dcp path"}}})
+def fpga_interchange(ctx: ToolContext, module: str = "", job: str = "", dcp: str = "") -> dict:
+    return _rw_run(ctx, "interchange", module, job, dcp)

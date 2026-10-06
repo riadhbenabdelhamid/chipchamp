@@ -272,3 +272,53 @@ def pins(ctx, module, check_file, board, generate, out_file, mappings,
     echo(f"[dim]{r['note']}[/]")
     if not r["ok"]:
         raise SystemExit(1)
+
+
+# ---- RapidWright: headless checkpoint analysis ----------------------------
+
+@cli.group("dcp", invoke_without_command=True)
+@click.pass_context
+def dcp_grp(ctx):
+    """Headless analysis of a vendor design checkpoint (RapidWright)."""
+    if ctx.invoked_subcommand is None:
+        echo(ctx.get_help())
+
+
+@dcp_grp.command("stats")
+@click.option("--module", default="", help="defaults to the latest fpga run")
+@click.option("--job", default="", help="a specific fpga.run job id")
+@click.option("--dcp", default="", help="workspace-relative .dcp path")
+@click.pass_context
+def dcp_stats_cmd(ctx, module, job, dcp):
+    """Cells, sites, clock regions and routing summary of a checkpoint."""
+    c = _ctx(ctx.obj["root"], ctx.obj["target"])
+    _emit(_run_tool(c, "fpga.stats", module=module, job=job, dcp=dcp), ctx.obj["as_json"])
+
+
+@dcp_grp.command("placement")
+@click.option("--module", default="")
+@click.option("--job", default="")
+@click.option("--dcp", default="", help="workspace-relative .dcp path")
+@click.option("--highlight", "highlights", multiple=True,
+              help="MATCH[=#rrggbb] — cells whose name matches, drawn in colour")
+@click.pass_context
+def dcp_placement_cmd(ctx, module, job, dcp, highlights):
+    """Draw where the design landed on the device (PNG, no GUI)."""
+    c = _ctx(ctx.obj["root"], ctx.obj["target"])
+    hl = []
+    for h in highlights:
+        m, _, color = h.partition("=")
+        hl.append({"match": m, "color": color or "#ffff00", "label": m})
+    _emit(_run_tool(c, "fpga.placement", module=module, job=job, dcp=dcp,
+                    highlights=hl or None), ctx.obj["as_json"])
+
+
+@dcp_grp.command("interchange")
+@click.option("--module", default="")
+@click.option("--job", default="")
+@click.option("--dcp", default="", help="workspace-relative .dcp path")
+@click.pass_context
+def dcp_interchange_cmd(ctx, module, job, dcp):
+    """Export the checkpoint to the FPGA Interchange Format."""
+    c = _ctx(ctx.obj["root"], ctx.obj["target"])
+    _emit(_run_tool(c, "fpga.interchange", module=module, job=job, dcp=dcp), ctx.obj["as_json"])

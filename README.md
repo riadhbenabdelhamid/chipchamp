@@ -32,7 +32,7 @@ Icarus, Yosys, Verible, SymbiYosys, eqy, GHDL) — no mocks:
 | **Coverage service** — Verilator/functional/**UCIS XML** (Questa/VCS/Xcelium export)/**cocotb-coverage** ingest (format-sniffing `cov.load`), holes, attribution, anti-gaming baseline gate — functional coverage live on open tools | ✅ | §8.7 |
 | **Policy engine** — task classification, verification ladder V0–V4, gates, autonomy L0–L3, budgets, context ACLs, anti-gaming detectors | ✅ | §11 |
 | **Evidence bundles** — platform-signed, tamper-evident, assembled from job records | ✅ | §8.8, §11.3 |
-| **Agent tool catalog** — 100 tools with JSON schemas, cost classes, permission tiers, runtime capability discovery (`caps`) | ✅ | §9 |
+| **Agent tool catalog** — 103 tools with JSON schemas, cost classes, permission tiers, runtime capability discovery (`caps`) | ✅ | §9 |
 | **Model layer** — provider-agnostic (Anthropic · OpenAI · local: LM Studio/Ollama/vLLM/llama.cpp) with live model discovery, a `/model` selector, and a context audit log | ✅ | §14, §13.3 |
 | **Agent loop + CLI** — model-driven loop, scripted playbooks (P1 triage, P6 lint), headless + REPL | ✅ | §7.1, §8.2 |
 
@@ -486,13 +486,13 @@ Nothing here is narrated by a model: every ✅ is validated against a real job r
 CLI  ── Workspace(config.toml, tests.yaml, policy.yaml, DESIGN.md)
  │        │
  │        ├── DesignDB      (design/)    parser → hierarchy, domains, FSM, cone
- │        ├── AdapterRegistry (adapters/) 16 adapters: verilator·icarus·verible·yosys·eqy·sby·ghdl·cocotb·nextpnr·… (`chipchamp adapters`)
+ │        ├── AdapterRegistry (adapters/) 17 adapters: verilator·icarus·verible·yosys·eqy·sby·ghdl·cocotb·nextpnr·… (`chipchamp adapters`)
  │        ├── JobRunner     (jobs/)      records · repro · license pools · regression
  │        ├── WaveStore     (waves/)     VCD → value/when/compare/trace_x + render
  │        ├── CoverageSvc   (coverage/)  ingest · holes · attribution · baseline gate
  │        └── PolicyEngine  (policy/)    classify · gates · autonomy · ACL · anti-gaming
  │
- ├── ToolContext (tools/)   100 tools: design.* sim.* wave.* cov.* lint/synth/lec/formal · report.done
+ ├── ToolContext (tools/)   103 tools: design.* sim.* wave.* cov.* lint/synth/lec/formal · report.done
  └── AgentLoop (agent/)     model gateway (+ audit log) · scripted playbooks · session store
                            → EvidenceBundle (evidence/)  signed, from job records
 ```
@@ -579,6 +579,31 @@ generating never times out; and when a call does time out, the session offers a
 one-key **retry with a doubled budget** (or `/router on` to auto-switch to a
 faster model). A cold first call also says so, since a large model can take a
 while to load.
+
+## Headless checkpoint analysis (RapidWright)
+
+The vendor FPGA flow leaves a post-route design checkpoint; RapidWright —
+AMD/Xilinx's open-source framework for reading `.dcp` files below the GUI —
+lets Chipchamp work on it unattended. Install the extra once
+(`pip install -e '.[rapidwright]'`; the first use downloads the jars and the
+device file), then:
+
+```bash
+chipchamp dcp stats                 # cells by type/family, clock regions, routed vs unrouted nets
+chipchamp dcp placement --highlight u_fifo=#ff4040   # PNG of where the design landed, no GUI
+chipchamp dcp interchange           # <top>.netlist + <top>.phys (FPGA Interchange Format)
+```
+
+The same three are agent tools (`fpga.stats`, `fpga.placement`,
+`fpga.interchange`), each a recorded job with a JSON report. They take the
+latest `fpga.run`, a job id, or `dcp=<path>` for any checkpoint in the
+workspace. If RapidWright lives in another environment, point
+`CHIPCHAMP_RAPIDWRIGHT_PYTHON` at that interpreter.
+
+RapidWright is an open-source project of Advanced Micro Devices, Inc. This
+adapter is an independent integration and is not affiliated with or endorsed
+by AMD; Chipchamp ships none of RapidWright's code — the package is installed
+from PyPI under its own license and runs in its own process.
 
 ## Reaching the internet (read-only)
 

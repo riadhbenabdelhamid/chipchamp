@@ -21,6 +21,7 @@ dependencies = [
 model = ["anthropic>=0.40"]
 tui = ["prompt_toolkit>=3.0"]
 slang = ["pyslang>=7"]              # production SystemVerilog front end
+rapidwright = ["rapidwright>=2024.1", "pillow>=10"]   # headless checkpoint analysis
 dev = ["pytest>=8.0", "prompt_toolkit>=3.0", "pyslang>=7"]
 
 [project.scripts]
