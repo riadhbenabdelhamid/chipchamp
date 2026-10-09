@@ -13,6 +13,40 @@ from .base import (Adapter, CapabilityManifest, Plan,
 from .diagnostics import parse_verilator
 
 
+_COVERAGE_HEADER = r'''#pragma once
+#include "verilated.h"
+#if VM_COVERAGE
+#include "verilated_cov.h"
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
+#endif
+namespace chipchamp {
+// Construct after all models in this context, so export precedes their destruction.
+class Coverage final {
+    VerilatedContext* context_;
+public:
+    explicit Coverage(VerilatedContext* context = Verilated::threadContextp()) : context_(context) {}
+    Coverage(const Coverage&) = delete;
+    Coverage& operator=(const Coverage&) = delete;
+    ~Coverage() {
+#if VM_COVERAGE
+        const char* filename = std::getenv("CHIPCHAMP_COVERAGE_FILE");
+        if (filename && context_) {
+            static std::atomic_flag exported = ATOMIC_FLAG_INIT;
+            if (exported.test_and_set()) {
+                std::fputs("CHIPCHAMP_FAIL: use one coverage guard for one context per run\n", stderr);
+                return;
+            }
+            context_->coveragep()->write(filename);
+        }
+#endif
+    }
+};
+}
+'''
+
+
 class VerilatorAdapter(Adapter):
     name = "verilator"
     binary = "verilator"
@@ -130,7 +164,8 @@ class VerilatorAdapter(Adapter):
     def sim_cpp(self, rtl_files: list[str], cpp_files: list[str], top: str,
                 workdir: str, cpp_incdirs: list[str] | None = None,
                 incdirs: list[str] | None = None, defines: dict | None = None,
-                seed: int | None = None, output_dir: str | None = None) -> Plan:
+                seed: int | None = None, output_dir: str | None = None,
+                coverage: bool = False) -> Plan:
         """Verilator C++-harness sim (`--cc --exe --build`): verilate the RTL
         `top` to C++ and link a C++ testbench `main()` that drives `V<top>` and
         checks it against a composed reference model. This is the reuse path for
@@ -143,12 +178,18 @@ class VerilatorAdapter(Adapter):
         objdir = os.path.abspath(os.path.join(output_dir or workdir, f"obj_cpp_{top}"))
         import shlex
         import shutil
+        from ..util.jsonio import atomic_write
+        helper = os.path.join(objdir, "chipchamp_coverage.hpp")
+        atomic_write(helper, _COVERAGE_HEADER)
+        covfile = os.path.abspath(os.path.join(output_dir or workdir, f"coverage_cpp_{top}.dat"))
         compiler = shutil.which(os.environ.get("CXX", "g++")) or "g++"
         cflags = shlex.join([f"-I{os.path.abspath(d)}" for d in (cpp_incdirs or [])]
                           + ["-std=c++17"])
         build = [self.binary, "--cc", "--exe", "-sv",
                  "-Wno-fatal", "--top-module", top, "--Mdir", objdir, "--MMD",
                  "-o", "Vsim", "-CFLAGS", cflags]
+        if coverage:
+            build.append("--coverage")
         for d in incdirs or []:
             build.append(f"+incdir+{d}")
         for k, v in (defines or {}).items():
@@ -160,12 +201,14 @@ class VerilatorAdapter(Adapter):
         toolchain = self._toolchain_inputs()
         make = ["make", "-C", objdir, "-f", f"V{top}.mk", f"CXX={compiler}",
                 "-j", str(os.cpu_count() or 1)]
-        return Plan(kind="sim", adapter=self.name, workdir=workdir,
+        return Plan(kind="coverage" if coverage else "sim", adapter=self.name, workdir=workdir,
                     steps=[Step(argv=build, cwd=workdir),
                            Step(argv=make, cwd=workdir),
-                           Step(argv=run, cwd=workdir, allow_fail=True)],
-                    artifacts={"executable": run[0]},
+                           Step(argv=run, cwd=workdir, allow_fail=True,
+                                env={"CHIPCHAMP_COVERAGE_FILE": covfile} if coverage else {})],
+                    artifacts={"executable": run[0], **({"coverage": covfile} if coverage else {})},
                     meta={"tb_top": top, "seed": seed, "mode": "cpp", **toolchain,
+                          "input_files": [helper],
                           "capture_after_step": 0,
                           "cpp_dependencies": {"compiler": compiler, "sources": list(cpp_files),
                               "generated_dirs": [objdir], "make": make, "build_dir": objdir},
@@ -216,11 +259,22 @@ class VerilatorAdapter(Adapter):
         if plan.kind == "coverage":
             covfile = plan.artifacts.get("coverage", "")
             from .simparse import parse_compile_run_sim
-            verdict = parse_compile_run_sim(self.name, plan, results, diags)
-            ok = verdict.ok and len(results) == len(plan.steps) and os.path.isfile(covfile)
+            sim_results = results
+            if plan.meta.get("mode") == "cpp":
+                if len(results) != 3 or any(r.rc != 0 or r.timed_out for r in results[:-1]):
+                    return ToolResult(False, "coverage", self.name, status="error",
+                                      summary="verilate/build failed", diagnostics=diags)
+                sim_results = [results[1], results[2]]
+            verdict = parse_compile_run_sim(self.name, plan, sim_results, diags)
+            ok = (verdict.ok and len(results) == len(plan.steps) and os.path.isfile(covfile)
+                  and all(r.rc == 0 and not r.timed_out for r in results))
+            missing_cpp_export = verdict.ok and not os.path.isfile(covfile) and plan.meta.get("mode") == "cpp"
             return ToolResult(ok=ok, kind="coverage", adapter=self.name,
                               diagnostics=diags, artifacts=plan.artifacts,
-                              summary="coverage collected" if ok else "coverage failed")
+                              summary="coverage collected" if ok else (
+                                  "no C++ coverage export; construct chipchamp::Coverage after the models "
+                                  "or export to CHIPCHAMP_COVERAGE_FILE while the models remain alive"
+                                  if missing_cpp_export else "coverage failed"))
         if plan.kind == "sim":
             from .simparse import parse_compile_run_sim
             if plan.meta.get("mode") == "cpp":

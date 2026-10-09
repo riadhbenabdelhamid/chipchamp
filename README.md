@@ -408,9 +408,48 @@ hits and added/removed bins, including baseline failures when bins disappear.
 missing or changed evidence is rejected. MCP exposes `cov.history` and `cov.compare`.
 
 `verify-plan` and `regress` use compatible coverage history to run tests with the
-most previously hit bins in changed source files first. This is file-level
-prioritization: every selected test and seed still runs. Ordering and its evidence
-are saved with the plan, report and checkpoint; ties preserve declared order.
+most previously hit bins at changed RTL lines first. New observations pin deduplicated
+source snapshots under `.chipchamp/coverage/sources/`. The planner maps recorded
+locations through unchanged source text, accounting for shifted line numbers, and
+reports old/new ranges, relevant tests, source jobs, unhit bins and unknown regions.
+These reports describe historical observations of the selected tests; they do not
+certify coverage of edited logic. CLI output and Markdown reports show the same
+evidence as the JSON plan and checkpoint.
+
+New lines with no matching observation, ambiguous repeated text, macros/includes,
+generated files, legacy observations without snapshots and sources above the
+2 MB / 20,000-line mapping limit use an explicit file-level fallback. Missing bins
+mean unknown instrumentation, not zero coverage. Tests with mapped line hits rank
+first, followed by file fallback hits; ties preserve declared order. Every selected
+test and seed still runs, including when executing a saved plan or resuming.
+
+`cov` also supports `verilator_cpp` tests. Add the provided header and construct a
+guard **after all models in the context**, so counters are exported before model
+destruction:
+
+```cpp
+#include "Vtop.h"
+#include "chipchamp_coverage.hpp"
+
+int main(int argc, char** argv) {
+    VerilatedContext context;
+    context.commandArgs(argc, argv);
+    Vtop dut{&context};
+    chipchamp::Coverage coverage{&context};
+    // Drive and check dut here.
+    dut.final();
+    return 0;
+}
+```
+
+The adapter supplies the header in both regular and coverage builds; the guard
+does nothing when coverage is disabled. Run `chipchamp cov <cpp-test> --seed 7`
+to instrument the RTL and save coverage in the same history/comparison workflow.
+An existing exporter can instead write to the `CHIPCHAMP_COVERAGE_FILE` environment
+variable while its models remain alive. One exported context is supported per run;
+multi-context merging is future work. Early `exit()`/abort, missing exports, failed
+runs and empty data never become coverage observations. This collects RTL coverage
+exercised by the C++ harness, not C++ source-code coverage.
 
 Input manifests follow nested native Icarus/Verilator filelists, literal HDL/C
 includes, memory images and declared `runner.inputs` (workspace-relative paths,

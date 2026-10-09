@@ -143,9 +143,9 @@ def test_flattened_verilator_cpp_routes_to_verilator(tmp_path):
 # ---- verilator sim_cpp plan (unit) ---------------------------------------------
 
 
-def test_sim_cpp_plan_shape():
+def test_sim_cpp_plan_shape(tmp_path):
     a = VerilatorAdapter()
-    plan = a.sim_cpp(["/rtl/top.sv"], ["/tb/h.cpp"], "top", "/ws",
+    plan = a.sim_cpp(["/rtl/top.sv"], ["/tb/h.cpp"], "top", str(tmp_path),
                      cpp_incdirs=["/tb"], incdirs=["/rtl/inc"], defines={"D": 1})
     build = plan.steps[0].argv
     for flag in ("--cc", "--exe", "-CFLAGS"):

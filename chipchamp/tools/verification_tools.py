@@ -3,7 +3,7 @@ from .base import tool
 from .paths import PathRefused
 
 
-@tool("verify.plan", "Explain changed-module impact, selected regression tests, "
+@tool("verify.plan", "Explain changed-module and line-level coverage impact, selected regression tests, "
       "seeds, required gates and V3 budget. Uses session edits or Git changes; "
       "changed_paths scopes an explicit plan. Does not launch jobs or waive gates.",
       cost="cheap", group="plan", schema={"type": "object", "properties": {

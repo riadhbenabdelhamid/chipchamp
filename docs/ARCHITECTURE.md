@@ -89,9 +89,21 @@ infrastructure errors without job records.
 
 `coverage/history.py` stores per-job normalized coverage with a digest pinned in
 the runner record. Reads validate the observation, raw coverage artifact and logs.
-Comparisons retain bin identities and report denominator changes. Historical hits
-in changed files rank selected tests; they never remove tests or seeds. Plans and
-checkpoints retain the ordering and its source job IDs across resume.
+Comparisons retain bin identities and report denominator changes. Schema-v2 observations
+also pin content-addressed source snapshots; v1 observations retain file-level use.
+`coverage/impact.py` aligns requested old/new edit ranges to exact or uniquely matched
+historical lines. `coverage/prioritize.py` ranks mapped line hits before file fallback
+hits and reports unhit bins separately from unknown instrumentation. Source hashes
+and current read permissions are checked before reading archived text. Ambiguous,
+preprocessed, generated and oversized sources fall back conservatively. Plans and
+checkpoints retain the ordering and its source job IDs across resume; no test or
+seed is removed by this prioritization.
+
+Verilator C++ coverage reuses the generate/compile/run path with `--coverage` and a
+unique output file. A supplied `chipchamp::Coverage` RAII guard writes the chosen
+context's counters before its models die; it is inert for ordinary simulation.
+Native exit statuses, simulation verdicts and nonempty exports all constrain whether
+a coverage observation can be recorded.
 
 ## The debug loop (P1/P2), concretely
 

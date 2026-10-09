@@ -95,7 +95,7 @@ def sarif_report(jobs, workspace):
                       "invocations": invocations, "results": results}]}
 
 
-def regression_markdown(result, target, resumed=0):
+def regression_markdown(result, target, resumed=0, ordering=None):
     def escape(value):
         import html
         return html.escape(str(value)).replace("|", "&#124;").replace("\n", " ").replace("\r", " ")
@@ -104,4 +104,9 @@ def regression_markdown(result, target, resumed=0):
              "| Test | Seed | Status | Job |", "| --- | ---: | --- | --- |"]
     lines.extend(f"| {escape(c.test)} | {c.seed} | {escape(c.job.status)} | {escape(c.job.id)} |"
                  for c in result.cases)
+    from ..coverage.impact import explain
+    details = explain(ordering)
+    if details:
+        lines.extend(["", "## Change impact", ""])
+        lines.extend(escape(line) + "\n" for line in details)
     return "\n".join(lines) + "\n"

@@ -137,7 +137,7 @@ def test_planner_retains_selection_and_ignores_changed_test_definition(coverage_
     observation(ctx)
     plan = verify_plan(ctx, changed_paths=["rtl/leaf.sv"])
     assert plan["ordering"]["tests"] == plan["selection"]["selected_tests"] == ["focused"]
-    assert plan["ordering"]["method"] == "coverage_history"
+    assert plan["ordering"]["method"] == "coverage_lines"
     path = ctx.ws.dot / "tests.yaml"
     path.write_text(path.read_text().replace("tb_focus", "tb_changed"))
     ctx.ws.invalidate(ctx.target_name)

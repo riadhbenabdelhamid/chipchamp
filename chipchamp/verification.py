@@ -166,7 +166,7 @@ def verification_plan(ctx, changed_paths=None, seeds=None, base="HEAD") -> dict:
     selection = _selection(ctx, diff, tests)
     selection["warnings"] = warnings + selection["warnings"]
     from .coverage.history import CoverageHistory
-    ordering = CoverageHistory(ctx).order(selection["selected_tests"], [f.path for f in diff.files])
+    ordering = CoverageHistory(ctx).order(selection["selected_tests"], diff)
     policy = ctx.policy.check(diff)
     jobs = len(selection["selected_tests"]) * len(seeds)
     remaining = max(0, ctx.ledger.budget.v3_submissions - ctx.ledger.v3_used)

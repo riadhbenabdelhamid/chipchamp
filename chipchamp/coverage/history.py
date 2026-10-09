@@ -1,7 +1,6 @@
 """Immutable per-job coverage observations, validated against runner provenance."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from ..jobs.inputs import snapshot_current
@@ -33,13 +32,16 @@ class CoverageHistory:
                 or rec.evidence_hashes.get(artifact) != sha256_file(artifact)):
             raise ValueError("coverage requires a passed job, nonempty bins and unchanged inputs/artifact")
         path, relative = ws_path(self.ctx, self.ctx.rel(self.directory / f"{rec.id}.json"), write=True)
-        data = {"schema_version": 1, "job": rec.id, "target": rec.target_name,
+        from .sources import capture_sources
+        sources, unavailable = capture_sources(self.ctx, rec, model)
+        data = {"schema_version": 2, "job": rec.id, "target": rec.target_name,
                 "test": rec.test_name, "seed": rec.seed, "timestamp": rec.end_ts,
                 "adapter": rec.adapter, "tool_version": rec.tool_version,
                 "definition_hash": definition_hash(self.ctx, rec.test_name),
                 "verification_hash": rec.verification_hash, "inputs_hash": rec.inputs_hash,
                 "artifact": artifact, "model": model.to_dict(),
-                "summary": CoverageService(model).summary()}
+                "summary": CoverageService(model).summary(),
+                "source_snapshots": sources, "source_snapshot_warnings": unavailable}
         atomic_write(path, dump_json(data))
         rec.coverage_observation = {"path": relative, "sha256": sha256_file(path)}
         self.ctx.runner._persist(rec)
@@ -59,7 +61,7 @@ class CoverageHistory:
         if sha256_file(path) != pointer["sha256"]:
             raise ValueError(f"coverage observation for {job} was modified")
         data = load_json(path)
-        if (data.get("schema_version") != 1 or data.get("job") != job
+        if (data.get("schema_version") not in (1, 2) or data.get("job") != job
                 or data.get("test") != rec.test_name or data.get("seed") != rec.seed
                 or data.get("target") != rec.target_name):
             raise ValueError(f"invalid coverage observation for {job}")
@@ -117,31 +119,6 @@ class CoverageHistory:
                 **{k: {"count": len(v), "bins": v[:50]} for k, v in groups.items()},
                 "baseline_check": CoverageService(new).baseline_check(old).__dict__}
 
-    def order(self, names, changed_files):
-        from ..tools.paths import PathRefused
-        wanted = {os.path.realpath(os.path.join(self.ctx.ws.root, p)) for p in changed_files}
-        scores, evidence, seen = {n: set() for n in names}, {}, set()
-        try:
-            entries, invalid = self.entries()
-        except PathRefused:
-            return {"method": "declared_order", "tests": names, "reasons": {},
-                    "warnings": ["coverage history is not readable"]}
-        for data, rec in entries:
-            name, seed = data["test"], data["seed"]
-            if name not in scores or (name, seed) in seen:
-                continue
-            seen.add((name, seed))
-            if data["definition_hash"] != definition_hash(self.ctx, name):
-                continue
-            for key, item in data["model"]["bins"].items():
-                source = item.get("source", "").rsplit(":", 1)[0]
-                if item.get("count", 0) > 0 and source and os.path.realpath(
-                        os.path.join(self.ctx.ws.root, source)) in wanted:
-                    scores[name].add(key)
-                    evidence.setdefault(name, set()).add(rec.id)
-        tests = sorted(names, key=lambda n: -len(scores[n]))  # stable ties preserve caller order
-        return {"method": "coverage_history" if any(scores.values()) else "declared_order",
-                "tests": tests, "reasons": {n: {"changed_bins_hit": len(scores[n]),
-                    "jobs": sorted(evidence.get(n, []))} for n in names},
-                "warnings": [f"Ignored {len(invalid)} invalid coverage observation(s)."] if invalid else [],
-                "note": "Historical coverage orders tests; every selected test and seed still runs."}
+    def order(self, names, changes):
+        from .prioritize import prioritize
+        return prioritize(self, names, changes)

@@ -197,12 +197,20 @@ Python environment fingerprints and runtime import/read/directory observations;
 complete, stable traces enable checkpoint resume. Untracked native/subprocess/
 network activity, filesystem stat/existence queries from user code, custom runner
 environment policies/modules, unsupported cocotb tracing hooks and unresolved HDL
-dependencies remain ineligible for reuse. Coverage ordering is file-level and uses
-historical observations; it does not establish completion for edited RTL.
+dependencies remain ineligible for reuse.
 
-Next depth work: line-level impact mapping and evidence that can justify a smaller
-completion suite, broader runtime dependency contracts, and instrumentation for
-native C++ coverage exports. Resume retries missing
+The fourth increment pins coverage source snapshots and maps requested edits to
+historical lines, including source shifts. Plans and CLI/Markdown reports show
+old/new ranges, relevant tests/jobs, unhit bins and unknown regions. Macros,
+generated sources, ambiguous alignment, absent snapshots and large files fall back
+to file-level ordering. Native `verilator_cpp` coverage builds can export through
+the supplied model-lifetime guard or an explicit harness exporter. Empty/missing
+exports and unsuccessful runs are rejected. One context export per run is supported.
+Historical coverage still does not establish completion for edited RTL; every
+selected case remains in the saved/resumed matrix.
+
+Next depth work: evidence that can justify a smaller completion suite, broader
+runtime dependency contracts, and multi-context C++ coverage merging. Resume retries missing
 cases; it does not adopt a surviving simulator from a killed parent process.
 Next breadth work: CI-provider upload automation and additional protocol and
 register-model integrations. Hierarchy-based selection remains advisory until

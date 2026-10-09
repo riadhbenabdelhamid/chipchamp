@@ -61,8 +61,10 @@ def verify_plan_cmd(ctx, changed_paths, base, seeds, out):
         echo(f"[bold]{result['plan_id']}[/] — {result['target']}: {selection['mode']}")
         echo("Changed modules: " + (", ".join(selection["changed_modules"]) or "none identified"))
         echo("Required gates: " + (", ".join(result["required_gates"]) or "none for this change"))
-        if result["ordering"]["method"] == "coverage_history":
-            echo("Coverage order: " + ", ".join(result["ordering"]["tests"]))
+        from ..coverage.impact import explain
+        from rich.markup import escape
+        for line in explain(result.get("ordering")):
+            echo(escape(line))
         for name in selection["selected_tests"]:
             echo(f"  {name}: {'; '.join(selection['reasons'][name])}")
         echo(f"{result['test_jobs']} test/seed jobs selected; "
@@ -105,6 +107,10 @@ def regress_cmd(ctx, tests, tag, seeds, affected, changed_paths, base, junit, sa
         echo(result.get("summary", result.get("error", result.get("note", "regression failed"))))
         if result.get("summary") and result.get("error"):
             echo(f"[red]{result['error']}[/]")
+        from ..coverage.impact import explain
+        from rich.markup import escape
+        for line in explain(result.get("ordering")):
+            echo(escape(line))
         for kind, path in result.get("reports", {}).items():
             echo(f"  {kind}: {path}")
         if result.get("checkpoint"):

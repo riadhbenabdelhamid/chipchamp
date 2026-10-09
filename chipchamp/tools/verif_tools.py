@@ -132,7 +132,7 @@ def _timeout_report(rec, plan) -> dict | None:
 
 def _plan_for_test(ctx: ToolContext, test: str, seed: int = 1,
                    waves: bool = True, uvm_test: str = "", plusargs=None,
-                   timeout_s=None, output_dir=None):
+                   timeout_s=None, output_dir=None, coverage=False):
     """Full runner-kind dispatch for ONE named test — the single source of
     truth for how a test runs (plain SV / UVM / cocotb), shared by sim.run,
     regress.run, cov.run and the triage playbook. Returns
@@ -162,7 +162,8 @@ def _plan_for_test(ctx: ToolContext, test: str, seed: int = 1,
         top = runner.get("top") or runner.get("tb_top") or test
         plan = adapter.sim_cpp(rtl, cpp, top, ctx.ws.root,
                                cpp_incdirs=cpp_incdirs, incdirs=ctx.target.incdirs,
-                               defines=ctx.target.defines, seed=seed, output_dir=output_dir)
+                               defines=ctx.target.defines, seed=seed, output_dir=output_dir,
+                               **({"coverage": True} if coverage else {}))
         return _finish_plan(ctx, t, adapter, plan, rtl + cpp, 300, timeout_s, test)
     if runner.get("kind") == "cocotb":
         adapter = ctx.registry.get("cocotb")
@@ -431,7 +432,7 @@ def regress_run(ctx: ToolContext, tag: str = "", tests=None, seeds=None,
             else:
                 try:
                     diff, _, _ = _changes(ctx, None, "HEAD")
-                    ordering = CoverageHistory(ctx).order(names, [f.path for f in diff.files])
+                    ordering = CoverageHistory(ctx).order(names, diff)
                 except (ValueError, OSError, PathRefused):
                     ordering = None
         if ordering:
@@ -564,7 +565,7 @@ def _execute_regression(ctx, names, seeds, run_id, selection_plan, report_dir,
         markdown_path = os.path.join(report_dir, "summary.md")
         annotations = dump_json(sarif_report(res.jobs, ctx.ws.root))
         atomic_write(sarif_path, annotations)
-        atomic_write(markdown_path, regression_markdown(res, ctx.target_name, len(completed)))
+        atomic_write(markdown_path, regression_markdown(res, ctx.target_name, len(completed), ordering))
         if export:
             atomic_write(export, xml)
         if sarif_export:
@@ -828,15 +829,14 @@ def cov_run(ctx: ToolContext, test: str, set: str = "default", seed: int = 1) ->
         directory, _ = ws_path(ctx, ctx.rel(ctx.ws.dot / "coverage" / ("C-" + uuid.uuid4().hex)), write=True)
         os.makedirs(directory, exist_ok=True)
         runner = _runner_of(t)
-        if runner.get("kind") == "cocotb":
-            got = _plan_for_test(ctx, test, seed=seed, waves=False, output_dir=directory)
+        if runner.get("kind") in ("cocotb", "verilator_cpp"):
+            got = _plan_for_test(ctx, test, seed=seed, waves=False, output_dir=directory,
+                                 coverage=runner.get("kind") == "verilator_cpp")
             if isinstance(got, dict):
                 return got
             adapter, plan, files, timeout = got
-            artifact_key = "coverage_xml"
+            artifact_key = "coverage_xml" if runner.get("kind") == "cocotb" else "coverage"
         else:
-            if runner.get("kind") == "verilator_cpp":
-                raise ValueError("C++ coverage needs an instrumented harness that exports coverage; use cov.load for its export")
             files, tb_top = _resolve_sim(ctx, test)
             adapter = ctx.registry.for_role("coverage")
             if not adapter or not adapter.available():
@@ -848,7 +848,8 @@ def cov_run(ctx: ToolContext, test: str, set: str = "default", seed: int = 1) ->
             artifact_key = "coverage"
         rec, res = ctx.submit(plan, adapter, input_files=files, seed=seed, timeout=timeout, no_cache=True)
         if rec.status != "passed":
-            return {"job": rec.id, "status": rec.status, "error": "coverage run did not pass; no observation recorded"}
+            return {"job": rec.id, "status": rec.status,
+                    "error": "coverage run did not pass; no observation recorded: " + rec.summary}
         artifact = res.artifacts.get(artifact_key)
         if not artifact or not os.path.isfile(artifact):
             return {"job": rec.id, "status": rec.status, "error": "no coverage produced; the testbench must export it"}
