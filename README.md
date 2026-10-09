@@ -32,7 +32,7 @@ Icarus, Yosys, Verible, SymbiYosys, eqy, GHDL) — no mocks:
 | **Coverage service** — Verilator/functional/**UCIS XML** (Questa/VCS/Xcelium export)/**cocotb-coverage** ingest (format-sniffing `cov.load`), holes, attribution, anti-gaming baseline gate — functional coverage live on open tools | ✅ | §8.7 |
 | **Policy engine** — task classification, verification ladder V0–V4, gates, autonomy L0–L3, budgets, context ACLs, anti-gaming detectors | ✅ | §11 |
 | **Evidence bundles** — platform-signed, tamper-evident, assembled from job records | ✅ | §8.8, §11.3 |
-| **Agent tool catalog** — 106 tools with JSON schemas, cost classes, permission tiers, runtime capability discovery (`caps`) | ✅ | §9 |
+| **Agent tool catalog** — 107 tools with JSON schemas, cost classes, permission tiers, runtime capability discovery (`caps`) | ✅ | §9 |
 | **Model layer** — provider-agnostic (Anthropic · OpenAI · local: LM Studio/Ollama/vLLM/llama.cpp) with live model discovery, a `/model` selector, and a context audit log | ✅ | §14, §13.3 |
 | **Agent loop + CLI** — model-driven loop, scripted playbooks (P1 triage, P6 lint), headless + REPL | ✅ | §7.1, §8.2 |
 
@@ -451,6 +451,49 @@ multi-context merging is future work. Early `exit()`/abort, missing exports, fai
 runs and empty data never become coverage observations. This collects RTL coverage
 exercised by the C++ harness, not C++ source-code coverage.
 
+Check whether tests detect incorrect behavior on changed RTL lines:
+
+```bash
+# After editing the RTL; --base selects the Git revision to compare against.
+chipchamp --root examples/soc mutate --changed rtl/sync_fifo.sv \
+  --tests fifo_smoke --seeds 1,2 --max-mutants 4 --max-jobs 10 --max-seconds 300
+```
+
+`mutate` / `mutation.run` introduces one small operator change at a time in copied
+workspaces: increment/decrement, equality, bitwise AND/OR, comparison boundary,
+or condition polarity. Only added/modified current lines in the active target
+are eligible; comments, strings, headers, generated/protected files and
+preprocessed sources are excluded. Deletions and unsupported sites are reported.
+An explicit `--changed` scopes the diff; it does not treat unchanged lines as edits.
+
+Every selected test and seed must pass on the current, unmutated design first.
+The default selection is all tests for the active target; coverage history orders
+them without removing cases. Each mutation then runs that matrix until a check
+detects it or all cases finish. A surviving mutation needs review: it may expose
+a weak check, or it may preserve behavior. Compilation errors, missing tools,
+unexplained nonzero exits and timeouts remain separate inconclusive outcomes.
+Harnesses should use assertions or `CHIPCHAMP_FAIL` when a check fails; a bare
+nonzero exit alone cannot distinguish a detected bug from a simulator crash.
+
+JSON/Markdown reports, patches, copied inputs and isolated job logs are retained
+under `.chipchamp/mutations/M-*/`. The detection rate counts only detected and
+surviving mutations; inspect inconclusive and unrun counts alongside it. CLI exit
+zero requires a completed, nonempty experiment with every attempted mutation
+detected; survivors, baseline failures, errors, empty scope and exhausted budgets
+exit nonzero. This does not establish correctness or waive completion gates.
+Mutation jobs never enter normal simulation/coverage history or gate evidence.
+
+Baselines and mutants both consume the existing V3 submission budget. Defaults
+are 8 mutants, 20 jobs, 120 seconds per build+simulation and 600 seconds for the
+experiment; `--timeout`, `--max-jobs` and `--max-seconds` set explicit limits.
+Process deadlines include license waiting and accumulate across build/run steps;
+input probing, copying and report cleanup can add overhead. This first version
+requires local execution and workspace-local source dependencies. Copies omit
+symlinks, denied files and runtime state, preserve `config.local.toml`, and are
+bounded to 64 MiB/file, 256 MiB/snapshot, 10000 files and 1 GiB of case input copies.
+Required omitted inputs cause an error or baseline failure. Test programs remain
+trusted code; workspace copying is not an OS security sandbox.
+
 Input manifests follow nested native Icarus/Verilator filelists, literal HDL/C
 includes, memory images and declared `runner.inputs` (workspace-relative paths,
 including generated stimuli/configuration). Native compiler dependency files add
@@ -608,7 +651,7 @@ CLI  ── Workspace(config.toml, tests.yaml, policy.yaml, DESIGN.md)
  │        ├── CoverageSvc   (coverage/)  ingest · holes · attribution · baseline gate
  │        └── PolicyEngine  (policy/)    classify · gates · autonomy · ACL · anti-gaming
  │
- ├── ToolContext (tools/)   106 tools: design.* sim.* wave.* cov.* lint/synth/lec/formal · verify.plan · report.done
+ ├── ToolContext (tools/)   107 tools: design.* sim.* wave.* cov.* lint/synth/lec/formal · verify.plan · mutation.run · report.done
  └── AgentLoop (agent/)     model gateway (+ audit log) · scripted playbooks · session store
                            → EvidenceBundle (evidence/)  signed, from job records
 ```

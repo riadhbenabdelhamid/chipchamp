@@ -209,6 +209,18 @@ exports and unsuccessful runs are rejected. One context export per run is suppor
 Historical coverage still does not establish completion for edited RTL; every
 selected case remains in the saved/resumed matrix.
 
+The fifth increment adds changed-line mutation experiments (`mutate` and
+`mutation.run`). Supported operators run only on eligible current RTL lines in
+fresh workspace copies. Every selected baseline test/seed must pass first;
+coverage history orders the selected matrix. Assertions/check markers distinguish
+detected bugs from compile errors, runtime errors and timeouts. Reports retain
+survivors, partial/unrun cases, input hashes, mutation patches and isolated job
+records. Parent submission/license budgets and cumulative process deadlines bound
+execution. These experiments supply feedback, never completion-gate evidence.
+Live tests cover Icarus, native C++ and cocotb paths, alongside budget and isolation
+checks. Mutation resume, semantic/equivalent-mutant filtering, broader operators,
+and farm execution remain future work.
+
 Next depth work: evidence that can justify a smaller completion suite, broader
 runtime dependency contracts, and multi-context C++ coverage merging. Resume retries missing
 cases; it does not adopt a surviving simulator from a killed parent process.

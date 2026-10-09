@@ -45,9 +45,13 @@ def _changes(ctx, paths, base):
     prefix = git("rev-parse", "--show-prefix").stdout.rstrip("\n") if revision else ""
     source = "explicit" if paths is not None else "git"
     if paths is None:
+        from .brand import dot_dir_names
+        # Mutation copies and their binaries are experiment outputs, including
+        # in existing workspaces whose .gitignore predates this feature.
+        excludes = [f":(exclude){d}/mutations/**" for d in dot_dir_names()]
         changed = git("diff", "--name-only", "--no-renames", "--relative", "-z",
-                      revision, "--", ".") if revision else None
-        untracked = git("ls-files", "--others", "--exclude-standard", "-z", "--", ".")
+                      revision, "--", ".", *excludes) if revision else None
+        untracked = git("ls-files", "--others", "--exclude-standard", "-z", "--", ".", *excludes)
         paths = ((changed.stdout.split("\0") if changed and changed.returncode == 0 else [])
                  + (untracked.stdout.split("\0") if untracked.returncode == 0 else []))
         if not revision:

@@ -99,6 +99,27 @@ preprocessed, generated and oversized sources fall back conservatively. Plans an
 checkpoints retain the ordering and its source job IDs across resume; no test or
 seed is removed by this prioritization.
 
+`mutation.py` exposes changed-line experiments through `mutation.run` and the
+`mutate` CLI. Lexical mutation operators mask comments, strings and escaped
+identifiers before selecting current changed lines. Workspace snapshots retain
+readable regular inputs and machine-local configuration, with explicit size limits;
+each baseline/mutant case receives a fresh copy. Source/include paths must resolve
+inside that copy. The common simulation planner dispatches native SV, UVM, C++ and
+cocotb tests with the same compile configuration as ordinary runs. All selected
+baseline seeds must pass before any mutant is executed. Coverage history orders
+the full selected matrix; the first observed check failure ends a mutant's run.
+Compile failures, timeouts and unclassified runtime errors cannot inflate detection.
+
+Mutation jobs use an isolated store under `.chipchamp/mutations/M-*/jobs`, share
+the parent license pool, reserve parent V3 budget and charge costs using campaign-
+qualified job IDs. They do not enter parent task evidence, flake history or coverage
+history. Process deadlines cover queued licenses and all steps of a job; the
+campaign deadline prevents further launches. Planning/probing/report overhead is
+not forcibly interrupted. Atomic JSON/Markdown reports retain the full requested
+matrix, partial results, patches, input hashes and links to runner-owned records.
+Interrupted runs retain their last report and logs; mutation resume is not yet
+supported. Copies isolate source edits, not arbitrary behavior of trusted tests.
+
 Verilator C++ coverage reuses the generate/compile/run path with `--coverage` and a
 unique output file. A supplied `chipchamp::Coverage` RAII guard writes the chosen
 context's counters before its models die; it is inert for ordinary simulation.

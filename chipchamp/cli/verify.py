@@ -395,6 +395,53 @@ def bench(ctx, suite, mutants):
     echo(f"[dim]report: {c.rel(str(out))}[/]")
 
 
+@cli.command("mutate")
+@click.option("--changed", "changed_paths", multiple=True, help="changed RTL file (repeatable); default: Git changes")
+@click.option("--base", default="HEAD", help="Git revision to compare against")
+@click.option("--tests", default="", help="comma-separated test names; default: all tests for the target")
+@click.option("--seeds", default=None, help="comma-separated seeds; default: tests.yaml")
+@click.option("--max-mutants", default=8, type=click.IntRange(1, 100), show_default=True)
+@click.option("--max-jobs", default=20, type=click.IntRange(1, 1000), show_default=True)
+@click.option("--timeout", "timeout_s", default=120.0, type=click.FloatRange(min=0, min_open=True, max=14400),
+              help="seconds per compile+simulation job", show_default=True)
+@click.option("--max-seconds", default=600.0, type=click.FloatRange(min=0, min_open=True, max=14400),
+              help="total experiment runtime limit", show_default=True)
+@click.pass_context
+def mutate_cmd(ctx, changed_paths, base, tests, seeds, max_mutants, max_jobs, timeout_s, max_seconds):
+    """Inject bugs into copied RTL and check whether the tests detect them."""
+    from rich.markup import escape
+    c = _ctx(ctx.obj["root"], ctx.obj["target"])
+    result = _run_tool(c, "mutation.run", changed_paths=list(changed_paths) or None,
+                       tests=[t.strip() for t in tests.split(",")] if tests else None,
+                       seeds=_parse_seeds(seeds), base=base, max_mutants=max_mutants,
+                       max_jobs=max_jobs, timeout_s=timeout_s, max_seconds=max_seconds)
+    if ctx.obj["as_json"]:
+        _emit(result, True)
+    elif result.get("error") or result.get("denied"):
+        echo(escape(str(result.get("error") or result.get("denied"))))
+    else:
+        echo(escape(f"{result['id']}: {result['status']} — {result['jobs_submitted']} jobs"))
+        for case in result["baseline"]:
+            echo(escape(f"  baseline {case['test']} seed {case['seed']}: {case['status']}"))
+        for m in result["mutants"]:
+            echo(escape(f"  {m['path']}:{m['line']} {m['description']}: {m['status']}"))
+        for item in result["skipped"]:
+            echo(escape(f"  skipped {item['path']}: {item['reason']}"))
+        counts = result["counts"]
+        evaluated = counts.get("detected", 0) + counts.get("survived", 0)
+        echo(f"Detected: {counts.get('detected', 0)} / {evaluated} evaluated mutations; "
+             f"{len(result['mutants']) - evaluated} inconclusive or unrun.")
+        if result["candidate_limit_reached"]:
+            echo("More mutation sites exist; the candidate limit capped this experiment.")
+        if result.get("reason"):
+            echo(escape(result["reason"]))
+        echo(escape(result["note"]))
+        echo(escape(f"Report: {result['reports']['markdown']}"))
+    if (result.get("status") != "completed" or not result.get("mutants") or
+            any(m["status"] != "detected" for m in result.get("mutants", []))):
+        raise SystemExit(1)
+
+
 @cli.command()
 @click.pass_context
 def dashboard(ctx):

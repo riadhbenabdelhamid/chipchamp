@@ -646,7 +646,16 @@ class JobRunner:
                     wall_deadline = t0 + timeout if timeout else None
                     while True:
                         try:
-                            rc = p.wait(timeout=0.5)
+                            # A fixed polling interval let short jobs finish
+                            # successfully after their deadline. Bound the wait
+                            # by both active deadlines, including subsecond ones.
+                            now = time.time()
+                            remaining = [0.5]
+                            if wall_deadline:
+                                remaining.append(max(0, wall_deadline - now))
+                            if idle_timeout:
+                                remaining.append(max(0, last_output[0] + idle_timeout - now))
+                            rc = p.wait(timeout=min(remaining))
                             break
                         except subprocess.TimeoutExpired:
                             now = time.time()
