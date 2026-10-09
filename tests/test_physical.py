@@ -64,7 +64,7 @@ def test_physical_gates_fail_on_violations():
 
     class J:
         id = "J-PNR"; kind = "pnr"; status = "failed"; start_ts = 1; summary = ""
-        result = {"metrics": n}
+        result = {"metrics": n, "status": "signoff-fail"}
     rep = evaluate("physical", Evidence(jobs=[J()]))
     assert not rep.all_passed
     assert "drc_clean" in rep.blocking and "timing_met" in rep.blocking

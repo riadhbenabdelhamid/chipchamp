@@ -47,12 +47,13 @@ because a silent cache is indistinguishable from a lie about work performed.
 from __future__ import annotations
 
 import os
+import json
 import threading
 from pathlib import Path
 from typing import Optional
 
 from .. import brand
-from ..util.hashing import hash_manifest, sha256_file, sha256_text
+from ..util.hashing import sha256_file, sha256_text
 from ..util.jsonio import atomic_write, dump_json, load_json
 
 # statuses safe to reuse: a real verdict about the inputs, not about the day
@@ -98,7 +99,8 @@ def code_fingerprint(adapter) -> str:
 
 def cache_key(plan, adapter, *, inputs_hash: str, seed=None,
               defines: Optional[dict] = None,
-              env_modules: Optional[list[str]] = None) -> str:
+              env_modules: Optional[list[str]] = None, input_files=(),
+              environment=None, snapshot=None) -> str:
     """Fingerprint of everything that could change this job's answer.
 
     argv is included verbatim *and* the files it names are content-hashed: a
@@ -112,12 +114,16 @@ def cache_key(plan, adapter, *, inputs_hash: str, seed=None,
     in a real workspace. The plan already declares its outputs, so they are
     excluded here; only genuine inputs are hashed.
     """
+    from .inputs import capture_inputs
+    from .env import scrub_env
+    snapshot = snapshot if snapshot is not None else capture_inputs(plan, input_files)
+    if not snapshot["complete"]:
+        return ""
     argv = [tok for st in plan.steps for tok in st.argv]
-    outputs = {os.path.abspath(p)
-               for p in (getattr(plan, "artifacts", None) or {}).values() if p}
-    referenced = [t for t in argv
-                  if os.path.sep in t and os.path.abspath(t) not in outputs
-                  and Path(t).is_file()]
+    execution = [{"cwd": os.path.realpath(st.cwd or plan.workdir),
+                  "env": scrub_env({**(environment if environment is not None else scrub_env()),
+                                    **st.env}), "allow_fail": st.allow_fail}
+                 for st in plan.steps]
     parts = [
         f"kind={plan.kind}",
         f"adapter={adapter.name}",
@@ -128,7 +134,10 @@ def cache_key(plan, adapter, *, inputs_hash: str, seed=None,
         f"defines={sorted((defines or {}).items())}",
         f"modules={sorted(env_modules or [])}",
         f"argv={argv}",
-        f"referenced={hash_manifest(referenced) if referenced else '-'}",
+        f"dependencies={json.dumps(snapshot, sort_keys=True)}",
+        f"execution={json.dumps(execution, sort_keys=True)}",
+        f"verification={plan.meta.get('verification_hash', '')}",
+        f"test={plan.meta.get('test_name', '')}|{plan.meta.get('test_config_hash', '')}",
     ]
     return sha256_text("\n".join(parts))
 

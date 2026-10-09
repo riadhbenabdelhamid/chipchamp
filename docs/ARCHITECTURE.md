@@ -27,13 +27,30 @@ cites the spec section and requirement ids it realizes.
 2. `report.done` (`tools/meta_tools.py`) calls `PolicyEngine.validate_done`
    (`policy/engine.py`), which re-classifies the change, re-scans for anti-gaming, and
    evaluates every required gate against those job records (`policy/gates.py`). It
-   returns `accepted=False` with the blocking gate list if anything is missing/failing.
+   unions the gates for all applicable task classes. Jobs whose target/configuration
+   fingerprint or captured input dependencies have changed are excluded from
+   verification and listed as `stale_jobs`; they remain available for diagnosis.
+   Regression evidence is tracked by target, test, seed and test configuration,
+   and must cover the declared suite plus explicitly requested test/seed pairs.
+   It returns `accepted=False` with the blocking gate list if anything is missing/failing.
 3. `evidence.bundle` assembles the bundle from the same job records and **signs** the
    machine payload (`evidence/bundle.py`). `verify()` recomputes the hash — any tamper
    (a flipped gate status, an injected result) breaks the signature.
 
 So the path from "agent says done" to "human trusts it" never passes through model
 text: it passes through job records the model cannot forge.
+
+Cache keys include step working directories, effective environments, literal
+transitive HDL/C includes and memory images. Unresolved dependencies, filelists,
+shell wrappers and cocotb plans disable reuse until their input closure can be
+captured. External source, dependency or configuration edits also invalidate the
+context's derived coverage, timing and ISA verdicts.
+
+Detached workers inherit farm configuration and share license seats through OS
+file locks in the job store. V3 submissions reserve budget before launch, and
+completion refreshes the task's records and bills each job once. `mr.prepare`
+uses a private Git index to commit only recorded task content to a new branch;
+the user's staged files and checked-out branch stay intact.
 
 ## The debug loop (P1/P2), concretely
 

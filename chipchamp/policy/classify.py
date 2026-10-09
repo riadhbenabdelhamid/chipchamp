@@ -1,8 +1,7 @@
-"""Task classification (SPEC §11.1): conservative — highest applicable class wins.
+"""Task classification (SPEC §11.1): retain every applicable verification class.
 
-Maps a change set to a task class, which in turn dictates the minimum verification
-ladder and the mandatory gates. Because classification drives *what must pass
-before "done"*, it errs toward the stricter class when signals conflict.
+The highest-ranked class remains the display label. Verification unions all
+applicable gates so independent requirements cannot displace one another.
 """
 from __future__ import annotations
 
@@ -28,6 +27,12 @@ _RANK = {c: i for i, c in enumerate(TASK_CLASSES)}
 
 def classify(diff: Diff, generated_globs: list[str] | None = None,
              riscv_core: bool = False) -> str:
+    """Primary display class; verification must use all applicable classes."""
+    return classify_all(diff, generated_globs, riscv_core)[-1]
+
+
+def classify_all(diff: Diff, generated_globs: list[str] | None = None,
+                 riscv_core: bool = False) -> list[str]:
     """`generated_globs` (SPEC §12.5): files matching the source-of-truth map's
     outputs are regenerated artifacts — they classify as `regmap` (their spec is
     the real change), not as hand-edited RTL.
@@ -82,9 +87,7 @@ def classify(diff: Diff, generated_globs: list[str] | None = None,
             candidates = [c for c in candidates if c != "rtl_functional"]
             candidates.append("rtl_nfc")
 
-    if not candidates:
-        return "docs"
-    return max(candidates, key=lambda c: _RANK.get(c, 0))
+    return sorted(set(candidates or ["docs"]), key=lambda c: _RANK.get(c, 0))
 
 
 def _touches_domains(diff: Diff) -> bool:

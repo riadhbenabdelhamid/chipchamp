@@ -46,6 +46,7 @@ def report_done(ctx: ToolContext, summary: str = "", acknowledge=None) -> dict:
             "task_class": report.task_class,
             "blocking_gates": report.blocking,
             "gate_table": [g.__dict__ for g in report.gates],
+            "stale_jobs": ev.stale_jobs,
             "message": ("task verified — gates satisfied" if report.all_passed
                         else f"REJECTED: {len(report.blocking)} gate(s) not satisfied: "
                              + ", ".join(report.blocking))}
@@ -60,6 +61,9 @@ def report_done(ctx: ToolContext, summary: str = "", acknowledge=None) -> dict:
           "acknowledge": {"type": "array", "items": {"type": "string"}}}})
 def evidence_bundle(ctx: ToolContext, bundle_id: str = "", narrative: str = "",
                     acknowledge=None) -> dict:
+    from .paths import safe_name
+    if bundle_id and safe_name(bundle_id) is None:
+        return {"error": "bundle_id must be a single directory name"}
     # A narrative may only cite jobs the ledger knows. On one run the model
     # wrote a bundle around J-0005..J-0008 before any tool had run: nothing
     # checked the ids, the bundle was signed, and all_gates_passed came back
@@ -114,7 +118,9 @@ def evidence_bundle(ctx: ToolContext, bundle_id: str = "", narrative: str = "",
           "required": ["branch", "title"]})
 def mr_prepare(ctx: ToolContext, branch: str, title: str, narrative: str = "",
                acknowledge=None) -> dict:
+    import os
     import subprocess
+    import tempfile
 
     from ..policy.autonomy import decide
     diff = ctx.current_diff()
@@ -131,31 +137,71 @@ def mr_prepare(ctx: ToolContext, branch: str, title: str, narrative: str = "",
     ev = _collect_evidence(ctx, acknowledge or [])
     report = ctx.policy.validate_done(diff, ev, closure_claim=ctx.closure_claim)
 
-    def git(*args):
-        return subprocess.run(["git", "-C", ctx.ws.root, *args],
-                              capture_output=True, text=True, timeout=30)
+    git_root = ctx.ws.root
+
+    def git(*args, env=None, input=None):
+        return subprocess.run(["git", "-C", git_root, *args],
+                              capture_output=True, text=True, timeout=30,
+                              env=env, input=input)
 
     if git("rev-parse", "--git-dir").returncode != 0:
         return {"error": "not a git repository — cannot prepare an MR"}
-    cur = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
-    if git("checkout", "-b", branch).returncode != 0:
-        return {"error": f"could not create branch '{branch}' (exists?)"}
+    if branch.startswith("-") or git("check-ref-format", f"refs/heads/{branch}").returncode:
+        return {"error": f"invalid branch name: {branch}"}
+    if git("show-ref", "--verify", "--quiet", f"refs/heads/{branch}").returncode == 0:
+        return {"error": f"branch '{branch}' already exists"}
+    parent = git("rev-parse", "HEAD").stdout.strip()
+    prefix = git("rev-parse", "--show-prefix").stdout.strip()
+    git_root = git("rev-parse", "--show-toplevel").stdout.strip()
+    from .paths import PathRefused, ws_path
+    # A private index and commit-tree leave the user's index, branch and
+    # working files untouched. Only the reviewed content enters this commit.
     try:
-        for path in ctx.edits:
-            git("add", path)
-        msg = f"{title}\n\n[chipchamp] task class: {report.task_class}; " \
-              f"gates: {'ALL PASS' if report.all_passed else 'INCOMPLETE ' + str(report.blocking)}"
-        commit = git("-c", "user.email=chipchamp-agent@local",
-                     "-c", "user.name=chipchamp agent", "commit", "-m", msg)
-        if commit.returncode != 0:
-            git("checkout", cur)
-            return {"error": f"commit failed: {commit.stderr.strip()[:200]}"}
-        sha = git("rev-parse", "--short", "HEAD").stdout.strip()
-    finally:
-        git("checkout", cur)
+        with tempfile.TemporaryDirectory(prefix="chipchamp-mr-") as tmp:
+            env = dict(os.environ, GIT_INDEX_FILE=os.path.join(tmp, "index"))
 
+            def checked(*args, input=None, raw=False):
+                result = git(*args, env=env, input=input)
+                if result.returncode:
+                    raise ValueError(result.stderr.strip()[:300] or "git command failed")
+                return result.stdout if raw else result.stdout.strip()
+
+            checked("read-tree", parent)
+            expected = set()
+            for path, edit in ctx.edits.items():
+                ap, rel = ws_path(ctx, path, write=True, allow_generated=True)
+                gitpath = prefix + rel
+                expected.add(gitpath)
+                if edit["status"] == "deleted":
+                    if os.path.exists(ap):
+                        raise ValueError(f"{rel} changed after the recorded deletion")
+                    checked("update-index", "--force-remove", "--", gitpath)
+                else:
+                    with open(ap) as fh:
+                        content = fh.read()
+                    if content != edit["new"]:
+                        raise ValueError(f"{rel} changed after the recorded edit; review it again")
+                    oid = checked("hash-object", "-w", "--stdin", input=content)
+                    mode = "100755" if os.stat(ap).st_mode & 0o111 else "100644"
+                    checked("update-index", "--add", "--cacheinfo", mode, oid, gitpath)
+            tree = checked("write-tree")
+            changed = set(checked("diff-tree", "--no-commit-id", "--name-only", "-r", "-z",
+                                  parent, tree, raw=True).strip("\0").split("\0")) - {""}
+            if not changed or not changed <= expected:
+                raise ValueError("commit must contain only reviewed task files and at least one change")
+            msg = f"{title}\n\n[chipchamp] task class: {report.task_class}; " \
+                  f"gates: {'ALL PASS' if report.all_passed else 'INCOMPLETE ' + str(report.blocking)}\n"
+            sha = checked("-c", "user.email=chipchamp-agent@local", "-c", "user.name=chipchamp agent",
+                          "commit-tree", tree, "-p", parent, input=msg)
+    except (OSError, ValueError, PathRefused, subprocess.SubprocessError) as e:
+        return {"error": f"could not prepare reviewed commit: {e}"}
     b = evidence_bundle(ctx, bundle_id=f"B-mr-{branch.replace('/', '-')}",
                         narrative=narrative or title, acknowledge=acknowledge)
+    if b.get("error"):
+        return b
+    created = git("update-ref", f"refs/heads/{branch}", sha, "0" * len(sha))
+    if created.returncode:
+        return {"error": f"could not create branch: {created.stderr.strip()[:200]}"}
     mr_dir = ctx.ws.dot / "mr"
     mr_dir.mkdir(parents=True, exist_ok=True)
     body = [f"# {title}", "",
@@ -254,7 +300,18 @@ def doc_blockdiagram(ctx: ToolContext, top: str = "", depth: int = 2) -> dict:
 
 
 def _collect_evidence(ctx: ToolContext, acknowledge: list[str]) -> Evidence:
-    ev = Evidence(jobs=list(ctx.task_jobs))
+    jobs, stale = ctx.evidence_jobs()
+    ev = Evidence(jobs=jobs, stale_jobs=stale, expected_sims=list(ctx.expected_sims))
+    ev.diagnosis_jobs = list(ctx.task_jobs)
+    # Without a narrower persisted plan, the declared suite is the conservative
+    # required set. Running one convenient smoke test is not a regression.
+    from .verif_tools import _seeds_for
+    for test in ctx.ws.tests:
+        if test.get("name"):
+            for seed in _seeds_for(ctx, None):
+                req = {"test": test["name"], "seed": seed, "target": ctx.target_name}
+                if req not in ev.expected_sims:
+                    ev.expected_sims.append(req)
     ev.root_cause_notes = [n for n in getattr(ctx, "task_notes", [])
                            if n.get("kind") == "root_cause"]
     ev.riscv_cosim = getattr(ctx, "riscv_cosim", None)
@@ -276,7 +333,7 @@ def _collect_evidence(ctx: ToolContext, acknowledge: list[str]) -> Evidence:
         svc = next(iter(ctx.coverage_sets.values()))
         ev.coverage_baseline = svc.baseline_check(svc.model)
     # cdc: count crossings across touched modules as "new" unless declared clean
-    if ctx.declared_cdc:
+    if "cdc" in ctx.policy.check(ctx.current_diff()).task_classes:
         cdc = 0
         for m in ctx.db.modules:
             dm = ctx.db.domain_report(m)

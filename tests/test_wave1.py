@@ -239,7 +239,8 @@ def test_the_token_ceiling_actually_holds():
 
 def test_an_exhausted_license_budget_blocks_the_job(tmp_path, monkeypatch):
     from chipchamp.tools.context import ToolContext
-    ctx = ToolContext.__new__(ToolContext)
+    from chipchamp.config import Workspace
+    ctx = ToolContext(Workspace(str(tmp_path)))
     ctx.ledger = BudgetLedger(budget=Budget(license_hours=1.0))
     ctx.ledger.license_seconds = 7200.0        # already 2h in
     ctx.budget_approver = lambda kind, why: False
@@ -252,14 +253,13 @@ def test_an_exhausted_license_budget_blocks_the_job(tmp_path, monkeypatch):
 def test_a_human_may_authorize_the_overrun(tmp_path, src):
     """The docstring always promised a pause that ASKS. Approval proceeds."""
     from chipchamp.tools.context import ToolContext
-    ctx = ToolContext.__new__(ToolContext)
+    from chipchamp.config import Workspace
+    ctx = ToolContext(Workspace(str(tmp_path)))
     ctx.ledger = BudgetLedger(budget=Budget(license_hours=1.0))
     ctx.ledger.license_seconds = 7200.0
     ctx.budget_approver = lambda kind, why: True
     ctx.task_jobs = []
     ctx.log_lines = []
-    ctx.ws = type("W", (), {"config": {}})()
-    ctx.target = type("T", (), {"sources": src})()
     ctx.runner = JobRunner(str(tmp_path / "runs"), registry=None)
     plan = Plan(kind="lint", adapter="fake", workdir=str(tmp_path),
                 steps=[Step(argv=["true"], cwd=str(tmp_path))],
@@ -270,13 +270,12 @@ def test_a_human_may_authorize_the_overrun(tmp_path, src):
 
 def test_a_cache_hit_is_not_billed(tmp_path, src):
     from chipchamp.tools.context import ToolContext
-    ctx = ToolContext.__new__(ToolContext)
+    from chipchamp.config import Workspace
+    ctx = ToolContext(Workspace(str(tmp_path)))
     ctx.ledger = BudgetLedger()
     ctx.budget_approver = lambda kind, why: False
     ctx.task_jobs = []
     ctx.log_lines = []
-    ctx.ws = type("W", (), {"config": {}})()
-    ctx.target = type("T", (), {"sources": src})()
     ctx.runner = JobRunner(str(tmp_path / "runs"), registry=None)
     ad = _Adapter()
     ctx.submit(_plan(tmp_path), ad)
@@ -291,11 +290,8 @@ def test_a_cache_hit_is_not_billed(tmp_path, src):
 
 def _ctx_for_undo(tmp_path):
     from chipchamp.tools.context import ToolContext
-    ctx = ToolContext.__new__(ToolContext)
-    ctx.ws = type("W", (), {"root": str(tmp_path)})()
-    ctx.edits = {}
-    ctx.undo_stack = []
-    return ctx
+    from chipchamp.config import Workspace
+    return ToolContext(Workspace(str(tmp_path)))
 
 
 def test_undo_restores_modified_files_and_removes_created_ones(tmp_path):

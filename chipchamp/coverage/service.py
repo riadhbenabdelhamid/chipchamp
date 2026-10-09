@@ -6,7 +6,7 @@ that stops "closure by exclusion".
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..util.jsonio import atomic_write, dump_json, load_json
 from .model import CoverageModel
@@ -18,6 +18,7 @@ class BaselineVerdict:
     total_delta: float
     regressed_sections: list[dict]
     summary: str
+    model_changes: list[dict] = field(default_factory=list)
 
 
 class CoverageService:
@@ -80,13 +81,26 @@ class CoverageService:
             cur_rate = cur_sections.get(sec, 0.0)
             if cur_rate + tol < base_rate:
                 regressed.append({"section": sec, "from": base_rate, "to": cur_rate})
-        ok = (cur_total + tol >= base_total) and not regressed
+        changes = []
+        for ident, old in baseline.bins.items():
+            new = self.model.bins.get(ident)
+            if new is None:
+                changes.append({"bin": ident, "change": "removed"})
+                continue
+            for attr in ("weight", "section", "kind", "group", "point", "name"):
+                if getattr(old, attr) != getattr(new, attr):
+                    changes.append({"bin": ident, "change": attr,
+                                    "from": getattr(old, attr), "to": getattr(new, attr)})
+        ok = (cur_total + tol >= base_total) and not regressed and not changes
         return BaselineVerdict(
             ok=ok, total_delta=round(cur_total - base_total, 2),
             regressed_sections=regressed,
+            model_changes=changes,
             summary=(f"total {base_total}%→{cur_total}% "
                      f"({'+' if cur_total>=base_total else ''}{round(cur_total-base_total,2)}%), "
-                     f"{len(regressed)} section(s) regressed"))
+                     f"{len(regressed)} section(s) regressed"
+                     + (f", {len(changes)} coverage-model change(s) require baseline review"
+                        if changes else "")))
 
     # ---- persistence --------------------------------------------------------
 

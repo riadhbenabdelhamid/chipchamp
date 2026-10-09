@@ -295,7 +295,9 @@ def diff_traces(dut: list[TraceStep], ref: list[TraceStep], *,
             return Divergence(idx, "pc", d, r, ctx, pc_offset)
         if d.insn is not None and r.insn is not None and d.insn != r.insn:
             return Divergence(idx, "insn", d, r, ctx, pc_offset)
-        if (d.reg and r.reg and d.reg == r.reg
+        if d.reg and r.reg and d.reg != r.reg:
+            return Divergence(idx, "writeback", d, r, ctx, pc_offset)
+        if (d.reg and r.reg
                 and d.value is not None and r.value is not None
                 and d.value != r.value
                 # a register holding an ADDRESS legitimately differs by the

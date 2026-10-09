@@ -162,7 +162,8 @@ def lib_fetch(ctx: ToolContext, name: str, view: str = "rtl",
     try:   # a dest of '../../x' used to pass can_write (globs only) and escape
         ws_path(ctx, dest)
     except PathRefused as e:
-        return e.payload
+        return {**e.payload, "written": [], "unchanged": [],
+                "denied": [{"path": dest, "reason": e.payload["error"]}]}
     written, unchanged, denied = [], [], []
     for f in src_files:
         try:

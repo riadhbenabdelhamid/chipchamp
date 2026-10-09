@@ -47,8 +47,7 @@ module timer_reg_top (
   // STATUS.OVF (W1C: hw set wins over sw clear)
   always_ff @(posedge pclk or negedge presetn) begin
     if (!presetn) status_ovf_q <= 1'h0;
-    else if (hwif_status_ovf_set_i) status_ovf_q <= {1{1'b1}};
-    else if (apb_write & sel_status & (|pwdata[0])) status_ovf_q <= '0;
+    else status_ovf_q <= (status_ovf_q & ~({1{apb_write & sel_status}} & pwdata[0])) | hwif_status_ovf_set_i;
   end
 
   always_comb begin

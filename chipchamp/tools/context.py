@@ -57,8 +57,11 @@ class ToolContext:
         # detached job ids still running when the task ends — the session
         # parks on these so a later wake can collect them
         self.pending_jobs: list[str] = []
+        self.expected_sims: list[dict] = []
+        self._charged_jobs: set[str] = set()
         self._history = None
         self._notebook = None
+        self._measurement_hash = self.verification_hash()
 
     # ---- lazy design db -----------------------------------------------------
 
@@ -103,17 +106,22 @@ class ToolContext:
 
         Exceeding a budget raises :class:`BudgetExceeded` unless the human
         approves the overrun — a pause, never a silent degrade."""
-        if is_v3:
-            ok, why = self.ledger.can_submit_v3()
-            if not ok and not self._budget_ok("v3_submissions", why):
-                raise BudgetExceeded(why)
+        self.refresh_jobs()
+        plan.meta["verification_hash"] = self.refresh_measurements()
+        plan.meta["target_name"] = self.target_name
         if plan.license_features:
             ok, why = self.ledger.can_spend_license(0.0)
             if not ok and not self._budget_ok("license_hours", why):
                 raise BudgetExceeded(why)
+        if is_v3:
+            ok, why = self.ledger.reserve_v3()
+            if not ok:
+                if not self._budget_ok("v3_submissions", why):
+                    raise BudgetExceeded(why)
+                self.ledger.record_v3()
         if idle_timeout is None:   # the planner stashes it on the plan (sim tests)
             idle_timeout = (getattr(plan, "meta", None) or {}).get("idle_timeout_s")
-        kw = dict(input_files=input_files or self.target.sources, seed=seed,
+        kw = dict(input_files=self.target.sources if input_files is None else input_files, seed=seed,
                   timeout=timeout, idle_timeout=idle_timeout,
                   env_modules=self.ws.config.get("tools", {})
                   .get("env_modules", {}).get(adapter.name, []))
@@ -128,15 +136,76 @@ class ToolContext:
         rec, result = self.runner.submit(plan, adapter, no_cache=no_cache, **kw)
         self.task_jobs.append(rec)
         if getattr(rec, "cached", False):
+            if is_v3:
+                self.ledger.refund_v3()
             # a reused verdict costs nothing and must not be billed as if it
             # had run — and the human is told, because an invisible cache is
             # indistinguishable from a lie about work performed
             self.note(f"{rec.id} reused (identical inputs — nothing re-run)")
         else:
             self.ledger.record_job(rec)
-            if is_v3:
-                self.ledger.record_v3()
+            self._charged_jobs.add(rec.id)
         return rec, result
+
+    def refresh_jobs(self) -> None:
+        """Reconcile detached outcomes and bill each completed job once."""
+        for i, rec in enumerate(self.task_jobs):
+            if not getattr(rec, "detached", False):
+                continue
+            current = self.runner.get(rec.id)
+            if current is None:
+                continue
+            self.task_jobs[i] = current
+            if current.status in ("running", "queued"):
+                continue
+            if current.id in self.pending_jobs:
+                self.pending_jobs.remove(current.id)
+            if current.id not in self._charged_jobs:
+                self.ledger.record_job(current)
+                self._charged_jobs.add(current.id)
+
+    def verification_hash(self) -> str:
+        """The current target and task configuration, independent of job outputs."""
+        import json
+        from ..jobs.inputs import dependency_files
+        from ..policy.diff import FileChange
+        from ..util.hashing import hash_manifest, sha256_text
+        self.target.invalidate()
+        files = list(self.target.sources)
+        files.extend(str(p) for ext in ("*.toml", "*.yaml") for p in self.ws.dot.glob(ext))
+        files.extend(os.path.join(self.ws.root, p) for p in self.edits
+                     if not FileChange(p, "modified").is_doc)
+        dependencies, _ = dependency_files(files, self.target.incdirs, [self.ws.root])
+        return sha256_text(json.dumps({
+            "target": self.target_name, "files": hash_manifest(set(files)),
+            "dependencies": dependencies,
+            "defines": self.target.defines, "incdirs": self.target.incdirs}, sort_keys=True))
+
+    def refresh_measurements(self) -> str:
+        """Invalidate derived verdicts on target, dependency or config changes."""
+        current = self.verification_hash()
+        if current != self._measurement_hash:
+            self.coverage_sets.clear()
+            self.sta_delta = self.riscv_cosim = self.riscv_compliance = None
+        self._measurement_hash = current
+        return current
+
+    def evidence_jobs(self) -> tuple[list, list[str]]:
+        """Keep historical jobs for debugging, but reject stale verification."""
+        from ..jobs.inputs import snapshot_current
+        from ..util.hashing import hash_manifest
+        self.refresh_jobs()
+        current = self.refresh_measurements()
+        valid, stale = [], []
+        for rec in self.task_jobs:
+            outdated = (bool(getattr(rec, "verification_hash", ""))
+                        and rec.verification_hash != current)
+            if getattr(rec, "input_snapshot", None):
+                outdated |= not snapshot_current(rec.input_snapshot)
+            elif getattr(rec, "inputs_hash", "") and rec.input_files:
+                outdated |= rec.inputs_hash != hash_manifest(rec.input_files)
+            (stale if outdated else valid).append(rec.id if outdated else rec)
+        return valid, stale
 
     def _budget_ok(self, kind: str, why: str) -> bool:
         """Ask the human to authorize an overrun. Default is refusal: an
@@ -175,6 +244,10 @@ class ToolContext:
     # ---- edit tracking ------------------------------------------------------
 
     def record_edit(self, rel_path: str, old: str, new: str, status: str) -> None:
+        if old != new:
+            # Derived measurements have no independent source manifest.
+            self.coverage_sets.clear()
+            self.sta_delta = self.riscv_cosim = self.riscv_compliance = None
         if rel_path in self.edits:
             self.edits[rel_path]["new"] = new
             self.edits[rel_path]["status"] = status

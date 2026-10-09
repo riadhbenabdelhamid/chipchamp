@@ -9,6 +9,7 @@ behind FR-CORE-02: the agent is structurally unable to claim done without them.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from typing import Optional
 
 # ladder rung -> human label
@@ -65,6 +66,9 @@ class Evidence:
     riscv_compliance: Optional[dict] = None
     # root_cause notes filed during THIS task (the diagnosis_cited gate)
     root_cause_notes: list = field(default_factory=list)
+    expected_sims: list[dict] = field(default_factory=list)
+    stale_jobs: list[str] = field(default_factory=list)
+    diagnosis_jobs: list = field(default_factory=list)  # historical failures remain citable
 
     def jobs_of(self, kind: str) -> list:
         return [j for j in self.jobs if j.kind == kind]
@@ -102,8 +106,12 @@ class GateReport:
                 "gates": [g.__dict__ for g in self.gates]}
 
 
-def required_gates(task_class: str) -> tuple[str, list[str]]:
-    return CLASS_GATES.get(task_class, ("V1", ["elab", "no_gaming"]))
+def required_gates(task_class: str, task_classes=None) -> tuple[str, list[str]]:
+    rung = CLASS_GATES.get(task_class, ("V1", []))[0]
+    gates = []
+    for cls in task_classes or [task_class]:
+        gates.extend(CLASS_GATES.get(cls, ("V1", ["elab", "no_gaming"]))[1])
+    return rung, list(dict.fromkeys(gates))
 
 
 def _passed_job(evidence: Evidence, kinds: list[str], predicate=None) -> Optional[object]:
@@ -114,13 +122,18 @@ def _passed_job(evidence: Evidence, kinds: list[str], predicate=None) -> Optiona
     return None
 
 
-def _sim_identity(j) -> str:
+def _sim_identity(j) -> tuple:
     import os
+    name = getattr(j, "test_name", "")
+    if name:
+        return (getattr(j, "target_name", ""), name, getattr(j, "seed", None),
+                getattr(j, "test_config_hash", ""))
     for f in reversed(getattr(j, "input_files", []) or []):
         if "tb" in os.path.basename(f).lower() or "test" in f.lower():
-            return os.path.basename(f)
+            return (os.path.realpath(f), getattr(j, "seed", None))
     waves = j.artifacts.get("waves", "") if hasattr(j, "artifacts") else ""
-    return os.path.basename(waves) or (j.input_files[-1] if getattr(j, "input_files", None) else j.id)
+    return (waves or (j.input_files[-1] if getattr(j, "input_files", None) else j.id),
+            getattr(j, "seed", None))
 
 
 def _efpga_metrics(evidence: Evidence,
@@ -138,15 +151,6 @@ def _efpga_metrics(evidence: Evidence,
     if not jobs:
         return None
     latest = max(jobs, key=lambda j: getattr(j, "start_ts", 0))
-    return latest.result.get("metrics")
-
-
-def _pnr_norm(evidence: Evidence) -> Optional[dict]:
-    """Normalized physical-signoff metrics from the latest RTL-to-GDSII job."""
-    pnr = evidence.jobs_of("pnr")
-    if not pnr:
-        return None
-    latest = max(pnr, key=lambda j: getattr(j, "start_ts", 0))
     return latest.result.get("metrics")
 
 
@@ -168,8 +172,8 @@ def _latest_sims(evidence: Evidence) -> list:
     return list(by.values())
 
 
-def evaluate(task_class: str, evidence: Evidence) -> GateReport:
-    rung, gates = required_gates(task_class)
+def evaluate(task_class: str, evidence: Evidence, *, task_classes=None) -> GateReport:
+    rung, gates = required_gates(task_class, task_classes)
     report = GateReport(task_class=task_class, min_rung=rung)
     for name in gates:
         report.gates.append(_eval_one(name, evidence))
@@ -190,7 +194,12 @@ def _eval_one(name: str, ev: Evidence) -> GateResult:
     if name == "lint":
         # a lint job with no UNWAIVED errors (waivers are data — §12.6; only
         # active, approved waivers suppress)
-        for j in ev.jobs_of("lint"):
+        for j in ev.jobs_of("lint")[-1:]:
+            if j.status != "passed":
+                return GateResult(name, "missing" if j.status in ("running", "queued") else "fail",
+                                  j.id, f"latest lint job is {j.status}")
+            if not isinstance(j.result.get("diagnostics"), list):
+                return GateResult(name, "missing", j.id, "lint diagnostics were not recorded")
             errs = [d for d in j.result.get("diagnostics", [])
                     if d.get("severity") == "error" and not d.get("waiver")]
             if not errs:
@@ -210,6 +219,15 @@ def _eval_one(name: str, ev: Evidence) -> GateResult:
     if name == "affected_regress":
         # judge by the LATEST result per testbench (fix-then-rerun aware)
         latest = _latest_sims(ev)
+        missing = [r for r in ev.expected_sims if not any(
+            getattr(j, "test_name", "") == r["test"]
+            and getattr(j, "seed", None) == r["seed"]
+            and getattr(j, "target_name", "") == r.get("target", "")
+            for j in latest)]
+        if missing:
+            return GateResult(name, "missing", "",
+                              "required tests not run: " + ", ".join(
+                                  f"{r['test']} seed={r['seed']}" for r in missing))
         if latest and all(j.status == "passed" for j in latest):
             return GateResult(name, "pass", ",".join(j.id for j in latest[:3]),
                               f"{len(latest)} affected test(s) passing")
@@ -223,16 +241,18 @@ def _eval_one(name: str, ev: Evidence) -> GateResult:
         return GateResult(name, "pass" if bv.ok else "fail", "coverage",
                           bv.summary)
     if name == "lec":
-        j = _passed_job(ev, ["lec"], lambda x: x.result.get("status") == "equivalent")
-        if j:
+        jobs = ev.jobs_of("lec")
+        if not jobs:
+            return GateResult(name, "missing", "", "no LEC on record")
+        j = jobs[-1]
+        if j.status == "passed" and j.result.get("status") == "equivalent":
             return GateResult(name, "pass", j.id, "LEC: equivalent")
         # an inconclusive LEC must NOT pass (SPEC P7: downgrade to functional)
-        inconcl = [j for j in ev.jobs_of("lec")
-                   if j.result.get("status") == "inconclusive"]
-        if inconcl:
-            return GateResult(name, "fail", inconcl[0].id,
+        if j.result.get("status") == "inconclusive":
+            return GateResult(name, "fail", j.id,
                               "LEC inconclusive — reclassify as functional change")
-        return GateResult(name, "missing", "", "no LEC on record")
+        return GateResult(name, "missing" if j.status in ("queued", "running") else "fail",
+                          j.id, f"latest LEC: {j.status}")
     if name == "cdc_clean":
         if ev.cdc_new_violations is None:
             return GateResult(name, "missing", "", "no CDC analysis on record")
@@ -244,26 +264,36 @@ def _eval_one(name: str, ev: Evidence) -> GateResult:
         return GateResult(name, "pass" if ev.sta_new_violations == 0 else "fail",
                           "sta", f"{ev.sta_new_violations} new timing violation(s)")
     if name in ("drc_clean", "lvs_clean", "timing_met", "antenna_clean"):
-        norm = _pnr_norm(ev)
-        if norm is None:
+        jobs = ev.jobs_of("pnr")
+        if not jobs:
             return GateResult(name, "missing", "", "no RTL-to-GDSII (pnr) run on record")
-        job = next((j for j in ev.jobs_of("pnr") if j.status in ("passed", "failed")), None)
-        jid = job.id if job else "pnr"
+        job = jobs[-1]
+        jid = job.id
+        if job.status != "passed" and not (
+                job.status == "failed" and job.result.get("status") == "signoff-fail"):
+            return GateResult(name, "missing" if job.status in ("running", "queued") else "fail",
+                              jid, f"physical run is {job.status}")
+        norm = job.result.get("metrics") or {}
+        keys = {"drc_clean": ("drc_violations",), "lvs_clean": ("lvs_errors",),
+                "antenna_clean": ("antenna_violations",),
+                "timing_met": ("setup_ws_ns", "hold_ws_ns")}[name]
+        if any(not _finite(norm.get(k)) for k in keys):
+            return GateResult(name, "missing", jid, "missing/invalid metrics: " + ", ".join(keys))
         if name == "drc_clean":
             n = norm.get("drc_violations")
-            return GateResult(name, "pass" if not n else "fail", jid,
+            return GateResult(name, "pass" if n == 0 else "fail", jid,
                               f"{n if n is not None else '?'} DRC violation(s)")
         if name == "lvs_clean":
             n = norm.get("lvs_errors")
-            return GateResult(name, "pass" if not n else "fail", jid,
+            return GateResult(name, "pass" if n == 0 else "fail", jid,
                               f"{n if n is not None else '?'} LVS error(s)")
         if name == "antenna_clean":
             n = norm.get("antenna_violations")
-            return GateResult(name, "pass" if not n else "fail", jid,
+            return GateResult(name, "pass" if n == 0 else "fail", jid,
                               f"{n if n is not None else '?'} antenna net(s)")
         if name == "timing_met":
             s, h = norm.get("setup_ws_ns"), norm.get("hold_ws_ns")
-            ok = (s is None or s >= 0) and (h is None or h >= 0)
+            ok = s >= 0 and h >= 0
             return GateResult(name, "pass" if ok else "fail", jid,
                               f"setup WNS {s} ns, hold WHS {h} ns")
     if name == "isa_cosim":
@@ -372,8 +402,9 @@ def _eval_one(name: str, ev: Evidence) -> GateResult:
                               f"{n} byte bitstream, routed={routed}")
     if name == "diagnosis_cited":
         import re as _re
-        task_ids = {j.id for j in ev.jobs}
-        failing = {j.id for j in ev.jobs if j.status != "passed"}
+        history = ev.diagnosis_jobs or ev.jobs
+        task_ids = {j.id for j in history}
+        failing = {j.id for j in history if j.status != "passed"}
         cited = set()
         for n in ev.root_cause_notes:
             text = " ".join(str(n.get(k, "")) for k in
@@ -432,3 +463,7 @@ def _mk(name: str, job, missing_msg: str) -> GateResult:
     if job is None:
         return GateResult(name, "missing", "", missing_msg)
     return GateResult(name, "pass", job.id, job.summary)
+
+
+def _finite(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)

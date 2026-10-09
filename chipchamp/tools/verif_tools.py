@@ -99,12 +99,17 @@ def _timeout_hint(after_s: float, source: str, reason: str) -> str:
 
 
 def _finish_plan(ctx: ToolContext, t: dict | None, adapter, plan, files,
-                 builtin: float, timeout_s=None):
+                 builtin: float, timeout_s=None, test_name: str = ""):
     """The planner's one exit: resolve the limits and stash them on the plan
     so every submit path (sim.run, regress, cov, triage) sees the same."""
     timeout, source = _timeout_for(ctx, t, builtin, timeout_s)
     plan.meta.update(timeout_s=timeout, timeout_source=source,
-                     idle_timeout_s=_idle_for(ctx, t))
+                     idle_timeout_s=_idle_for(ctx, t), test_name=test_name)
+    import json
+    from ..util.hashing import sha256_text
+    plan.meta["test_config_hash"] = sha256_text(json.dumps(
+        {"runner": _runner_of(t), "top": plan.meta.get("tb_top", ""),
+         "steps": [s.argv for s in plan.steps]}, sort_keys=True))
     return adapter, plan, files, timeout
 
 
@@ -154,7 +159,7 @@ def _plan_for_test(ctx: ToolContext, test: str, seed: int = 1,
         plan = adapter.sim_cpp(rtl, cpp, top, ctx.ws.root,
                                cpp_incdirs=cpp_incdirs, incdirs=ctx.target.incdirs,
                                defines=ctx.target.defines, seed=seed)
-        return _finish_plan(ctx, t, adapter, plan, rtl, 300, timeout_s)
+        return _finish_plan(ctx, t, adapter, plan, rtl, 300, timeout_s, test)
     if runner.get("kind") == "cocotb":
         adapter = ctx.registry.get("cocotb")
         if not adapter.available():
@@ -174,7 +179,7 @@ def _plan_for_test(ctx: ToolContext, test: str, seed: int = 1,
                            seed=seed, waves=waves,
                            test_dir=os.path.join(ctx.ws.root,
                                                  runner.get("test_dir", "tb")))
-        return _finish_plan(ctx, t, adapter, plan, rtl, 180, timeout_s)
+        return _finish_plan(ctx, t, adapter, plan, rtl, 180, timeout_s, test)
     files, tb_top = _resolve_sim(ctx, test)
     is_uvm = bool(uvm_test) or runner.get("kind") == "uvm" or bool(runner.get("uvm"))
     pargs = list(plusargs or [])
@@ -200,7 +205,7 @@ def _plan_for_test(ctx: ToolContext, test: str, seed: int = 1,
     plan = adapter.sim(files, tb_top=tb_top, workdir=ctx.ws.root, seed=seed,
                        waves=waves, plusargs=pargs, incdirs=incdirs or None, **kw)
     return _finish_plan(ctx, t, adapter, plan, files, 600 if is_uvm else 120,
-                        timeout_s)
+                        timeout_s, test)
 
 
 @tool("sim.list_tests", "List tests from the regression manifest with tags/owners.",
@@ -321,6 +326,13 @@ def regress_run(ctx: ToolContext, tag: str = "", tests=None, seeds=None,
     if not names:
         return {"error": "no tests selected", "tag": tag}
     seeds = _seeds_for(ctx, seeds)
+    # Record obligations BEFORE planning/submitting. A crashed or budget-blocked
+    # test still belongs to the required set and cannot disappear from gates.
+    for name in names:
+        for seed in seeds:
+            requirement = {"test": name, "seed": seed, "target": ctx.target_name}
+            if requirement not in ctx.expected_sims:
+                ctx.expected_sims.append(requirement)
 
     timeouts: list[dict] = []
 
@@ -444,6 +456,7 @@ def job_status(ctx: ToolContext, job: str) -> dict:
           "required": ["job"]})
 def job_wait(ctx: ToolContext, job: str, timeout_s: float = 900) -> dict:
     rec = ctx.runner.wait(job, timeout=max(1.0, float(timeout_s)))
+    ctx.refresh_jobs()
     if rec is None:
         return {"job": job, "status": "running", "timed_out": True,
                 "note": "still running after the wait — it has NOT failed. "
@@ -584,6 +597,7 @@ def wave_snapshot(ctx: ToolContext, run: str, signals: list[str], t0: int, t1: i
           "test": {"type": "string"}, "set": {"type": "string", "default": "default"}},
           "required": ["test"]})
 def cov_run(ctx: ToolContext, test: str, set: str = "default") -> dict:
+    ctx.refresh_measurements()
     t = ctx.find_test(test)
     if _runner_of(t).get("kind") == "cocotb":
         # cocotb-coverage exports functional coverage XML from the Python TB —
@@ -629,6 +643,7 @@ def cov_run(ctx: ToolContext, test: str, set: str = "default") -> dict:
           "test": {"type": "string", "description": "attribute hits to this test"}},
           "required": ["path"]})
 def cov_load(ctx: ToolContext, path: str, set: str = "default", test: str = "") -> dict:
+    ctx.refresh_measurements()
     from ..coverage import ingest_coverage
     p = path if os.path.isabs(path) else os.path.join(ctx.ws.root, path)
     if not os.path.exists(p):

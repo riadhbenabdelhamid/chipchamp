@@ -6,6 +6,7 @@ degrades a gate. The ledger is surfaced in the evidence bundle (cost accounting)
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import threading
 
 
 class BudgetExceeded(Exception):
@@ -49,6 +50,21 @@ class BudgetLedger:
     cpu_seconds: float = 0.0
     tokens_used: int = 0
 
+    def __post_init__(self):
+        self._lock = threading.RLock()
+        self._charged_jobs: set[str] = set()
+
+    def reserve_v3(self) -> tuple[bool, str]:
+        with self._lock:
+            ok, why = self.can_submit_v3()
+            if ok:
+                self.v3_used += 1
+            return ok, why
+
+    def refund_v3(self) -> None:
+        with self._lock:
+            self.v3_used = max(0, self.v3_used - 1)
+
     def can_submit_v3(self) -> tuple[bool, str]:
         if self.v3_used >= self.budget.v3_submissions:
             return False, (f"V3 submission budget exhausted "
@@ -71,14 +87,20 @@ class BudgetLedger:
         return True, ""
 
     def record_job(self, rec) -> None:
-        self.cpu_seconds += rec.cpu_seconds
-        self.license_seconds += rec.license_seconds
+        with self._lock:
+            if rec.id in self._charged_jobs or getattr(rec, "cached", False):
+                return
+            self._charged_jobs.add(rec.id)
+            self.cpu_seconds += rec.cpu_seconds
+            self.license_seconds += rec.license_seconds
 
     def record_v3(self) -> None:
-        self.v3_used += 1
+        with self._lock:
+            self.v3_used += 1
 
     def record_tokens(self, n: int) -> None:
-        self.tokens_used += n
+        with self._lock:
+            self.tokens_used += n
 
     def snapshot(self) -> dict:
         return {

@@ -303,6 +303,8 @@ def riscv_cosim(ctx: ToolContext, core_trace: str, elf: str = "",
                 skip_dut: int | None = None, region: str = "",
                 hart: int | None = None, model: str = "auto",
                 pc_offset: int = 0, harts: int = 0, march: str = "") -> dict:
+    ctx.refresh_measurements()
+    ctx.riscv_cosim = None
     from ..riscv.trace import (align_traces, diff_traces, parse_trace,
                                split_by_hart)
     cpath = _abs(ctx, core_trace)
@@ -452,6 +454,8 @@ def riscv_cosim(ctx: ToolContext, core_trace: str, elf: str = "",
 def riscv_compliance(ctx: ToolContext, config: str = "", suite: str = "",
                      env: str = "", arch_test: str = "", testfile: str = "",
                      timeout: float = 3600) -> dict:
+    ctx.refresh_measurements()
+    ctx.riscv_compliance = None
     from ..riscv.compliance import (find_riscof, guess_suite, parse_riscof_log,
                                     riscof_argv)
     riscof = find_riscof()

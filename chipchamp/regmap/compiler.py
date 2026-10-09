@@ -216,9 +216,9 @@ def _gen_sv(spec: RegmapSpec) -> str:
             L.append(f"  // {reg.name}.{f.name} (W1C: hw set wins over sw clear)")
             L.append("  always_ff @(posedge pclk or negedge presetn) begin")
             L.append(f"    if (!presetn) {_q(reg, f)} <= {f.width}'h{f.reset:x};")
-            L.append(f"    else if ({_hwif(reg, f)}) {_q(reg, f)} <= {{{f.width}{{1'b1}}}};")
-            L.append(f"    else if (apb_write & {sel} & (|pwdata{f.slice})) "
-                     f"{_q(reg, f)} <= '0;")
+            L.append(f"    else {_q(reg, f)} <= ({_q(reg, f)} & "
+                     f"~({{{f.width}{{apb_write & {sel}}}}} & pwdata{f.slice})) "
+                     f"| {_hwif(reg, f)};")
             L.append("  end")
         for f in rw:
             L.append(f"  assign {_hwif(reg, f)} = {_q(reg, f)};")

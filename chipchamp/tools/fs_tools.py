@@ -15,10 +15,6 @@ from .context import ToolContext
 from .paths import PathRefused, ws_path
 
 
-def _abs(ctx: ToolContext, path: str) -> str:
-    return path if os.path.isabs(path) else os.path.join(ctx.ws.root, path)
-
-
 # What "source files" means when no pattern is given. The old default was
 # *.sv alone — on a workspace whose own RTL is all SystemVerilog that looks
 # fine forever, but it made the entire eFPGA vertical (Verilog .v, fabric
@@ -102,7 +98,13 @@ def fs_list(ctx: ToolContext, dir: str = ".", pattern: str = "") -> dict:
         hits = glob.glob(os.path.join(base, "**", pattern), recursive=True)
     else:
         hits = _source_files(base)
-    rels = [ctx.rel(h) for h in hits if ctx.policy.can_read(ctx.rel(h))]
+    rels = []
+    for h in hits:
+        try:
+            _, rel = ws_path(ctx, ctx.rel(h))
+        except PathRefused:
+            continue
+        rels.append(rel)
     out = {"dir": dir, "files": sorted(rels)}
     if not rels:
         # an empty listing of a NON-empty directory must say so — "[]" reads
@@ -133,10 +135,15 @@ def fs_grep(ctx: ToolContext, pattern: str, glob: str = "") -> dict:
     files = (_g.glob(os.path.join(ctx.ws.root, glob), recursive=True)
              if glob else _source_files(ctx.ws.root))
     hits = []
+    seen = set()
     for f in files:
-        rel = ctx.rel(f)
-        if not ctx.policy.can_read(rel):
+        try:
+            f, rel = ws_path(ctx, ctx.rel(f))
+        except PathRefused:
             continue
+        if f in seen:
+            continue
+        seen.add(f)
         try:
             for i, ln in enumerate(open(f, errors="replace"), 1):
                 if rx.search(ln):
@@ -144,18 +151,6 @@ def fs_grep(ctx: ToolContext, pattern: str, glob: str = "") -> dict:
         except OSError:
             continue
     return truncate({"pattern": pattern, "hits": hits}, max_items=40)
-
-
-def _workspace_path_guard(ctx, path: str):
-    """Mutating fs tools take WORKSPACE-RELATIVE paths only. A model wrote to
-    '/work_tmp_note' (filesystem root) and got a raw PermissionError — teach
-    the contract instead, and refuse workspace escapes outright. (Shared
-    resolver: tools/paths.ws_path; kept as a thin wrapper for the call sites.)"""
-    try:
-        ws_path(ctx, path)
-    except PathRefused as e:
-        return e.payload
-    return None
 
 
 @tool("fs.write", "Create or overwrite a file (policy/ACL-gated; recorded for "
@@ -167,13 +162,10 @@ def _workspace_path_guard(ctx, path: str):
 
 
 def fs_write(ctx: ToolContext, path: str, content: str) -> dict:
-    bad = _workspace_path_guard(ctx, path)
-    if bad:
-        return bad
-    ok, why = ctx.policy.can_write(path)
-    if not ok:
-        return {"error": f"write denied: {why}"}
-    ap = _abs(ctx, path)
+    try:
+        ap, path = ws_path(ctx, path, write=True)
+    except PathRefused as e:
+        return e.payload
     old = open(ap, errors="replace").read() if os.path.exists(ap) else ""
     status = "modified" if old else "added"
     os.makedirs(os.path.dirname(ap), exist_ok=True)
@@ -263,13 +255,10 @@ def _nearest_raw(text: str, old: str, window: int = 2) -> dict | None:
       schema={"type": "object", "properties": {
           "path": {"type": "string"}}, "required": ["path"]})
 def fs_delete(ctx: ToolContext, path: str) -> dict:
-    bad = _workspace_path_guard(ctx, path)
-    if bad:
-        return bad
-    ok, why = ctx.policy.can_write(path)
-    if not ok:
-        return {"error": f"delete denied: {why}"}
-    ap = _abs(ctx, path)
+    try:
+        ap, path = ws_path(ctx, path, write=True)
+    except PathRefused as e:
+        return e.payload
     if not os.path.exists(ap):
         return {"error": f"no such file: {path}"}
     if os.path.isdir(ap):
@@ -290,13 +279,10 @@ def fs_delete(ctx: ToolContext, path: str) -> dict:
           "path": {"type": "string"}, "old": {"type": "string"}, "new": {"type": "string"}},
           "required": ["path", "old", "new"]})
 def fs_edit(ctx: ToolContext, path: str, old: str, new: str) -> dict:
-    bad = _workspace_path_guard(ctx, path)
-    if bad:
-        return bad
-    ok, why = ctx.policy.can_write(path)
-    if not ok:
-        return {"error": f"write denied: {why}"}
-    ap = _abs(ctx, path)
+    try:
+        ap, path = ws_path(ctx, path, write=True)
+    except PathRefused as e:
+        return e.payload
     if not os.path.exists(ap):
         return {"error": f"no such file: {path}"}
     text = open(ap, errors="replace").read()

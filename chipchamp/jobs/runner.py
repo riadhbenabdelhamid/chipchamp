@@ -118,12 +118,38 @@ def _kill_tree(p: subprocess.Popen) -> None:
 
 
 class LicensePool:
-    """Token semaphores per license feature (SPEC §8.5 FR-JOB-03)."""
+    """Thread semaphores plus process-shared seats for a job store.
 
-    def __init__(self, pools: dict[str, int] | None = None):
+    OS file locks are released if a worker dies, so a crash cannot leave a
+    permanent seat reservation. All runners using the store share the seats.
+    """
+
+    def __init__(self, pools: dict[str, int] | None = None, shared_dir=None):
         self._sem = {feat: threading.BoundedSemaphore(max(1, n))
                      for feat, n in (pools or {}).items()}
         self._counts = dict(pools or {})
+        self.shared_dir = Path(shared_dir) if shared_dir else None
+        if self.shared_dir is not None:
+            self.shared_dir.mkdir(parents=True, exist_ok=True)
+        self._held: dict = {}
+        self._held_lock = threading.Lock()
+
+    def _file_seat(self, feature, deadline):
+        import fcntl
+        from ..util.hashing import sha256_text
+        while True:
+            for i in range(max(1, self._counts[feature])):
+                path = self.shared_dir / f"{sha256_text(feature)}-{i}.lock"
+                fh = open(path, "a+")
+                try:
+                    fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    return fh
+                except BlockingIOError:
+                    fh.close()
+            if deadline is not None and time.monotonic() >= deadline:
+                return None
+            time.sleep(min(0.05, max(0, deadline - time.monotonic()))
+                       if deadline is not None else 0.05)
 
     def acquire(self, features: list[str], timeout: float | None = None) -> bool:
         """Take one seat of every pooled feature, or none of them.
@@ -132,18 +158,39 @@ class LicensePool:
         [B, A] with no timeout each held one and waited for the other
         forever. Features with no pool are unlimited and pass through."""
         acquired = []
+        deadline = time.monotonic() + timeout if timeout is not None else None
         for f in sorted(set(features)):
             if f in self._sem:
-                if not self._sem[f].acquire(timeout=timeout):
-                    for a in acquired:
-                        self._sem[a].release()
+                remaining = max(0, deadline - time.monotonic()) if deadline is not None else None
+                if not self._sem[f].acquire(timeout=remaining):
+                    self.release(acquired)
                     return False
+                if self.shared_dir is not None:
+                    try:
+                        fh = self._file_seat(f, deadline)
+                    except BaseException:
+                        self._sem[f].release()
+                        self.release(acquired)
+                        raise
+                    if fh is None:
+                        self._sem[f].release()
+                        self.release(acquired)
+                        return False
+                    with self._held_lock:
+                        self._held.setdefault((threading.get_ident(), f), []).append(fh)
                 acquired.append(f)
         return True
 
     def release(self, features: list[str]) -> None:
         for f in sorted(set(features)):
             if f in self._sem:
+                if self.shared_dir is not None:
+                    with self._held_lock:
+                        held = self._held.get((threading.get_ident(), f), [])
+                        fh = held.pop() if held else None
+                    if fh is None:
+                        continue
+                    fh.close()
                 try:
                     self._sem[f].release()
                 except ValueError:
@@ -162,7 +209,8 @@ class JobRunner:
         self.registry = registry
         self.env_modules = env_modules or {}
         self.licenses = LicensePool({f: v.get("tokens", 1) if isinstance(v, dict) else v
-                                     for f, v in (licenses or {}).items()})
+                                     for f, v in (licenses or {}).items()},
+                                    shared_dir=self.store_dir / ".licenses")
         # None/empty = pass the environment through minus secrets (jobs.env);
         # a list = strict allowlist for hermetic steps. Never the old
         # ["PATH","HOME","USER"] default: honoured, it broke every EDA flow.
@@ -171,7 +219,7 @@ class JobRunner:
         # How long a job may queue for a license seat — distinct from the run
         # timeout, which used to double as the queue wait. None = wait.
         self.license_wait_s = license_wait_s
-        self.farm = farm or FarmConfig()
+        self.farm = FarmConfig(**farm) if isinstance(farm, dict) else farm or FarmConfig()
         self.cache = JobCache(self.store_dir, enabled=cache)
         self._seq = self._load_seq()
         self._lock = threading.Lock()
@@ -242,13 +290,17 @@ class JobRunner:
                no_cache: bool = False,
                idle_timeout: Optional[float] = None) -> tuple[JobRecord, ToolResult]:
         from .cache import cache_key, result_from_record, reusable
+        from .inputs import capture_inputs
+        snapshot = capture_inputs(plan, input_files or [])
         key = ""
         if self.cache.enabled and not no_cache:
             ih = ""
             try:
                 ih = hash_manifest(input_files or [])
                 key = cache_key(plan, adapter, inputs_hash=ih, seed=seed,
-                                defines=defines, env_modules=env_modules)
+                                defines=defines, env_modules=env_modules,
+                                snapshot=snapshot,
+                                environment=scrub_env(allowlist=self.env_allowlist, deny=self.env_deny))
             except Exception:
                 key = ""   # an unhashable plan just means no reuse, never a fail
             hit = self.cache.lookup(key) if key else None
@@ -273,6 +325,9 @@ class JobRunner:
             defines=defines or {}, seed=seed,
             license_features=list(plan.license_features),
             env_modules=env_modules or [])
+        rec.input_snapshot = snapshot
+        for attr in ("verification_hash", "test_name", "target_name", "test_config_hash"):
+            setattr(rec, attr, plan.meta.get(attr, ""))
         rec.compute_inputs_hash()
         rec.start_ts = time.time()
 
@@ -337,6 +392,9 @@ class JobRunner:
         placeholder.steps, placeholder.cpu_seconds = list(done.steps), done.cpu_seconds
         placeholder.license_seconds = done.license_seconds
         placeholder.ran_as = done.id
+        for attr in ("input_snapshot", "inputs_hash", "input_files", "verification_hash",
+                     "test_name", "target_name", "test_config_hash", "end_ts"):
+            setattr(placeholder, attr, getattr(done, attr))
 
     def submit_async(self, plan: Plan, adapter: Adapter, **kw) -> JobRecord:
         """Start a job and return its ``running`` record immediately.
@@ -352,6 +410,9 @@ class JobRunner:
         abandoned if the launcher exits first.
         """
         from .worker import adapter_ref, plan_to_dict
+        # Detached work always executes; its reservation and completion cost
+        # must not be confused with a free synchronous cache hit.
+        kw["no_cache"] = True
         job_id = self._next_id()
         job_dir = self.store_dir / job_id
         job_dir.mkdir(parents=True, exist_ok=True)
@@ -368,12 +429,15 @@ class JobRunner:
         ref = adapter_ref(adapter)
         importable = ref is not None or adapter.name in _builtin_adapter_names()
         if importable:
+            from dataclasses import asdict
             launch = {"plan": plan_to_dict(plan), "kwargs": kw,
                       "adapter_name": adapter.name, "adapter_ref": ref,
                       "runner_kwargs": {"env_allowlist": self.env_allowlist,
                                         "env_deny": self.env_deny,
                                         "license_wait_s": self.license_wait_s,
                                         "env_modules": self.env_modules,
+                                        "licenses": self.licenses._counts,
+                                        "farm": asdict(self.farm),
                                         "cache": self.cache.enabled}}
             try:
                 atomic_write(job_dir / "launch.json", dump_json(launch))

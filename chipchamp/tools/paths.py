@@ -2,8 +2,8 @@
 
 A workspace path arrives as text the model wrote. Before any tool opens it:
 it must be workspace-relative (no absolute paths), it must stay inside the
-root once normalised (no `../`), and — when the tool will write — the policy
-engine must allow the canonical form. Three tools had their own partial
+root once normalised (no `../`), and the policy engine must allow both its
+lexical name and resolved target. Three tools had their own partial
 versions of this and five had none; a model that wrote `./waivers/x.yaml`
 walked straight past a protected-path glob that only knew `waivers/**`.
 
@@ -32,9 +32,9 @@ def ws_path(ctx, path: str, *, write: bool = False,
             allow_generated: bool = False) -> tuple[str, str]:
     """-> (absolute, canonical-relative). Raises PathRefused with a teaching.
 
-    `write=True` additionally consults PolicyEngine.can_write on the canonical
-    relative path, so ACL, protected-path and generated-output rules all see
-    the same form the file will be recorded under."""
+    Reads consult can_read; writes consult can_write. Both the requested name
+    and resolved target must pass, so symlinks cannot bypass an ACL or a
+    protected/generated-path rule."""
     path = str(path or "")
     if os.path.isabs(path):
         raise PathRefused({"error": f"absolute path not allowed: '{path}'. File "
@@ -48,11 +48,18 @@ def ws_path(ctx, path: str, *, write: bool = False,
         raise PathRefused({"error": f"path escapes the workspace: '{path}'. Use "
                                     f"a workspace-relative path under the "
                                     f"project root."})
-    if write:
-        ok, why = ctx.policy.can_write(rel, allow_generated=allow_generated)
-        if not ok:
-            raise PathRefused({"error": f"write denied: {why}"})
-    return ap, rel
+    resolved_rel = os.path.relpath(ap, root)
+    resolved_rel = "" if resolved_rel == "." else resolved_rel
+    # Check both names: a public alias must not expose a protected target,
+    # and a protected alias must not acquire the target's broader permissions.
+    for candidate in {rel, resolved_rel}:
+        if write:
+            ok, why = ctx.policy.can_write(candidate, allow_generated=allow_generated)
+            if not ok:
+                raise PathRefused({"error": f"write denied: {why}"})
+        elif not ctx.policy.can_read(candidate):
+            raise PathRefused({"error": f"read denied: {ctx.policy.acl.reason(candidate)}"})
+    return ap, resolved_rel
 
 
 def safe_name(name: str) -> str | None:

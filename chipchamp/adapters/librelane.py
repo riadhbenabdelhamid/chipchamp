@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import glob
 import json
+import math
 import os
 import shlex
 import shutil
@@ -65,17 +66,24 @@ def normalize_metrics(metrics: dict) -> dict:
 
 
 def signoff_verdict(norm: dict) -> tuple[str, list[str]]:
-    """(verdict, failing_checks). Clean only if every present check passes."""
+    """(verdict, failing_checks). Missing signoff evidence cannot be clean."""
     fails = []
-    if norm.get("setup_ws_ns") is not None and norm["setup_ws_ns"] < 0:
+    valid = {}
+    for key in ("setup_ws_ns", "hold_ws_ns", "drc_violations", "lvs_errors", "antenna_violations"):
+        value = norm.get(key)
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value):
+            fails.append(f"missing/invalid {key}")
+        else:
+            valid[key] = value
+    if valid.get("setup_ws_ns", 0) < 0:
         fails.append(f"setup timing (WNS {norm['setup_ws_ns']:.3f} ns)")
-    if norm.get("hold_ws_ns") is not None and norm["hold_ws_ns"] < 0:
+    if valid.get("hold_ws_ns", 0) < 0:
         fails.append(f"hold timing (WHS {norm['hold_ws_ns']:.3f} ns)")
-    if norm.get("drc_violations"):
+    if valid.get("drc_violations"):
         fails.append(f"DRC ({norm['drc_violations']} violations)")
-    if norm.get("lvs_errors"):
+    if valid.get("lvs_errors"):
         fails.append(f"LVS ({norm['lvs_errors']} errors)")
-    if norm.get("antenna_violations"):
+    if valid.get("antenna_violations"):
         fails.append(f"antenna ({norm['antenna_violations']} nets)")
     return ("signoff-clean" if not fails else "signoff-fail"), fails
 
@@ -197,12 +205,9 @@ class LibreLaneAdapter(Adapter):
                 summary=(f"total {tot} W (clock {rep.get('clock_share_pct')}%)"
                          if ok else "sta power run failed — see log"))
         metrics_path = plan.artifacts.get("metrics", "")
-        if not os.path.exists(metrics_path):
-            # fall back to the newest RUN_* dir (no --run-tag support / older ver)
-            cands = sorted(glob.glob(os.path.join(plan.workdir, "runs", "*",
-                                                  "final", "metrics.json")),
-                           key=os.path.getmtime)
-            metrics_path = cands[-1] if cands else ""
+        if r is None or r.rc != 0 or r.timed_out:
+            return ToolResult(ok=False, kind="pnr", adapter=self.name, status="error",
+                              summary="physical flow did not complete successfully")
         if not metrics_path or not os.path.exists(metrics_path):
             tail = ((r.stdout + r.stderr)[-400:] if r else "")
             return ToolResult(ok=False, kind="pnr", adapter=self.name, status="error",

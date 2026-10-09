@@ -16,7 +16,7 @@ from . import antigaming
 from .acl import ContextACL
 from .autonomy import AutonomyDecision, decide
 from .budgets import Budget, BudgetLedger
-from .classify import classify
+from .classify import classify_all
 from .diff import Diff
 from .gates import Evidence, GateReport, evaluate, required_gates
 
@@ -45,13 +45,14 @@ class PolicyCheck:
     autonomy: AutonomyDecision
     antigaming_findings: list[dict]
     acl_notes: list[str] = field(default_factory=list)
+    task_classes: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {"task_class": self.task_class, "min_rung": self.min_rung,
                 "required_gates": self.required_gates,
                 "autonomy": self.autonomy.__dict__,
                 "antigaming_findings": self.antigaming_findings,
-                "acl_notes": self.acl_notes}
+                "acl_notes": self.acl_notes, "task_classes": self.task_classes}
 
 
 class PolicyEngine:
@@ -79,7 +80,9 @@ class PolicyEngine:
     # ---- read-side enforcement ---------------------------------------------
 
     def can_read(self, path: str) -> bool:
-        return self.acl.is_allowed(canonical(path))
+        path = canonical(path)
+        return not (os.path.isabs(path) or path == ".." or path.startswith("../")) \
+            and self.acl.is_allowed(path)
 
     def can_write(self, path: str, *, allow_generated: bool = False) -> tuple[bool, str]:
         """`allow_generated` is for the sanctioned generators (regmap.generate):
@@ -114,8 +117,9 @@ class PolicyEngine:
         return [g for e in self.generated for g in e.get("outputs", [])]
 
     def check(self, diff: Diff, closure_claim: bool = False) -> PolicyCheck:
-        tclass = classify(diff, self.generated_globs(), self.riscv_core)
-        rung, gates = required_gates(tclass)
+        classes = classify_all(diff, self.generated_globs(), self.riscv_core)
+        tclass = classes[-1]
+        rung, gates = required_gates(tclass, classes)
         paths = [f.path for f in diff.files]
         autonomy = decide(tclass, paths, self.autonomy_rules, self.default_autonomy)
         findings = antigaming.scan(diff, closure_claim=closure_claim)
@@ -123,13 +127,14 @@ class PolicyEngine:
                      for f in diff.files if not self.acl.is_allowed(f.path)]
         return PolicyCheck(task_class=tclass, min_rung=rung, required_gates=gates,
                            autonomy=autonomy, antigaming_findings=findings,
-                           acl_notes=acl_notes)
+                           acl_notes=acl_notes, task_classes=classes)
 
     # ---- report.done backbone ----------------------------------------------
 
     def validate_done(self, diff: Diff, evidence: Evidence,
                       closure_claim: bool = False) -> GateReport:
-        tclass = classify(diff, self.generated_globs(), self.riscv_core)
+        classes = classify_all(diff, self.generated_globs(), self.riscv_core)
+        tclass = classes[-1]
         # merge freshly scanned anti-gaming findings with any the caller supplied
         scanned = antigaming.scan(diff, closure_claim=closure_claim)
         # a scanned finding is unacknowledged unless the caller marked it ack'd
@@ -138,4 +143,4 @@ class PolicyEngine:
         for f in scanned:
             f["acknowledged"] = ack_index.get((f["kind"], f["file"]), False)
         evidence.antigaming = scanned
-        return evaluate(tclass, evidence)
+        return evaluate(tclass, evidence, task_classes=classes)

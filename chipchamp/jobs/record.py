@@ -38,6 +38,11 @@ class JobRecord:
     end_ts: float = 0.0
     inputs_hash: str = ""
     input_files: list[str] = field(default_factory=list)
+    input_snapshot: dict = field(default_factory=dict)
+    verification_hash: str = ""
+    test_name: str = ""
+    target_name: str = ""
+    test_config_hash: str = ""
     defines: dict = field(default_factory=dict)
     seed: Optional[int] = None
     license_features: list[str] = field(default_factory=list)

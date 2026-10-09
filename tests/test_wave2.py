@@ -73,24 +73,22 @@ def test_gate_status_reads_the_same_evidence_report_done_will(tmp_path):
     """The ladder a human watches has to be the ladder the task is judged by —
     an optimistic HUD would be worse than none."""
     from chipchamp.tools.context import ToolContext
+    from chipchamp.config import Workspace
     calls = {}
 
-    ctx = ToolContext.__new__(ToolContext)
+    ctx = ToolContext(Workspace(str(tmp_path)))
     ctx.edits = {"a.sv": {"old": "", "new": "x", "status": "modified"}}
     ctx.declared_nfc = ctx.declared_cdc = ctx.declared_timing = False
     ctx.closure_claim = False
     ctx.task_jobs = []
     ctx.coverage_sets = {}
     ctx.acked_findings = set()
-    ctx.ws = type("W", (), {"config": {}, "generated": [],
-                            "coverage_baseline": lambda self=None: None})()
     ctx.sta_delta = ctx.riscv_cosim = ctx.riscv_compliance = None
 
-    class _P:
-        def validate_done(self, diff, ev, closure_claim=False):
-            calls["diff"] = diff
-            return _report(lint="missing")
-    ctx.policy = _P()
+    def validate_done(diff, ev, closure_claim=False):
+        calls["diff"] = diff
+        return _report(lint="missing")
+    ctx.policy.validate_done = validate_done
     rep = ctx.gate_status()
     assert rep.gates[0].name == "lint"
     assert [f.path for f in calls["diff"].files] == ["a.sv"]
