@@ -189,11 +189,20 @@ and SARIF/Markdown CI reports. Dependency manifests cover nested native filelist
 literal headers and memory images, explicit runner inputs, and native Icarus and
 Verilator compiler observations. Workspace filelist changes refresh live targets.
 
-Next depth work: Python package/dynamic-import tracing, C++ system/generated-header
-discovery, measured per-test coverage mapping, and evidence that can justify a
-smaller completion suite. Cocotb directories are captured for freshness but are
-not eligible for reuse; macro/dynamic dependencies and compiler-discovered inputs
-missing from the pre-run manifest also force execution. Resume retries missing
+The third increment adds per-test/seed coverage history, validated comparisons
+(including lost hits and removed bins), and coverage-based ordering of the full
+selected matrix. C++ harness dependencies use the generated makefile's compilation
+flags to discover system and transitive headers before compilation. Cocotb adds
+Python environment fingerprints and runtime import/read/directory observations;
+complete, stable traces enable checkpoint resume. Untracked native/subprocess/
+network activity, filesystem stat/existence queries from user code, custom runner
+environment policies/modules, unsupported cocotb tracing hooks and unresolved HDL
+dependencies remain ineligible for reuse. Coverage ordering is file-level and uses
+historical observations; it does not establish completion for edited RTL.
+
+Next depth work: line-level impact mapping and evidence that can justify a smaller
+completion suite, broader runtime dependency contracts, and instrumentation for
+native C++ coverage exports. Resume retries missing
 cases; it does not adopt a surviving simulator from a killed parent process.
 Next breadth work: CI-provider upload automation and additional protocol and
 register-model integrations. Hierarchy-based selection remains advisory until

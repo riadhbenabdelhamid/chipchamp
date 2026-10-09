@@ -120,6 +120,7 @@ class Checkpoint:
             return None
         key = cache_key(plan, adapter, inputs_hash=hash_manifest(files), seed=seed,
                         input_files=files,
+                        snapshot=rec.input_snapshot if plan.meta.get("python_trace") else None,
                         env_modules=self.ctx.ws.config.get("tools", {}).get(
                             "env_modules", {}).get(adapter.name, []),
                         environment=scrub_env(allowlist=self.ctx.runner.env_allowlist,

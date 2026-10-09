@@ -182,6 +182,9 @@ def _plan_for_test(ctx: ToolContext, test: str, seed: int = 1,
                            ctx.ws.root, hdl_sim=runner.get("hdl_sim", "icarus"),
                            seed=seed, waves=waves,
                            output_dir=output_dir,
+                           incdirs=[*ctx.target.incdirs, *(os.path.join(ctx.ws.root, p)
+                                                         for p in runner.get("incdirs", []))],
+                           defines=ctx.target.defines,
                            test_dir=os.path.join(ctx.ws.root,
                                                  runner.get("test_dir", "tb")))
         return _finish_plan(ctx, t, adapter, plan, rtl, 180, timeout_s, test)
@@ -419,6 +422,24 @@ def regress_run(ctx: ToolContext, tag: str = "", tests=None, seeds=None,
     if not names:
         return {"error": "no tests selected", "tag": tag}
     try:
+        from ..coverage.history import CoverageHistory
+        from ..verification import _changes
+        ordering = (previous or {}).get("ordering")
+        if not resume:
+            if selection_plan:
+                ordering = selection_plan.get("ordering")
+            else:
+                try:
+                    diff, _, _ = _changes(ctx, None, "HEAD")
+                    ordering = CoverageHistory(ctx).order(names, [f.path for f in diff.files])
+                except (ValueError, OSError, PathRefused):
+                    ordering = None
+        if ordering:
+            if (not isinstance(ordering, dict) or not isinstance(ordering.get("tests"), list)
+                    or not all(isinstance(n, str) for n in ordering["tests"])
+                    or sorted(ordering["tests"]) != sorted(names)):
+                return {"error": "test ordering must preserve every selected test exactly once"}
+            names = ordering["tests"]
         # Validate every generated destination, including existing symlinks.
         for name in ("checkpoint.json", ".lock", "results.json", "junit.xml", "results.sarif", "summary.md"):
             ws_path(ctx, ctx.rel(os.path.join(report_dir, name)), write=True)
@@ -426,7 +447,7 @@ def regress_run(ctx: ToolContext, tag: str = "", tests=None, seeds=None,
             if resume:
                 previous = load_checkpoint(checkpoint, ctx)
             return _execute_regression(ctx, names, seeds, run_id, selection_plan,
-                                       report_dir, export, sarif_export, previous)
+                                       report_dir, export, sarif_export, previous, ordering)
     except PathRefused as e:
         return e.payload
     except (ValueError, OSError) as e:
@@ -434,7 +455,7 @@ def regress_run(ctx: ToolContext, tag: str = "", tests=None, seeds=None,
 
 
 def _execute_regression(ctx, names, seeds, run_id, selection_plan, report_dir,
-                        export, sarif_export, previous):
+                        export, sarif_export, previous, ordering=None):
     import uuid
     from ..jobs.checkpoint import Checkpoint, case_key
     from ..jobs.reports import junit_xml, regression_report, sarif_report, regression_markdown
@@ -446,6 +467,7 @@ def _execute_regression(ctx, names, seeds, run_id, selection_plan, report_dir,
     if previous:
         checkpoint.restore_costs()
     checkpoint.data["state"] = "running"
+    checkpoint.data["ordering"] = ordering
     checkpoint.save()  # Durable matrix BEFORE any submission.
     # Record obligations BEFORE planning/submitting. A crashed or budget-blocked
     # test still belongs to the required set and cannot disappear from gates.
@@ -518,6 +540,7 @@ def _execute_regression(ctx, names, seeds, run_id, selection_plan, report_dir,
     checkpoint.data["state"] = "finished"
     checkpoint.save()
     out = {"run_id": run_id, "summary": res.summary(),
+           "ordering": ordering,
            "checkpoint": ctx.rel(str(checkpoint.path)), "resumed": len(completed),
            "submitted": res.total - len(completed),
            "passed": res.passed, "failed": res.failed, "errored": res.errored, "total": res.total,
@@ -531,6 +554,7 @@ def _execute_regression(ctx, names, seeds, run_id, selection_plan, report_dir,
     if selection_plan:
         out["plan"] = selection_plan
     report = regression_report(res, ctx.target_name, selection_plan)
+    report["ordering"] = ordering
     xml = junit_xml(res, ctx.target_name)
     json_path, xml_path = os.path.join(report_dir, "results.json"), os.path.join(report_dir, "junit.xml")
     try:
@@ -785,43 +809,102 @@ def wave_snapshot(ctx: ToolContext, run: str, signals: list[str], t0: int, t1: i
 @tool("cov.run", "Build+run a coverage sim for a test and merge into a named set.",
       cost="metered", permission="submit", group="cov",
       schema={"type": "object", "properties": {
-          "test": {"type": "string"}, "set": {"type": "string", "default": "default"}},
+          "test": {"type": "string"}, "set": {"type": "string", "default": "default"},
+          "seed": {"type": "integer", "default": 1}},
           "required": ["test"]})
-def cov_run(ctx: ToolContext, test: str, set: str = "default") -> dict:
-    ctx.refresh_measurements()
-    t = ctx.find_test(test)
-    if _runner_of(t).get("kind") == "cocotb":
-        # cocotb-coverage exports functional coverage XML from the Python TB —
-        # running verilator line-coverage on a nonexistent SV top here used to
-        # yield an empty model that read as 100%.
-        got = _plan_for_test(ctx, test, waves=False)
-        if isinstance(got, dict):
-            return got
-        adapter, plan, files, timeout = got
-        rec, res = ctx.submit(plan, adapter, input_files=files, timeout=timeout)
-        xml = res.artifacts.get("coverage_xml")
-        if not xml:
-            return {"job": rec.id, "status": rec.status,
-                    "error": "no cocotb-coverage XML produced (does the TB "
-                             "export coverage?)"}
-        from ..coverage import ingest_cocotb_xml
-        cov = ingest_cocotb_xml(xml, test=test)
+def cov_run(ctx: ToolContext, test: str, set: str = "default", seed: int = 1) -> dict:
+    import uuid
+    from ..coverage import ingest_coverage
+    from ..coverage.history import CoverageHistory
+    from .paths import ws_path, PathRefused
+    try:
+        if type(seed) is not int:
+            raise ValueError("seed must be an integer")
+        ctx.ws.invalidate(ctx.target_name)
+        ctx.refresh_measurements()
+        t = ctx.find_test(test)
+        if t and t.get("target", ctx.target_name) != ctx.target_name:
+            raise ValueError("test belongs to another target")
+        directory, _ = ws_path(ctx, ctx.rel(ctx.ws.dot / "coverage" / ("C-" + uuid.uuid4().hex)), write=True)
+        os.makedirs(directory, exist_ok=True)
+        runner = _runner_of(t)
+        if runner.get("kind") == "cocotb":
+            got = _plan_for_test(ctx, test, seed=seed, waves=False, output_dir=directory)
+            if isinstance(got, dict):
+                return got
+            adapter, plan, files, timeout = got
+            artifact_key = "coverage_xml"
+        else:
+            if runner.get("kind") == "verilator_cpp":
+                raise ValueError("C++ coverage needs an instrumented harness that exports coverage; use cov.load for its export")
+            files, tb_top = _resolve_sim(ctx, test)
+            adapter = ctx.registry.for_role("coverage")
+            if not adapter or not adapter.available():
+                return {"error": "no coverage adapter available"}
+            incdirs = [*ctx.target.incdirs, *(ws_path(ctx, p)[0] for p in runner.get("incdirs", []))]
+            plan = adapter.coverage(files, tb_top, ctx.ws.root, incdirs=incdirs,
+                                    defines=ctx.target.defines, seed=seed, output_dir=directory)
+            adapter, plan, files, timeout = _finish_plan(ctx, t, adapter, plan, files, 180, test_name=test)
+            artifact_key = "coverage"
+        rec, res = ctx.submit(plan, adapter, input_files=files, seed=seed, timeout=timeout, no_cache=True)
+        if rec.status != "passed":
+            return {"job": rec.id, "status": rec.status, "error": "coverage run did not pass; no observation recorded"}
+        artifact = res.artifacts.get(artifact_key)
+        if not artifact or not os.path.isfile(artifact):
+            return {"job": rec.id, "status": rec.status, "error": "no coverage produced; the testbench must export it"}
+        cov, fmt = ingest_coverage(artifact, test=test)
+        history = CoverageHistory(ctx)
+        previous, _ = history.entries(test, seed)
+        previous = [(d, r) for d, r in previous if r.adapter == rec.adapter]
+        observation = history.record(rec, cov, artifact)
         svc = ctx.coverage_sets.setdefault(set, CoverageService())
         svc.merge(cov)
-        return {"job": rec.id, "set": set, "runner": "cocotb",
-                "summary": svc.summary()}
-    files, tb_top = _resolve_sim(ctx, test)
-    adapter = ctx.registry.for_role("coverage")
-    if not adapter or not adapter.available():
-        return {"error": "no coverage adapter available"}
-    plan = adapter.coverage(files, tb_top, ctx.ws.root)
-    rec, res = ctx.submit(plan, adapter, input_files=files, timeout=180)
-    if not res.artifacts.get("coverage"):
-        return {"job": rec.id, "status": rec.status, "error": "no coverage.dat produced"}
-    cov = ingest_verilator_dat(res.artifacts["coverage"], test=test)
-    svc = ctx.coverage_sets.setdefault(set, CoverageService())
-    svc.merge(cov)
-    return {"job": rec.id, "set": set, "summary": svc.summary()}
+        out = {"job": rec.id, "set": set, "runner": adapter.name, "seed": seed,
+               "format": fmt, "summary": svc.summary(), "observation": observation}
+        if previous:
+            out["delta"] = history.compare(previous[0][0]["job"], rec.id)
+        return out
+    except PathRefused as e:
+        return e.payload
+    except (OSError, ValueError) as e:
+        return {"error": str(e)}
+
+
+@tool("cov.history", "List validated coverage observations per test and seed across sessions.",
+      group="cov", schema={"type": "object", "properties": {
+          "test": {"type": "string"}, "seed": {"type": "integer"},
+          "limit": {"type": "integer", "default": 20}}})
+def cov_history(ctx, test="", seed=None, limit=20):
+    from ..coverage.history import CoverageHistory
+    from .paths import PathRefused
+    try:
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("limit must be an integer from 1 to 100")
+        if seed is not None and type(seed) is not int:
+            raise ValueError("seed must be an integer")
+        ctx.ws.invalidate(ctx.target_name)
+        history = CoverageHistory(ctx)
+        entries, invalid = history.entries(test, seed)
+        return {"target": ctx.target_name, "observations": [history.describe(d, r)
+                for d, r in entries[:limit]], "total": len(entries), "invalid": invalid[:20]}
+    except PathRefused as e:
+        return e.payload
+    except (OSError, ValueError) as e:
+        return {"error": str(e)}
+
+
+@tool("cov.compare", "Compare two coverage jobs for the same test/seed, including lost hits and removed bins.",
+      group="cov", schema={"type": "object", "properties": {
+          "before": {"type": "string"}, "after": {"type": "string"}}, "required": ["before", "after"]})
+def cov_compare(ctx, before, after):
+    from ..coverage.history import CoverageHistory
+    from .paths import PathRefused
+    try:
+        return CoverageHistory(ctx).compare(before, after)
+    except PathRefused as e:
+        return e.payload
+    except (OSError, ValueError, KeyError) as e:
+        return {"error": str(e)}
 
 
 @tool("cov.load", "Load a coverage file into a named set: UCIS XML (Questa/VCS/"

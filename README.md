@@ -32,7 +32,7 @@ Icarus, Yosys, Verible, SymbiYosys, eqy, GHDL) — no mocks:
 | **Coverage service** — Verilator/functional/**UCIS XML** (Questa/VCS/Xcelium export)/**cocotb-coverage** ingest (format-sniffing `cov.load`), holes, attribution, anti-gaming baseline gate — functional coverage live on open tools | ✅ | §8.7 |
 | **Policy engine** — task classification, verification ladder V0–V4, gates, autonomy L0–L3, budgets, context ACLs, anti-gaming detectors | ✅ | §11 |
 | **Evidence bundles** — platform-signed, tamper-evident, assembled from job records | ✅ | §8.8, §11.3 |
-| **Agent tool catalog** — 104 tools with JSON schemas, cost classes, permission tiers, runtime capability discovery (`caps`) | ✅ | §9 |
+| **Agent tool catalog** — 106 tools with JSON schemas, cost classes, permission tiers, runtime capability discovery (`caps`) | ✅ | §9 |
 | **Model layer** — provider-agnostic (Anthropic · OpenAI · local: LM Studio/Ollama/vLLM/llama.cpp) with live model discovery, a `/model` selector, and a context audit log | ✅ | §14, §13.3 |
 | **Agent loop + CLI** — model-driven loop, scripted playbooks (P1 triage, P6 lint), headless + REPL | ✅ | §7.1, §8.2 |
 
@@ -391,12 +391,38 @@ are written before execution and after each finished case; the job store restore
 prior submission costs on restart. Concurrent resumes of the same run are refused.
 Icarus, Verilator and cocotb have separate build paths per case and attempt.
 
+Track coverage across runs and seeds:
+
+```bash
+chipchamp --root examples/soc cov fifo_smoke --seed 7
+chipchamp --root examples/soc cov-history --test fifo_smoke --seed 7
+# Use two job IDs printed by cov-history:
+chipchamp --root examples/soc cov-diff J-0001 J-0002
+```
+
+Each successful, nonempty coverage run saves an observation under
+`.chipchamp/coverage/history/`, pinned to its job, inputs, seed, raw artifact and
+logs. Comparisons require the same target/test/seed/adapter and show gained/lost
+hits and added/removed bins, including baseline failures when bins disappear.
+`cov-history` distinguishes historical observations from current measurements;
+missing or changed evidence is rejected. MCP exposes `cov.history` and `cov.compare`.
+
+`verify-plan` and `regress` use compatible coverage history to run tests with the
+most previously hit bins in changed source files first. This is file-level
+prioritization: every selected test and seed still runs. Ordering and its evidence
+are saved with the plan, report and checkpoint; ties preserve declared order.
+
 Input manifests follow nested native Icarus/Verilator filelists, literal HDL/C
 includes, memory images and declared `runner.inputs` (workspace-relative paths,
 including generated stimuli/configuration). Native compiler dependency files add
-observed inputs to job provenance. Cocotb test directories are inventoried, but
-Python package/dynamic-import tracing and unresolved dependencies still disable
-reuse. `chipchamp ci` exports lint and test diagnostics with repository locations
+observed inputs to job provenance. C++ harnesses capture transitive and system
+headers with the actual compilation flags after model generation and before
+compilation. Cocotb captures the Python environment and observes imported modules,
+file reads and directory listings; completed, validated traces allow checkpoint
+resume. Missing traces, unsupported native/subprocess/network activity, user
+filesystem stat/existence checks, custom environment policies/modules and other
+unresolved dependencies still force execution. Tracing is dependency bookkeeping,
+not a sandbox for untrusted test code. `chipchamp ci` exports lint and test diagnostics with repository locations
 to `.chipchamp/ci-results.sarif`; `--sarif` overrides that path. Upload reports
 through your CI system's artifact/SARIF integration.
 
@@ -543,7 +569,7 @@ CLI  ── Workspace(config.toml, tests.yaml, policy.yaml, DESIGN.md)
  │        ├── CoverageSvc   (coverage/)  ingest · holes · attribution · baseline gate
  │        └── PolicyEngine  (policy/)    classify · gates · autonomy · ACL · anti-gaming
  │
- ├── ToolContext (tools/)   104 tools: design.* sim.* wave.* cov.* lint/synth/lec/formal · verify.plan · report.done
+ ├── ToolContext (tools/)   106 tools: design.* sim.* wave.* cov.* lint/synth/lec/formal · verify.plan · report.done
  └── AgentLoop (agent/)     model gateway (+ audit log) · scripted playbooks · session store
                            → EvidenceBundle (evidence/)  signed, from job records
 ```

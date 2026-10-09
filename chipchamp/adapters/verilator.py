@@ -141,9 +141,12 @@ class VerilatorAdapter(Adapter):
         shared harness base live). The harness should print CHIPCHAMP_PASS /
         CHIPCHAMP_FAIL and exit 0 / non-zero."""
         objdir = os.path.abspath(os.path.join(output_dir or workdir, f"obj_cpp_{top}"))
-        cflags = " ".join([f"-I{os.path.abspath(d)}" for d in (cpp_incdirs or [])]
+        import shlex
+        import shutil
+        compiler = shutil.which(os.environ.get("CXX", "g++")) or "g++"
+        cflags = shlex.join([f"-I{os.path.abspath(d)}" for d in (cpp_incdirs or [])]
                           + ["-std=c++17"])
-        build = [self.binary, "--cc", "--exe", "--build", "-j", "0", "-sv",
+        build = [self.binary, "--cc", "--exe", "-sv",
                  "-Wno-fatal", "--top-module", top, "--Mdir", objdir, "--MMD",
                  "-o", "Vsim", "-CFLAGS", cflags]
         for d in incdirs or []:
@@ -154,36 +157,51 @@ class VerilatorAdapter(Adapter):
         run = [os.path.join(objdir, "Vsim")]
         if seed is not None:
             run.append(f"+seed={seed}")
+        toolchain = self._toolchain_inputs()
+        make = ["make", "-C", objdir, "-f", f"V{top}.mk", f"CXX={compiler}",
+                "-j", str(os.cpu_count() or 1)]
         return Plan(kind="sim", adapter=self.name, workdir=workdir,
                     steps=[Step(argv=build, cwd=workdir),
+                           Step(argv=make, cwd=workdir),
                            Step(argv=run, cwd=workdir, allow_fail=True)],
                     artifacts={"executable": run[0]},
-                    meta={"tb_top": top, "seed": seed, "mode": "cpp", **self._toolchain_inputs(),
+                    meta={"tb_top": top, "seed": seed, "mode": "cpp", **toolchain,
+                          "capture_after_step": 0,
+                          "cpp_dependencies": {"compiler": compiler, "sources": list(cpp_files),
+                              "generated_dirs": [objdir], "make": make, "build_dir": objdir},
                           "output_dirs": [objdir], "depfiles": [{
                               "path": os.path.join(objdir, f"V{top}__ver.d"), "format": "make"}]})
 
     def coverage(self, files: list[str], tb_top: str, workdir: str,
-                 incdirs: list[str] | None = None) -> Plan:
+                 incdirs: list[str] | None = None, defines: dict | None = None,
+                 seed: int = 1, output_dir: str | None = None) -> Plan:
         """Build a coverage-instrumented binary and run it. TB must $finish.
 
         Mdir and the coverage file are PER TESTBENCH: a shared obj dir lets
         make reuse a stale binary from the previous TB, which then silently
         rewrites coverage.dat with the wrong test's data."""
-        objdir = os.path.abspath(os.path.join(workdir, f"obj_cov_{tb_top}"))
-        covfile = os.path.abspath(os.path.join(workdir, f"coverage_{tb_top}.dat"))
+        out = output_dir or workdir
+        objdir = os.path.abspath(os.path.join(out, f"obj_cov_{tb_top}"))
+        covfile = os.path.abspath(os.path.join(out, f"coverage_{tb_top}.dat"))
         # coverage is not lint: don't let a stray warning abort the build
-        build = [self.binary, "--binary", "-sv", "--coverage", "-Wno-fatal",
-                 "-j", "0", "--top-module", tb_top, "--Mdir", objdir,
+        build = [self.binary, "--binary", "--timing", "-sv", "--coverage", "-Wno-fatal",
+                 "-j", "0", "--top-module", tb_top, "--Mdir", objdir, "--MMD",
                  "-o", "Vsim"]
         for d in incdirs or []:
             build.append(f"+incdir+{d}")
+        for k, v in (defines or {}).items():
+            build.append(f"+define+{k}={v}")
         build += list(files)
         run = [os.path.join(objdir, "Vsim"),
-               f"+verilator+coverage+file+{covfile}"]
+               f"+verilator+coverage+file+{covfile}", f"+seed={seed}",
+               f"+verilator+seed+{seed}"]
         return Plan(kind="coverage", adapter=self.name, workdir=workdir,
                     steps=[Step(argv=build, cwd=workdir),
                            Step(argv=run, cwd=workdir, allow_fail=True)],
-                    artifacts={"coverage": covfile})
+                    artifacts={"coverage": covfile, "executable": run[0]},
+                    meta={"tb_top": tb_top, "seed": seed, **self._toolchain_inputs(),
+                          "output_dirs": [objdir], "depfiles": [{"format": "make",
+                              "path": os.path.join(objdir, f"V{tb_top}__ver.d")}]})
 
     def parse(self, plan: Plan, results: list[StepResult]) -> ToolResult:
         text = "\n".join(r.stdout + "\n" + r.stderr for r in results)
@@ -197,12 +215,20 @@ class VerilatorAdapter(Adapter):
                 summary=f"{len(errs)} error(s), {len(diags) - len(errs)} warning(s)")
         if plan.kind == "coverage":
             covfile = plan.artifacts.get("coverage", "")
-            ok = os.path.exists(covfile) or all(r.rc == 0 for r in results)
+            from .simparse import parse_compile_run_sim
+            verdict = parse_compile_run_sim(self.name, plan, results, diags)
+            ok = verdict.ok and len(results) == len(plan.steps) and os.path.isfile(covfile)
             return ToolResult(ok=ok, kind="coverage", adapter=self.name,
                               diagnostics=diags, artifacts=plan.artifacts,
                               summary="coverage collected" if ok else "coverage failed")
         if plan.kind == "sim":
             from .simparse import parse_compile_run_sim
+            if plan.meta.get("mode") == "cpp":
+                # Treat generation + native compilation as the compile phase.
+                if len(results) < 3 or any(r.rc != 0 for r in results[:-1]):
+                    return ToolResult(False, "sim", self.name, status="error", summary="verilate/build failed",
+                                      diagnostics=diags)
+                results = [results[1], results[2]]
             return parse_compile_run_sim(self.name, plan, results, diags,
                                          compile_failed="verilate/build failed")
         return ToolResult(ok=not errs, kind=plan.kind, adapter=self.name,

@@ -148,13 +148,14 @@ def test_sim_cpp_plan_shape():
     plan = a.sim_cpp(["/rtl/top.sv"], ["/tb/h.cpp"], "top", "/ws",
                      cpp_incdirs=["/tb"], incdirs=["/rtl/inc"], defines={"D": 1})
     build = plan.steps[0].argv
-    for flag in ("--cc", "--exe", "--build", "-CFLAGS"):
+    for flag in ("--cc", "--exe", "-CFLAGS"):
         assert flag in build
     cflags = build[build.index("-CFLAGS") + 1]
     assert "-I/tb" in cflags and "-std=c++17" in cflags
     assert "+incdir+/rtl/inc" in build and "+define+D=1" in build
     assert "/rtl/top.sv" in build and "/tb/h.cpp" in build
-    assert plan.steps[1].argv[0].endswith("Vsim")   # second step runs it
+    assert plan.steps[1].argv[0] == "make"
+    assert plan.steps[2].argv[0].endswith("Vsim")
     assert plan.meta["mode"] == "cpp"
 
 

@@ -25,6 +25,7 @@ cfg = json.loads(sys.argv[1])
 runner = get_runner(cfg["sim"])
 runner.build(sources=cfg["sources"], hdl_toplevel=cfg["top"],
              build_dir=cfg["build_dir"], always=True,
+             includes=cfg.get("incdirs", []), defines=cfg.get("defines", {}),
              timescale=tuple(cfg["timescale"]), waves=cfg["waves"])
 runner.test(hdl_toplevel=cfg["top"], test_module=cfg["module"],
             test_dir=cfg["test_dir"], build_dir=cfg["build_dir"],
@@ -78,6 +79,7 @@ class CocotbAdapter(Adapter):
     def sim(self, files: list[str], test_module: str, top: str, workdir: str, *,
             hdl_sim: str = "icarus", seed: int | None = None, waves: bool = True,
             test_dir: str | None = None, output_dir: str | None = None,
+            incdirs: list[str] | None = None, defines: dict | None = None,
             timescale: tuple[str, str] = ("1ns", "1ps")) -> Plan:
         py = _cocotb_python() or "python3"
         out = output_dir or workdir
@@ -88,22 +90,37 @@ class CocotbAdapter(Adapter):
         cfg = {"sim": hdl_sim, "sources": [os.path.abspath(f) for f in files],
                "top": top, "module": test_module, "build_dir": build_dir,
                "test_dir": test_dir, "results_xml": results,
-               "timescale": list(timescale), "waves": waves, "seed": seed}
+               "timescale": list(timescale), "waves": waves, "seed": seed,
+               "incdirs": incdirs or [], "defines": defines or {}}
         driver = os.path.join(build_dir, "_chipchamp_cocotb_driver.py")
         os.makedirs(build_dir, exist_ok=True)
         from ..util.jsonio import atomic_write
         atomic_write(driver, _DRIVER)
+        from pathlib import Path
+        from ..jobs import python_trace
+        observer = os.path.join(build_dir, "_chipchamp_trace.py")
+        atomic_write(observer, Path(python_trace.__file__).read_text())
+        trace = os.path.join(build_dir, "python-inputs.json")
         cov_xml = os.path.abspath(os.path.join(out, f"{test_module}.cov.xml"))
-        env = {"PYTHONPATH": test_dir + os.pathsep + os.environ.get("PYTHONPATH", ""),
+        excluded = [build_dir, results, cov_xml]
+        env = {"PYTHONPATH": os.pathsep.join([build_dir, test_dir, os.environ.get("PYTHONPATH", "")]),
+               "PYTHONDONTWRITEBYTECODE": "1", "PYGPI_USERS": "_chipchamp_trace:start",
+               "CHIPCHAMP_ORIGINAL_PYGPI_USERS": os.environ.get("PYGPI_USERS", ""),
+               "CHIPCHAMP_PYTHON_TRACE": trace,
+               "CHIPCHAMP_TRACE_OUTPUT_DIRS": _json.dumps(excluded),
                # cocotb-coverage TBs export here (absolute: the sim's cwd is
                # the runner's build/test dir, not the workspace root)
                **{mk: cov_xml for mk in _markers("COV_XML")}}
         return Plan(kind="sim", adapter=self.name, workdir=workdir,
                     steps=[Step(argv=[py, driver, _json.dumps(cfg)], cwd=workdir,
                                 env=env, allow_fail=True)],
-                    artifacts={"results": results, "coverage_xml": cov_xml},
+                    artifacts={"results": results, "coverage_xml": cov_xml, "python_trace": trace},
                     meta={"module": test_module, "seed": seed,
-                          "input_dirs": [test_dir]})
+                          "input_dirs": [test_dir], "input_files": [observer],
+                          "python_trace": {"path": trace, "probe": [py, observer],
+                                           "hdl_sim": hdl_sim},
+                          "incdirs": incdirs or [], "runtime_workdirs": [test_dir],
+                          "output_dirs": [build_dir]})
 
     def parse(self, plan: Plan, results: list[StepResult]) -> ToolResult:
         xml = plan.artifacts.get("results", "")

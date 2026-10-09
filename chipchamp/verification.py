@@ -165,6 +165,8 @@ def verification_plan(ctx, changed_paths=None, seeds=None, base="HEAD") -> dict:
         raise ValueError("test names must be unique within the active target")
     selection = _selection(ctx, diff, tests)
     selection["warnings"] = warnings + selection["warnings"]
+    from .coverage.history import CoverageHistory
+    ordering = CoverageHistory(ctx).order(selection["selected_tests"], [f.path for f in diff.files])
     policy = ctx.policy.check(diff)
     jobs = len(selection["selected_tests"]) * len(seeds)
     remaining = max(0, ctx.ledger.budget.v3_submissions - ctx.ledger.v3_used)
@@ -174,6 +176,7 @@ def verification_plan(ctx, changed_paths=None, seeds=None, base="HEAD") -> dict:
            "verification_hash": ctx.verification_hash(),
            "task_classes": policy.task_classes, "required_gates": policy.required_gates,
            "minimum_rung": policy.min_rung, "selection": selection, "seeds": seeds,
+           "ordering": ordering,
            "test_jobs": jobs, "declared_suite_jobs": len(tests) * len(seeds),
            "budget": {"v3_remaining": remaining, "v3_required": jobs,
                       "within_budget": jobs <= remaining},

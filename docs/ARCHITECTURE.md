@@ -44,8 +44,15 @@ Cache keys include step working directories, effective environments, literal
 transitive HDL/C includes, memory images, nested native Icarus/Verilator filelists,
 declared runner inputs and Verilator's installed support files. Native dependency
 outputs supplement provenance; newly discovered inputs never silently promote an
-incomplete pre-run manifest to reusable evidence. Cocotb directories are inventoried,
-but unresolved dependencies, shell wrappers and Python imports still disable reuse.
+incomplete pre-run manifest to reusable evidence. C++ harness generation and
+compilation are separate steps: the generated makefile supplies the flags for a
+native preprocessor scan before compilation. System and user headers are hashed;
+generated model files are derived outputs. Cocotb inventories the Python environment
+before/after execution and uses CPython audit/profiling hooks for runtime dependencies.
+Completed traces can enable checkpoint resume; snapshot checks validate observed
+reads (including missing files), directory listings and import candidates. Unsupported
+runtime activity, custom environment policies/modules, unresolved dependencies and
+shell wrappers still disable reuse. These mechanisms assume trusted tool/test code.
 Input changes during execution invalidate the result for reuse. External source,
 dependency or configuration edits also invalidate the
 context's derived coverage, timing and ISA verdicts.
@@ -79,6 +86,12 @@ memory inputs keep resolving. Other simulator adapters serialize shared outputs.
 Full-suite completion policy remains unchanged. SARIF and Markdown exports accompany
 JUnit/JSON; the CI command combines lint findings with every regression case, including
 infrastructure errors without job records.
+
+`coverage/history.py` stores per-job normalized coverage with a digest pinned in
+the runner record. Reads validate the observation, raw coverage artifact and logs.
+Comparisons retain bin identities and report denominator changes. Historical hits
+in changed files rank selected tests; they never remove tests or seeds. Plans and
+checkpoints retain the ordering and its source job IDs across resume.
 
 ## The debug loop (P1/P2), concretely
 

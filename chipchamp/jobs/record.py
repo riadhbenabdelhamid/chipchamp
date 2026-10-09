@@ -42,6 +42,7 @@ class JobRecord:
     execution_key: str = ""  # command, tool, environment and pre-run inputs
     regression_id: str = ""
     evidence_hashes: dict[str, str] = field(default_factory=dict)
+    coverage_observation: dict = field(default_factory=dict)
     verification_hash: str = ""
     test_name: str = ""
     target_name: str = ""

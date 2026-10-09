@@ -16,10 +16,14 @@ from ..util.hashing import sha256_file
 
 def capture_inputs(plan, input_files=()) -> dict:
     roots = set()
-    incdirs = []
-    workdirs = []
+    incdirs = list(plan.meta.get("incdirs", []))
+    workdirs = list(plan.meta.get("runtime_workdirs", []))
     complete = True
     reasons = []
+    cpp_files, cpp_complete = {}, True
+    if plan.meta.get("cpp_dependencies"):
+        from .cpp_inputs import compiler_inputs
+        cpp_files, cpp_complete = compiler_inputs(plan.meta["cpp_dependencies"], plan.workdir)
     directories = list(plan.meta.get("input_dirs", []))
     outputs = {os.path.realpath(os.path.join(plan.workdir, p))
                for p in plan.artifacts.values() if p}
@@ -36,7 +40,10 @@ def capture_inputs(plan, input_files=()) -> dict:
         if plan.adapter == "icarus" and any(a == "-m" or a.startswith("-m") for a in argv[1:]):
             complete = False
             reasons.append("VPI module dependencies require runtime tracing")
-        expanded, lists, resolved = _expand_filelists(argv, cwd, plan.adapter)
+        if argv and os.path.basename(argv[0]) in ("make", "gmake") and plan.meta.get("cpp_dependencies"):
+            expanded, lists, resolved = [(arg, cwd) for arg in argv], set(), True
+        else:
+            expanded, lists, resolved = _expand_filelists(argv, cwd, plan.adapter)
         roots.update(lists)
         complete &= resolved
         if not resolved:
@@ -63,10 +70,35 @@ def capture_inputs(plan, input_files=()) -> dict:
     inventory, resolved = _directory_inputs(directories, outputs)
     roots.update(inventory)
     complete &= resolved
-    if plan.adapter == "cocotb":
+    if plan.adapter == "cocotb" and not plan.meta.get("python_trace"):
         complete = False
         reasons.append("Python packages and dynamic imports require runtime dependency tracing")
+    # A native preprocessor handles C/C++ includes and conditional headers.
+    # Runtime I/O in the harness remains outside that dependency contract.
+    native_cpp = {p for p in roots if Path(p).suffix.lower() in (".c", ".cc", ".cpp", ".h", ".hpp")}
+    if plan.meta.get("cpp_dependencies"):
+        roots.difference_update(native_cpp)
+        complete &= cpp_complete
+        if not cpp_complete:
+            reasons.append("C++ dependency scan is incomplete (generated headers may not exist yet)")
+        for path in cpp_files:
+            if Path(path).is_relative_to(Path(plan.workdir)):
+                try:
+                    text = Path(path).read_text(errors="replace")
+                    if re.search(r'\b(?:ifstream|fstream|filesystem)\b|\b(?:fopen|fread|open|read|dlopen|system|popen)\s*\(', text):
+                        complete = False
+                        reasons.append("C++ runtime I/O requires declared/traced dependencies")
+                except OSError:
+                    complete = False
     files, resolved = dependency_files(roots, incdirs, workdirs, outputs)
+    files.update(cpp_files)
+    if plan.meta.get("cpp_dependencies"):
+        for path in native_cpp:
+            try:
+                files[path] = sha256_file(path)
+            except OSError:
+                files[path] = "MISSING"
+                complete = False
     if not resolved:
         reasons.append("missing or dynamic include/runtime input")
     opaque, ok = _directory_inputs(plan.meta.get("toolchain_dirs", []), outputs)
@@ -78,15 +110,25 @@ def capture_inputs(plan, input_files=()) -> dict:
             files[os.path.realpath(path)] = "MISSING"
             ok = False
     complete &= ok
-    return {"files": files, "complete": complete and resolved,
+    snapshot = {"files": files, "complete": complete and resolved,
             "roots": sorted(roots), "incdirs": incdirs, "workdirs": workdirs,
             "outputs": sorted(outputs), "reasons": reasons,
             "request": {"workdir": plan.workdir, "adapter": plan.adapter,
                         "artifacts": plan.artifacts, "meta": {
                             k: plan.meta[k] for k in ("input_files", "input_dirs", "depfiles",
-                                                     "toolchain_dirs", "toolchain_files")
-                            if k in plan.meta}, "input_files": list(input_files),
-                        "steps": [{"argv": s.argv, "cwd": s.cwd} for s in plan.steps]}}
+                                                     "toolchain_dirs", "toolchain_files", "python_trace",
+                                                     "incdirs", "runtime_workdirs", "output_dirs")
+                            if k in plan.meta} | ({"cpp_dependencies": plan.meta["cpp_dependencies"]}
+                                if plan.meta.get("cpp_dependencies") else {}), "input_files": list(input_files),
+                        "steps": [{"argv": s.argv, "cwd": s.cwd, "env": getattr(s, "env", {})}
+                                  for s in plan.steps]}}
+    if plan.meta.get("python_trace"):
+        from .runtime_inputs import python_environment
+        snapshot["python_environment"] = python_environment(plan)
+        snapshot["python_static_complete"] = bool(snapshot["complete"] and
+            snapshot["python_environment"].get("complete"))
+        snapshot["complete"] = False  # Only a completed runtime trace can promote this.
+    return snapshot
 
 
 def _expand_filelists(argv, cwd, adapter, stack=()):
@@ -227,11 +269,19 @@ def snapshot_current(snapshot: dict) -> bool:
         from types import SimpleNamespace
         plan = SimpleNamespace(**{k: v for k, v in request.items() if k != "input_files"})
         plan.steps = [SimpleNamespace(**s) for s in request["steps"]]
-        files = capture_inputs(plan, request["input_files"])["files"]
-        observed, _ = dependency_files(snapshot.get("observed", []),
+        captured = capture_inputs(plan, request["input_files"])
+        files = captured["files"]
+        observed, _ = dependency_files(set(snapshot.get("observed", [])) - set(files),
                                         snapshot.get("incdirs", []), snapshot.get("workdirs", []),
                                         snapshot.get("outputs", []))
         files.update(observed)
+        if snapshot.get("python_environment"):
+            from .runtime_inputs import runtime_current
+            if captured.get("python_environment") != snapshot["python_environment"]:
+                return False
+            if not runtime_current(snapshot):
+                return False
+            files.update(snapshot.get("runtime_files", {}))
     else:
         files, _ = dependency_files(snapshot.get("roots", []), snapshot.get("incdirs", []),
                                     snapshot.get("workdirs", []), snapshot.get("outputs", []))
@@ -241,7 +291,7 @@ def snapshot_current(snapshot: dict) -> bool:
 def finish_capture(plan, before, input_files=()):
     """Attach compiler-observed inputs without claiming dynamic inputs are complete."""
     after = capture_inputs(plan, input_files)
-    before["unstable"] = before["files"] != after["files"]
+    before["unstable"] = bool(before.get("unstable")) or before["files"] != after["files"]
     observed = set()
     for dep in plan.meta.get("depfiles", []):
         try:
@@ -261,7 +311,7 @@ def finish_capture(plan, before, input_files=()):
     observed.difference_update(before["outputs"])
     observed = {p for p in observed if not any(
         Path(p).is_relative_to(d) for d in plan.meta.get("output_dirs", []))}
-    native, _ = dependency_files(observed, before["incdirs"], before["workdirs"], before["outputs"])
+    native, _ = dependency_files(observed - set(before["files"]), before["incdirs"], before["workdirs"], before["outputs"])
     unknown = set(native) - set(before["files"])
     before["observed"] = sorted(observed)
     before["files"].update(native)
@@ -271,4 +321,7 @@ def finish_capture(plan, before, input_files=()):
     if before["unstable"]:
         before["complete"] = False
         before["reasons"].append("inputs changed while the job was running")
+    if plan.meta.get("python_trace"):
+        from .runtime_inputs import attach_runtime
+        attach_runtime(plan, before, after)
     return before

@@ -365,6 +365,18 @@ class JobRunner:
                     break
                 if sr.rc != 0 and not st.allow_fail:
                     break
+                if idx == plan.meta.get("capture_after_step"):
+                    # Generated headers now exist, and the native compilation
+                    # has not started. Capture its complete preprocessor closure.
+                    captured = capture_inputs(plan, input_files or [])
+                    if any(captured["files"].get(p) != digest for p, digest in snapshot["files"].items()):
+                        captured["unstable"] = True
+                        captured["complete"] = False
+                    snapshot = captured
+                    key = cache_key(plan, adapter, inputs_hash=ih, seed=seed,
+                        defines=defines, env_modules=env_modules, snapshot=snapshot,
+                        environment=scrub_env(allowlist=self.env_allowlist, deny=self.env_deny))
+                    rec.execution_key = key
         finally:
             self.licenses.release(rec.license_features)
 
@@ -377,8 +389,15 @@ class JobRunner:
                       "metrics": result.metrics, "summary": result.summary,
                       "diagnostics": [d.__dict__ for d in result.diagnostics]}
         rec.input_snapshot = finish_capture(plan, snapshot, input_files or [])
+        if (plan.meta.get("python_trace") or plan.meta.get("cpp_dependencies")) and (self.env_allowlist or self.env_deny or rec.env_modules):
+            rec.input_snapshot["complete"] = False
+            rec.input_snapshot["reasons"].append("dependency probing with custom environment policy/modules is unsupported")
         if not rec.input_snapshot["complete"]:
             key = rec.execution_key = ""
+        elif plan.meta.get("python_trace"):
+            key = rec.execution_key = cache_key(plan, adapter, inputs_hash=ih, seed=seed,
+                defines=defines, env_modules=env_modules, snapshot=rec.input_snapshot,
+                environment=scrub_env(allowlist=self.env_allowlist, deny=self.env_deny))
         from ..util.hashing import sha256_file
         for path in [*(s.log_path for s in rec.steps), *rec.artifacts.values()]:
             if path:

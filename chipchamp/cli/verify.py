@@ -61,6 +61,8 @@ def verify_plan_cmd(ctx, changed_paths, base, seeds, out):
         echo(f"[bold]{result['plan_id']}[/] — {result['target']}: {selection['mode']}")
         echo("Changed modules: " + (", ".join(selection["changed_modules"]) or "none identified"))
         echo("Required gates: " + (", ".join(result["required_gates"]) or "none for this change"))
+        if result["ordering"]["method"] == "coverage_history":
+            echo("Coverage order: " + ", ".join(result["ordering"]["tests"]))
         for name in selection["selected_tests"]:
             echo(f"  {name}: {'; '.join(selection['reasons'][name])}")
         echo(f"{result['test_jobs']} test/seed jobs selected; "
@@ -156,12 +158,42 @@ def synth(ctx, top):
 @cli.command()
 @click.argument("test")
 @click.option("--set", "cset", default="default")
+@click.option("--seed", type=int, default=1)
 @click.pass_context
-def cov(ctx, test, cset):
+def cov(ctx, test, cset, seed):
     """Run a coverage sim and summarize."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
-    r = _run_tool(c, "cov.run", test=test, set=cset)
+    r = _run_tool(c, "cov.run", test=test, set=cset, seed=seed)
     _emit(r, ctx.obj["as_json"])
+    if r.get("error") or r.get("denied"):
+        raise SystemExit(1)
+
+
+@cli.command("cov-history")
+@click.option("--test", default="")
+@click.option("--seed", type=int, default=None)
+@click.option("--limit", type=click.IntRange(1, 100), default=20)
+@click.pass_context
+def cov_history_cmd(ctx, test, seed, limit):
+    """Show coverage observations across runs, with freshness and test/seed provenance."""
+    c = _ctx(ctx.obj["root"], ctx.obj["target"])
+    result = _run_tool(c, "cov.history", test=test, seed=seed, limit=limit)
+    _emit(result, ctx.obj["as_json"])
+    if result.get("error") or result.get("denied"):
+        raise SystemExit(1)
+
+
+@cli.command("cov-diff")
+@click.argument("before")
+@click.argument("after")
+@click.pass_context
+def cov_diff_cmd(ctx, before, after):
+    """Compare coverage jobs: newly covered/uncovered bins and model changes."""
+    c = _ctx(ctx.obj["root"], ctx.obj["target"])
+    result = _run_tool(c, "cov.compare", before=before, after=after)
+    _emit(result, ctx.obj["as_json"])
+    if result.get("error") or result.get("denied"):
+        raise SystemExit(1)
 
 
 @cli.command()
