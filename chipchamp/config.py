@@ -321,6 +321,13 @@ class Workspace:
         t = self.targets.get(tn)
         if t is not None:
             t.invalidate()
+            spec = self.config.get("targets", {}).get(tn)
+            if spec is not None:
+                # Keep explicit filelists/globs live while retaining Target identity.
+                t.fileset = resolve_sources(self.root, filelists=spec.get("filelists"),
+                    globs=spec.get("globs"), sources=spec.get("sources"),
+                    fusesoc_core=spec.get("fusesoc_core"), bender=spec.get("bender"))
+                t.defines = {**t.fileset.defines, **spec.get("defines", {})}
         self._load_tests()
 
     def _load(self) -> None:

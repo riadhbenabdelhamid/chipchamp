@@ -183,11 +183,21 @@ report suitable for CI; launch and budget errors remain visible as failed runs.
 Tests exercise the planner, Git change discovery, CLI exit codes and real Icarus
 pass/failure reports.
 
-Next depth work: adapter-provided dependency manifests, measured per-test coverage
-mapping, and durable verification plans that can justify a smaller completion
-suite. Next breadth work: richer CI annotations and additional protocol and
+The second increment adds saved-plan execution, per-case checkpoints and resume,
+input/evidence validation, restored submission budgets, separate attempt outputs,
+and SARIF/Markdown CI reports. Dependency manifests cover nested native filelists,
+literal headers and memory images, explicit runner inputs, and native Icarus and
+Verilator compiler observations. Workspace filelist changes refresh live targets.
+
+Next depth work: Python package/dynamic-import tracing, C++ system/generated-header
+discovery, measured per-test coverage mapping, and evidence that can justify a
+smaller completion suite. Cocotb directories are captured for freshness but are
+not eligible for reuse; macro/dynamic dependencies and compiler-discovered inputs
+missing from the pre-run manifest also force execution. Resume retries missing
+cases; it does not adopt a surviving simulator from a killed parent process.
+Next breadth work: CI-provider upload automation and additional protocol and
 register-model integrations. Hierarchy-based selection remains advisory until
-those completeness checks exist.
+the completeness checks and explicit policy support exist.
 
 ## Deliberately still open (unchanged scope)
 

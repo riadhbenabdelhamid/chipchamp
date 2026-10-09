@@ -109,6 +109,9 @@ class ToolContext:
         self.refresh_jobs()
         plan.meta["verification_hash"] = self.refresh_measurements()
         plan.meta["target_name"] = self.target_name
+        plan.meta.setdefault("input_files", []).extend(
+            p for p in self.target.fileset.manifests
+            if p not in plan.meta.get("input_files", []))
         if plan.license_features:
             ok, why = self.ledger.can_spend_license(0.0)
             if not ok and not self._budget_ok("license_hours", why):
@@ -172,6 +175,7 @@ class ToolContext:
         from ..util.hashing import hash_manifest, sha256_text
         self.target.invalidate()
         files = list(self.target.sources)
+        files.extend(self.target.fileset.manifests)
         files.extend(str(p) for ext in ("*.toml", "*.yaml") for p in self.ws.dot.glob(ext))
         files.extend(os.path.join(self.ws.root, p) for p in self.edits
                      if not FileChange(p, "modified").is_doc)

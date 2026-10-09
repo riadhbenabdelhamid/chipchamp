@@ -77,11 +77,12 @@ class CocotbAdapter(Adapter):
 
     def sim(self, files: list[str], test_module: str, top: str, workdir: str, *,
             hdl_sim: str = "icarus", seed: int | None = None, waves: bool = True,
-            test_dir: str | None = None,
+            test_dir: str | None = None, output_dir: str | None = None,
             timescale: tuple[str, str] = ("1ns", "1ps")) -> Plan:
         py = _cocotb_python() or "python3"
-        build_dir = os.path.abspath(os.path.join(workdir, "cocotb_build"))
-        results = os.path.abspath(os.path.join(workdir, f"{test_module}.results.xml"))
+        out = output_dir or workdir
+        build_dir = os.path.abspath(os.path.join(out, "cocotb_build"))
+        results = os.path.abspath(os.path.join(out, f"{test_module}.results.xml"))
         test_dir = os.path.abspath(test_dir or workdir)
         import json as _json
         cfg = {"sim": hdl_sim, "sources": [os.path.abspath(f) for f in files],
@@ -90,9 +91,9 @@ class CocotbAdapter(Adapter):
                "timescale": list(timescale), "waves": waves, "seed": seed}
         driver = os.path.join(build_dir, "_chipchamp_cocotb_driver.py")
         os.makedirs(build_dir, exist_ok=True)
-        with open(driver, "w") as fh:
-            fh.write(_DRIVER)
-        cov_xml = os.path.abspath(os.path.join(workdir, f"{test_module}.cov.xml"))
+        from ..util.jsonio import atomic_write
+        atomic_write(driver, _DRIVER)
+        cov_xml = os.path.abspath(os.path.join(out, f"{test_module}.cov.xml"))
         env = {"PYTHONPATH": test_dir + os.pathsep + os.environ.get("PYTHONPATH", ""),
                # cocotb-coverage TBs export here (absolute: the sim's cwd is
                # the runner's build/test dir, not the workspace root)
@@ -101,7 +102,8 @@ class CocotbAdapter(Adapter):
                     steps=[Step(argv=[py, driver, _json.dumps(cfg)], cwd=workdir,
                                 env=env, allow_fail=True)],
                     artifacts={"results": results, "coverage_xml": cov_xml},
-                    meta={"module": test_module, "seed": seed})
+                    meta={"module": test_module, "seed": seed,
+                          "input_dirs": [test_dir]})
 
     def parse(self, plan: Plan, results: list[StepResult]) -> ToolResult:
         xml = plan.artifacts.get("results", "")

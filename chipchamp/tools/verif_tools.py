@@ -110,6 +110,10 @@ def _finish_plan(ctx: ToolContext, t: dict | None, adapter, plan, files,
     plan.meta["test_config_hash"] = sha256_text(json.dumps(
         {"runner": _runner_of(t), "top": plan.meta.get("tb_top", ""),
          "steps": [s.argv for s in plan.steps]}, sort_keys=True))
+    from .paths import ws_path
+    plan.meta.setdefault("input_files", []).extend(
+        ws_path(ctx, path)[0] for path in _runner_of(t).get("inputs", []))
+    plan.meta["input_files"].extend(ctx.target.fileset.manifests)
     return adapter, plan, files, timeout
 
 
@@ -128,7 +132,7 @@ def _timeout_report(rec, plan) -> dict | None:
 
 def _plan_for_test(ctx: ToolContext, test: str, seed: int = 1,
                    waves: bool = True, uvm_test: str = "", plusargs=None,
-                   timeout_s=None):
+                   timeout_s=None, output_dir=None):
     """Full runner-kind dispatch for ONE named test — the single source of
     truth for how a test runs (plain SV / UVM / cocotb), shared by sim.run,
     regress.run, cov.run and the triage playbook. Returns
@@ -158,8 +162,8 @@ def _plan_for_test(ctx: ToolContext, test: str, seed: int = 1,
         top = runner.get("top") or runner.get("tb_top") or test
         plan = adapter.sim_cpp(rtl, cpp, top, ctx.ws.root,
                                cpp_incdirs=cpp_incdirs, incdirs=ctx.target.incdirs,
-                               defines=ctx.target.defines, seed=seed)
-        return _finish_plan(ctx, t, adapter, plan, rtl, 300, timeout_s, test)
+                               defines=ctx.target.defines, seed=seed, output_dir=output_dir)
+        return _finish_plan(ctx, t, adapter, plan, rtl + cpp, 300, timeout_s, test)
     if runner.get("kind") == "cocotb":
         adapter = ctx.registry.get("cocotb")
         if not adapter.available():
@@ -177,6 +181,7 @@ def _plan_for_test(ctx: ToolContext, test: str, seed: int = 1,
                            runner.get("toplevel") or runner.get("tb_top"),
                            ctx.ws.root, hdl_sim=runner.get("hdl_sim", "icarus"),
                            seed=seed, waves=waves,
+                           output_dir=output_dir,
                            test_dir=os.path.join(ctx.ws.root,
                                                  runner.get("test_dir", "tb")))
         return _finish_plan(ctx, t, adapter, plan, rtl, 180, timeout_s, test)
@@ -202,8 +207,13 @@ def _plan_for_test(ctx: ToolContext, test: str, seed: int = 1,
     if adapter is None or not adapter.available():
         return {"error": "no simulator adapter available"}
     kw = {"uvm": True} if is_uvm else {}
+    if "output_dir" in inspect.signature(adapter.sim).parameters:
+        kw["output_dir"] = output_dir
+    # Keep target compile configuration on every simulation path.
+    incdirs = list(dict.fromkeys([*ctx.target.incdirs, *incdirs]))
     plan = adapter.sim(files, tb_top=tb_top, workdir=ctx.ws.root, seed=seed,
-                       waves=waves, plusargs=pargs, incdirs=incdirs or None, **kw)
+                       waves=waves, plusargs=pargs, incdirs=incdirs or None,
+                       defines=ctx.target.defines, **kw)
     return _finish_plan(ctx, t, adapter, plan, files, 600 if is_uvm else 120,
                         timeout_s, test)
 
@@ -314,7 +324,8 @@ def test_select(ctx: ToolContext, modules: list[str] | None = None) -> dict:
 
 @tool("regress.run", "Run a set of tests (by tag or explicit list), optionally "
       "sweeping seeds, farm/license-bounded, and cluster the failures. Set affected "
-      "for hierarchy-based selection. Saves JSON/JUnit reports, including errors.",
+      "for hierarchy-based selection. Run plan_file or resume a checkpoint; saves "
+      "JSON/JUnit/SARIF/Markdown reports, including errors.",
       cost="metered", permission="submit", group="sim",
       schema={"type": "object", "properties": {
           "tag": {"type": "string"}, "tests": {"type": "array", "items": {"type": "string"}},
@@ -323,15 +334,25 @@ def test_select(ctx: ToolContext, modules: list[str] | None = None) -> dict:
           "affected": {"type": "boolean", "default": False},
           "changed_paths": {"type": "array", "items": {"type": "string"}},
           "base": {"type": "string", "default": "HEAD"},
+          "plan_file": {"type": "string", "description": "saved verification plan .json"},
+          "resume": {"type": "string", "description": "checkpoint.json from a previous run"},
+          "sarif": {"type": "string", "description": "optional workspace-relative .sarif export"},
           "junit": {"type": "string", "description": "optional workspace-relative .xml export"}}})
 def regress_run(ctx: ToolContext, tag: str = "", tests=None, seeds=None,
                 run_id: str = "reg", affected: bool = False, changed_paths=None,
-                base: str = "HEAD", junit: str = "") -> dict:
+                base: str = "HEAD", junit: str = "", plan_file: str = "",
+                resume: str = "", sarif: str = "") -> dict:
     import uuid
-    from ..jobs.reports import junit_xml, regression_report
-    from ..util.jsonio import atomic_write, dump_json
-    from ..verification import regression_seeds, target_tests, verification_plan
+    from pathlib import Path
+    from ..jobs.checkpoint import load_checkpoint, run_lock
+    from ..util.jsonio import load_json
+    from ..verification import planning_scope_hash, regression_seeds, target_tests, verification_plan
     from .paths import PathRefused, ws_path
+    if (plan_file or resume) and (tests is not None or tag or seeds is not None
+                                 or affected or changed_paths is not None or base != "HEAD"):
+        return {"error": "plan_file/resume cannot be combined with test, seed or change selectors"}
+    if plan_file and resume:
+        return {"error": "choose plan_file or resume"}
     if affected and (tests is not None or tag):
         return {"error": "affected cannot be combined with tests or tag"}
     if changed_paths is not None and not affected:
@@ -340,32 +361,92 @@ def regress_run(ctx: ToolContext, tag: str = "", tests=None, seeds=None,
                              or any(not isinstance(t, str) for t in tests)):
         return {"error": "tests must be a non-empty list of test names"}
     selection_plan = None
+    previous = None
     try:
         ctx.ws.invalidate(ctx.target_name)
         seeds = regression_seeds(ctx, seeds)
         export = ws_path(ctx, junit, write=True)[0] if junit else None
         if junit and not junit.lower().endswith(".xml"):
             return {"error": "junit must name a workspace-relative .xml file"}
+        sarif_export = ws_path(ctx, sarif, write=True)[0] if sarif else None
+        if sarif and not sarif.lower().endswith(".sarif"):
+            return {"error": "sarif must name a workspace-relative .sarif file"}
         report_dir, _ = ws_path(ctx, ctx.rel(str(ctx.ws.dot / "regressions" /
                                                ("R-" + uuid.uuid4().hex))), write=True)
         declared = target_tests(ctx)
-        if affected:
+        if resume:
+            ws_path(ctx, resume)  # Reading saved state needs read permission too.
+            checkpoint, _ = ws_path(ctx, resume, write=True)
+            directory = Path(checkpoint).parent
+            import re
+            if (Path(checkpoint).name != "checkpoint.json"
+                    or directory.parent.resolve() != (ctx.ws.dot / "regressions").resolve()
+                    or not re.fullmatch(r"R-[0-9a-f]{32}", directory.name)):
+                return {"error": "resume must name a regression's generated checkpoint.json"}
+            report_dir = str(directory)
+            previous = load_checkpoint(checkpoint, ctx)
+            names, seeds = previous["tests"], previous["seeds"]
+            run_id, selection_plan = previous["run_id"], previous.get("plan")
+        elif plan_file:
+            selection_plan = load_json(ws_path(ctx, plan_file)[0])
+            if (not isinstance(selection_plan, dict) or selection_plan.get("schema_version") != 1
+                    or selection_plan.get("target") != ctx.target_name
+                    or selection_plan.get("scope_hash") != planning_scope_hash(ctx)):
+                return {"error": "saved plan is stale or belongs to another target; generate a new verify-plan"}
+            names = selection_plan["selection"]["selected_tests"]
+            seeds = regression_seeds(ctx, selection_plan["seeds"])
+        elif affected:
             selection_plan = verification_plan(ctx, changed_paths, seeds, base)
             names = selection_plan["selection"]["selected_tests"]
         else:
             names = tests if tests is not None else [t["name"] for t in declared
                                                      if not tag or tag in (t.get("tags") or [])]
+        if not isinstance(names, list) or any(not isinstance(n, str) or not n for n in names):
+            return {"error": "invalid saved test selection"}
         names = list(dict.fromkeys(names))
+        if plan_file or resume:
+            missing = set(names) - {t["name"] for t in declared}
+            if missing:
+                return {"error": "saved tests are no longer declared: " + ", ".join(sorted(missing))}
         wrong_target = [n for n in names if ctx.find_test(n)
                         and ctx.find_test(n).get("target", ctx.target_name) != ctx.target_name]
         if wrong_target:
             return {"error": "tests belong to another target: " + ", ".join(wrong_target)}
     except PathRefused as e:
         return e.payload
-    except (ValueError, OSError) as e:
+    except (ValueError, OSError, KeyError, TypeError) as e:
         return {"error": str(e)}
     if not names:
         return {"error": "no tests selected", "tag": tag}
+    try:
+        # Validate every generated destination, including existing symlinks.
+        for name in ("checkpoint.json", ".lock", "results.json", "junit.xml", "results.sarif", "summary.md"):
+            ws_path(ctx, ctx.rel(os.path.join(report_dir, name)), write=True)
+        with run_lock(report_dir):
+            if resume:
+                previous = load_checkpoint(checkpoint, ctx)
+            return _execute_regression(ctx, names, seeds, run_id, selection_plan,
+                                       report_dir, export, sarif_export, previous)
+    except PathRefused as e:
+        return e.payload
+    except (ValueError, OSError) as e:
+        return {"error": str(e), "checkpoint": ctx.rel(os.path.join(report_dir, "checkpoint.json"))}
+
+
+def _execute_regression(ctx, names, seeds, run_id, selection_plan, report_dir,
+                        export, sarif_export, previous):
+    import uuid
+    from ..jobs.checkpoint import Checkpoint, case_key
+    from ..jobs.reports import junit_xml, regression_report, sarif_report, regression_markdown
+    from ..util.jsonio import atomic_write, dump_json
+    from .paths import ws_path
+    from threading import Lock
+    checkpoint = Checkpoint(os.path.join(report_dir, "checkpoint.json"), ctx,
+                            names, seeds, run_id, selection_plan, previous)
+    if previous:
+        checkpoint.restore_costs()
+    checkpoint.data["state"] = "running"
+    checkpoint.save()  # Durable matrix BEFORE any submission.
     # Record obligations BEFORE planning/submitting. A crashed or budget-blocked
     # test still belongs to the required set and cannot disappear from gates.
     for name in names:
@@ -375,22 +456,70 @@ def regress_run(ctx: ToolContext, tag: str = "", tests=None, seeds=None,
                 ctx.expected_sims.append(requirement)
 
     timeouts: list[dict] = []
+    planned, completed, attempts = {}, {}, {}
+    locks = {}
+
+    def prepare(name, seed, attempt):
+        output_dir, _ = ws_path(ctx, ctx.rel(os.path.join(
+            report_dir, "work", case_key(name, seed), attempt)), write=True)
+        os.makedirs(output_dir, exist_ok=True)
+        got = _plan_for_test(ctx, name, seed=seed, waves=True, output_dir=output_dir)
+        if not isinstance(got, dict):
+            plan = got[1]
+            plan.meta.update(verification_hash=ctx.refresh_measurements(), target_name=ctx.target_name,
+                             regression_id=os.path.basename(report_dir))
+            plan.meta.setdefault("input_files", []).extend(
+                p for p in ctx.target.fileset.manifests if p not in plan.meta.get("input_files", []))
+        return got
+
+    for name in names:
+        for seed in seeds:
+            old = checkpoint.data["cases"].get(case_key(name, seed), {})
+            attempts[name, seed] = old.get("attempt") or uuid.uuid4().hex
+            try:
+                got = prepare(name, seed, attempts[name, seed])
+                planned[name, seed] = got
+                if isinstance(got, dict):
+                    continue
+                adapter, plan, files, timeout = got
+                if previous:
+                    reused = checkpoint.reusable_case(name, seed, adapter, plan, files)
+                    if reused:
+                        completed[name, seed] = reused
+                    elif old.get("attempt"):
+                        # A killed parent's simulator may still be writing its
+                        # old outputs. Every retry gets a fresh build directory.
+                        attempts[name, seed] = uuid.uuid4().hex
+                        planned[name, seed] = prepare(name, seed, attempts[name, seed])
+                # Adapters without per-case output support share workspace files.
+                # Serialize them so seeds cannot overwrite a running build.
+                locks.setdefault(adapter.name, Lock())
+            except Exception as e:
+                planned[name, seed] = {"error": str(e)}
 
     def run_one(name, seed):
-        got = _plan_for_test(ctx, name, seed=seed, waves=True)
+        checkpoint.start(name, seed, attempts[name, seed])
+        got = planned[name, seed]
         if isinstance(got, dict):
             raise RuntimeError(f"{name}: {got['error']}")
         adapter, plan, files, timeout = got
-        rec, _ = ctx.submit(plan, adapter, seed=seed, input_files=files,
-                            is_v3=True, timeout=timeout)
+        from contextlib import nullcontext
+        isolated = adapter.name in ("icarus", "verilator", "cocotb")
+        with nullcontext() if isolated else locks[adapter.name]:
+            rec, _ = ctx.submit(plan, adapter, seed=seed, input_files=files,
+                                is_v3=True, timeout=timeout, no_cache=bool(previous))
         tr = _timeout_report(rec, plan)
         if tr:
             timeouts.append({"test": name, "seed": seed, "job": rec.id, **tr})
         return rec
 
     mgr = RegressionManager(run_one, max_parallel=self_parallel(ctx))
-    res = mgr.run(names, seeds, run_id=run_id)
+    res = mgr.run(names, seeds, run_id=run_id, completed=completed, on_case=checkpoint.record)
+    checkpoint.data["state"] = "finished"
+    checkpoint.save()
     out = {"run_id": run_id, "summary": res.summary(),
+           "checkpoint": ctx.rel(str(checkpoint.path)), "resumed": len(completed),
+           "submitted": res.total - len(completed),
            "passed": res.passed, "failed": res.failed, "errored": res.errored, "total": res.total,
            "selected_tests": names, "seeds": seeds,
            "errored_tests": res.errored_tests,
@@ -407,9 +536,17 @@ def regress_run(ctx: ToolContext, tag: str = "", tests=None, seeds=None,
     try:
         atomic_write(json_path, dump_json(report))
         atomic_write(xml_path, xml)
+        sarif_path = os.path.join(report_dir, "results.sarif")
+        markdown_path = os.path.join(report_dir, "summary.md")
+        annotations = dump_json(sarif_report(res.jobs, ctx.ws.root))
+        atomic_write(sarif_path, annotations)
+        atomic_write(markdown_path, regression_markdown(res, ctx.target_name, len(completed)))
         if export:
             atomic_write(export, xml)
-        out["reports"] = {"json": ctx.rel(json_path), "junit": ctx.rel(export or xml_path)}
+        if sarif_export:
+            atomic_write(sarif_export, annotations)
+        out["reports"] = {"json": ctx.rel(json_path), "junit": ctx.rel(export or xml_path),
+                          "sarif": ctx.rel(sarif_export or sarif_path), "markdown": ctx.rel(markdown_path)}
     except OSError as e:
         out["error"] = f"regression completed but report export failed: {e}"
     return out

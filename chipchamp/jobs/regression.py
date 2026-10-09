@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
@@ -75,20 +75,24 @@ class RegressionManager:
         self.max_parallel = max(1, max_parallel)
 
     def run(self, tests: list[str], seeds: Optional[list[int]] = None,
-            run_id: str = "reg") -> RegressionResult:
+            run_id: str = "reg", *, completed=None, on_case=None) -> RegressionResult:
         seeds = seeds or [0]
         work = [(t, s) for t in tests for s in seeds]
-        jobs: list[tuple[str, int, JobRecord]] = []
+        records = dict(completed or {})
         with ThreadPoolExecutor(max_workers=self.max_parallel) as pool:
-            futs = {pool.submit(self.run_sim, t, s): (t, s) for t, s in work}
-            for fut in futs:
+            futs = {pool.submit(self.run_sim, t, s): (t, s) for t, s in work
+                    if (t, s) not in records}
+            for fut in as_completed(futs):
                 t, s = futs[fut]
                 try:
                     rec = fut.result()
-                    jobs.append((t, s, rec))
                 except Exception as e:  # a crashed job must not abort the regression
-                    jobs.append((t, s, _error_record(t, s, str(e))))
+                    rec = _error_record(t, s, str(e))
+                records[t, s] = rec
+                if on_case:
+                    on_case(t, s, rec)
 
+        jobs = [(t, s, records[t, s]) for t, s in work]
         res = RegressionResult(run_id=run_id, total=len(jobs))
         by_test_seed_status: dict[str, dict[int, str]] = defaultdict(dict)
         clusters: dict[str, FailureCluster] = {}

@@ -356,6 +356,10 @@ chipchamp --root examples/soc verify-plan --changed rtl/sync_fifo.sv
 chipchamp --root examples/soc --json verify-plan --changed rtl/sync_fifo.sv --seeds 1,2
 chipchamp --root examples/soc regress --affected --changed rtl/sync_fifo.sv --seeds 1 --junit work/regression.xml
 chipchamp --root examples/soc regress --tag smoke --junit work/smoke.xml
+chipchamp --root examples/soc verify-plan --changed rtl/sync_fifo.sv --out work/verification.json
+chipchamp --root examples/soc regress --plan work/verification.json --sarif work/findings.sarif
+# Resume using the checkpoint path printed by regress:
+chipchamp --root examples/soc regress --resume '.chipchamp/regressions/R-<id>/checkpoint.json'
 ```
 
 `verify-plan` shows changed modules and their parents, why each test was selected,
@@ -368,13 +372,33 @@ Other targets' tests are excluded. This is a conservative feedback plan, not a
 proof that omitted tests are unnecessary: `report.done` still requires all
 declared-suite obligations and policy gates.
 
-`regress` writes JSON and JUnit XML under `.chipchamp/regressions/R-*/`, with an
-optional workspace-relative `--junit` export for CI. Every requested test/seed
+`regress` writes JSON, JUnit XML, SARIF diagnostics and a Markdown summary under
+`.chipchamp/regressions/R-*/`, with optional workspace-relative `--junit` and
+`--sarif` exports for CI. Every requested test/seed
 gets a case, including launch errors and budget refusals. Failures, timeouts,
 launch errors and report-export errors produce a nonzero CLI exit code, including
 with `--json`. Seeds default to `tests.yaml`; job execution retains the workspace's
 existing budget, license and farm controls. The same features are available to
 agents and MCP clients through `verify.plan` and `regress.run(affected=true)`.
+
+Save a selection with `verify-plan --out work/verification.json`, then execute it
+with `regress --plan work/verification.json` (MCP: `plan_file`). A saved plan is
+rejected if its target or selection inputs have changed. `regress --resume` (MCP:
+`resume`) keeps the run's original test/seed matrix and reuses only passed jobs
+whose dependency hashes, commands, tool versions, environments, logs and artifacts
+still match. Failed, missing, stale and incomplete cases are retried. Checkpoints
+are written before execution and after each finished case; the job store restores
+prior submission costs on restart. Concurrent resumes of the same run are refused.
+Icarus, Verilator and cocotb have separate build paths per case and attempt.
+
+Input manifests follow nested native Icarus/Verilator filelists, literal HDL/C
+includes, memory images and declared `runner.inputs` (workspace-relative paths,
+including generated stimuli/configuration). Native compiler dependency files add
+observed inputs to job provenance. Cocotb test directories are inventoried, but
+Python package/dynamic-import tracing and unresolved dependencies still disable
+reuse. `chipchamp ci` exports lint and test diagnostics with repository locations
+to `.chipchamp/ci-results.sarif`; `--sarif` overrides that path. Upload reports
+through your CI system's artifact/SARIF integration.
 
 Inside a session, `/undo` reverts the files the last task changed (anything you
 edited by hand since is kept), and the gate ladder repaints under the

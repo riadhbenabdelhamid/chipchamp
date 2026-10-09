@@ -41,9 +41,13 @@ So the path from "agent says done" to "human trusts it" never passes through mod
 text: it passes through job records the model cannot forge.
 
 Cache keys include step working directories, effective environments, literal
-transitive HDL/C includes and memory images. Unresolved dependencies, filelists,
-shell wrappers and cocotb plans disable reuse until their input closure can be
-captured. External source, dependency or configuration edits also invalidate the
+transitive HDL/C includes, memory images, nested native Icarus/Verilator filelists,
+declared runner inputs and Verilator's installed support files. Native dependency
+outputs supplement provenance; newly discovered inputs never silently promote an
+incomplete pre-run manifest to reusable evidence. Cocotb directories are inventoried,
+but unresolved dependencies, shell wrappers and Python imports still disable reuse.
+Input changes during execution invalidate the result for reuse. External source,
+dependency or configuration edits also invalidate the
 context's derived coverage, timing and ISA verdicts.
 
 Detached workers inherit farm configuration and share license seats through OS
@@ -61,6 +65,20 @@ completion gates retain the full declared suite. `jobs/reports.py` exports one
 JUnit case per requested test/seed plus a JSON report containing the plan and job
 records, including submission errors. Reports are written under
 `.chipchamp/regressions/`; the `regress` CLI exits nonzero on failures or errors.
+
+Saved plans carry a fingerprint of the selection inputs. `regress --plan` validates
+that fingerprint before executing the stored test/seed matrix. `jobs/checkpoint.py`
+persists run state atomically as cases complete (completion order, not submission
+order), under an exclusive process lock. Resume rebuilds commands from current test
+configuration and verifies runner-owned job records, execution keys and evidence
+hashes before reusing passed cases. Checkpoint verdicts cannot manufacture evidence.
+Runner records identify the regression and restore costs even if its last checkpoint
+callback was lost. Missing/failed/stale cases receive fresh attempt directories;
+supported adapters retain the workspace as the runtime working directory so relative
+memory inputs keep resolving. Other simulator adapters serialize shared outputs.
+Full-suite completion policy remains unchanged. SARIF and Markdown exports accompany
+JUnit/JSON; the CI command combines lint findings with every regression case, including
+infrastructure errors without job records.
 
 ## The debug loop (P1/P2), concretely
 

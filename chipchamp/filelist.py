@@ -18,6 +18,7 @@ class FileSet:
     sources: list[str] = field(default_factory=list)
     incdirs: list[str] = field(default_factory=list)
     defines: dict[str, str] = field(default_factory=dict)
+    manifests: list[str] = field(default_factory=list)
 
     def dedup(self) -> "FileSet":
         seen = set()
@@ -36,6 +37,7 @@ def parse_filelist(path: str, _seen: set | None = None) -> FileSet:
     _seen = _seen or set()
     fs = FileSet()
     ap = os.path.abspath(path)
+    fs.manifests.append(ap)
     if ap in _seen or not os.path.exists(path):
         return fs
     _seen.add(ap)
@@ -57,6 +59,7 @@ def parse_filelist(path: str, _seen: set | None = None) -> FileSet:
                 fs.sources += child.sources
                 fs.incdirs += child.incdirs
                 fs.defines.update(child.defines)
+                fs.manifests += child.manifests
         elif tok.startswith("+incdir+"):
             for d in tok[len("+incdir+"):].split("+"):
                 if d:
@@ -100,6 +103,7 @@ def parse_fusesoc_core(path: str) -> FileSet:
     for indexing/sim we take the union of rtl-ish filesets)."""
     import yaml
     fs = FileSet()
+    fs.manifests.append(os.path.abspath(path))
     if not os.path.exists(path):
         return fs
     text = open(path, errors="replace").read()
@@ -134,6 +138,7 @@ def parse_bender_manifest(path: str) -> FileSet:
     {files: [...], include_dirs: [...], defines: {...}} groups)."""
     import yaml
     fs = FileSet()
+    fs.manifests.append(os.path.abspath(path))
     if not os.path.exists(path):
         return fs
     try:
@@ -163,15 +168,18 @@ def resolve_sources(root: str, *, filelists=None, globs=None, sources=None,
     fs = FileSet()
     for fl in filelists or []:
         child = parse_filelist(os.path.join(root, fl))
+        fs.manifests += child.manifests
         fs.sources += child.sources
         fs.incdirs += child.incdirs
         fs.defines.update(child.defines)
     if fusesoc_core:
         child = parse_fusesoc_core(os.path.join(root, fusesoc_core))
+        fs.manifests += child.manifests
         fs.sources += child.sources
         fs.incdirs += child.incdirs
     if bender:
         child = parse_bender_manifest(os.path.join(root, bender))
+        fs.manifests += child.manifests
         fs.sources += child.sources
         fs.incdirs += child.incdirs
         fs.defines.update(child.defines)

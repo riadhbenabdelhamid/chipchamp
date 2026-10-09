@@ -39,6 +39,9 @@ class JobRecord:
     inputs_hash: str = ""
     input_files: list[str] = field(default_factory=list)
     input_snapshot: dict = field(default_factory=dict)
+    execution_key: str = ""  # command, tool, environment and pre-run inputs
+    regression_id: str = ""
+    evidence_hashes: dict[str, str] = field(default_factory=dict)
     verification_hash: str = ""
     test_name: str = ""
     target_name: str = ""
@@ -81,6 +84,7 @@ class JobRecord:
 
     @classmethod
     def from_dict(cls, d: dict) -> "JobRecord":
+        d = dict(d)
         steps = [StepLog(**s) for s in d.pop("steps", [])]
         rec = cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
         rec.steps = steps

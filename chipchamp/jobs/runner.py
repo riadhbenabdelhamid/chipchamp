@@ -290,19 +290,19 @@ class JobRunner:
                no_cache: bool = False,
                idle_timeout: Optional[float] = None) -> tuple[JobRecord, ToolResult]:
         from .cache import cache_key, result_from_record, reusable
-        from .inputs import capture_inputs
+        from .inputs import capture_inputs, finish_capture
         snapshot = capture_inputs(plan, input_files or [])
         key = ""
+        ih = ""
+        try:
+            ih = hash_manifest(input_files or [])
+            key = cache_key(plan, adapter, inputs_hash=ih, seed=seed,
+                            defines=defines, env_modules=env_modules,
+                            snapshot=snapshot,
+                            environment=scrub_env(allowlist=self.env_allowlist, deny=self.env_deny))
+        except Exception:
+            key = ""   # an unhashable plan just means no reuse, never a fail
         if self.cache.enabled and not no_cache:
-            ih = ""
-            try:
-                ih = hash_manifest(input_files or [])
-                key = cache_key(plan, adapter, inputs_hash=ih, seed=seed,
-                                defines=defines, env_modules=env_modules,
-                                snapshot=snapshot,
-                                environment=scrub_env(allowlist=self.env_allowlist, deny=self.env_deny))
-            except Exception:
-                key = ""   # an unhashable plan just means no reuse, never a fail
             hit = self.cache.lookup(key) if key else None
             if hit:
                 rec = self.get(hit)
@@ -326,10 +326,12 @@ class JobRunner:
             license_features=list(plan.license_features),
             env_modules=env_modules or [])
         rec.input_snapshot = snapshot
-        for attr in ("verification_hash", "test_name", "target_name", "test_config_hash"):
+        rec.execution_key = key
+        for attr in ("verification_hash", "test_name", "target_name", "test_config_hash", "regression_id"):
             setattr(rec, attr, plan.meta.get(attr, ""))
         rec.compute_inputs_hash()
         rec.start_ts = time.time()
+        self._persist(rec)  # Preserve a launched regression attempt across interruption.
 
         if not self.licenses.acquire(rec.license_features,
                                      timeout=self.license_wait_s):
@@ -374,6 +376,16 @@ class JobRunner:
         rec.result = {"ok": result.ok, "status": result.status,
                       "metrics": result.metrics, "summary": result.summary,
                       "diagnostics": [d.__dict__ for d in result.diagnostics]}
+        rec.input_snapshot = finish_capture(plan, snapshot, input_files or [])
+        if not rec.input_snapshot["complete"]:
+            key = rec.execution_key = ""
+        from ..util.hashing import sha256_file
+        for path in [*(s.log_path for s in rec.steps), *rec.artifacts.values()]:
+            if path:
+                try:
+                    rec.evidence_hashes[path] = sha256_file(path)
+                except OSError:
+                    rec.evidence_hashes[path] = "MISSING"
         self._persist(rec)
         if key and reusable(rec, job_dir, plan):
             self.cache.remember(key, rec.id, rec.artifacts)
@@ -393,7 +405,8 @@ class JobRunner:
         placeholder.license_seconds = done.license_seconds
         placeholder.ran_as = done.id
         for attr in ("input_snapshot", "inputs_hash", "input_files", "verification_hash",
-                     "test_name", "target_name", "test_config_hash", "end_ts"):
+                     "test_name", "target_name", "test_config_hash", "end_ts",
+                     "execution_key", "evidence_hashes", "regression_id"):
             setattr(placeholder, attr, getattr(done, attr))
 
     def submit_async(self, plan: Plan, adapter: Adapter, **kw) -> JobRecord:

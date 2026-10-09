@@ -32,12 +32,26 @@ def _parse_seeds(value):
 @click.option("--changed", "changed_paths", multiple=True, help="changed file (repeatable); default: session/Git changes")
 @click.option("--base", default="HEAD", help="Git revision to compare against")
 @click.option("--seeds", default=None, help="comma-separated seeds; default: tests.yaml")
+@click.option("--out", default="", help="save a workspace-relative .json plan for regress --plan")
 @click.pass_context
-def verify_plan_cmd(ctx, changed_paths, base, seeds):
+def verify_plan_cmd(ctx, changed_paths, base, seeds, out):
     """Explain affected tests, required gates and regression budget without running jobs."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
     result = _run_tool(c, "verify.plan", changed_paths=list(changed_paths) or None,
                        base=base, seeds=_parse_seeds(seeds))
+    if out and "error" not in result:
+        from ..tools.paths import ws_path, PathRefused
+        from ..util.jsonio import atomic_write, dump_json
+        try:
+            path, relative = ws_path(c, out, write=True)
+            if not relative.endswith(".json"):
+                raise ValueError("--out must name a workspace-relative .json file")
+            atomic_write(path, dump_json(result))
+            result["saved_plan"] = relative
+        except PathRefused as e:
+            result = e.payload
+        except (ValueError, OSError) as e:
+            result = {"error": str(e)}
     if ctx.obj["as_json"]:
         _emit(result, True)
     elif "error" in result:
@@ -57,6 +71,8 @@ def verify_plan_cmd(ctx, changed_paths, base, seeds):
         for warning in selection["warnings"]:
             echo(f"[yellow]{warning}[/]")
         echo(result["note"])
+        if result.get("saved_plan"):
+            echo(f"Saved: {result['saved_plan']}")
     if "error" in result:
         raise SystemExit(1)
 
@@ -69,15 +85,18 @@ def verify_plan_cmd(ctx, changed_paths, base, seeds):
 @click.option("--changed", "changed_paths", multiple=True, help="changed file for --affected (repeatable)")
 @click.option("--base", default="HEAD", help="Git revision for --affected")
 @click.option("--junit", default="", help="workspace-relative .xml export for CI")
+@click.option("--sarif", default="", help="workspace-relative .sarif diagnostic export for CI")
+@click.option("--plan", "plan_file", default="", help="run a saved verification plan")
+@click.option("--resume", default="", help="resume a previous run's checkpoint.json")
 @click.option("--run-id", default="reg", help="label for this regression")
 @click.pass_context
-def regress_cmd(ctx, tests, tag, seeds, affected, changed_paths, base, junit, run_id):
+def regress_cmd(ctx, tests, tag, seeds, affected, changed_paths, base, junit, sarif, plan_file, resume, run_id):
     """Run regressions and save JSON/JUnit reports. Failures/errors exit nonzero."""
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
     result = _run_tool(c, "regress.run", tests=list(tests) or None, tag=tag,
                        seeds=_parse_seeds(seeds), affected=affected,
                        changed_paths=list(changed_paths) or None, base=base,
-                       junit=junit, run_id=run_id)
+                       junit=junit, sarif=sarif, plan_file=plan_file, resume=resume, run_id=run_id)
     if ctx.obj["as_json"]:
         _emit(result, True)
     else:
@@ -86,6 +105,8 @@ def regress_cmd(ctx, tests, tag, seeds, affected, changed_paths, base, junit, ru
             echo(f"[red]{result['error']}[/]")
         for kind, path in result.get("reports", {}).items():
             echo(f"  {kind}: {path}")
+        if result.get("checkpoint"):
+            echo(f"  resume: chipchamp regress --resume {result['checkpoint']}")
     if result.get("error") or result.get("denied") or result.get("failed") or result.get("errored"):
         raise SystemExit(1)
 
@@ -348,32 +369,58 @@ def dashboard(ctx):
 
 @cli.command()
 @click.option("--tag", default="smoke")
+@click.option("--sarif", default=".chipchamp/ci-results.sarif", help="workspace-relative SARIF report")
 @click.pass_context
-def ci(ctx, tag):
+def ci(ctx, tag, sarif):
     """Headless CI gate (SPEC §7.3): lint + tagged sims; nonzero exit on any
     failure; writes a markdown report for the CI system to attach."""
     from ..tools import all_tools as _t
+    from ..tools.paths import ws_path, PathRefused
+    from ..jobs.reports import sarif_report
+    from ..util.jsonio import atomic_write, dump_json
     c = _ctx(ctx.obj["root"], ctx.obj["target"])
+    try:
+        sarif_path, _ = ws_path(c, sarif, write=True)
+        report_path, _ = ws_path(c, ".chipchamp/ci-report.md", write=True)
+        if not sarif.endswith(".sarif"):
+            raise ValueError("--sarif must name a .sarif file")
+    except (PathRefused, ValueError) as e:
+        raise click.ClickException(str(e)) from e
     lines = ["# chipchamp ci report", ""]
     ok = True
     lint = _t()["lint.run"].handler(c)
-    lint_ok = lint.get("errors", 1) == 0
+    lint_ok = lint.get("status") == "passed" and lint.get("errors", 1) == 0
     ok &= lint_ok
     lines.append(f"- lint: {'PASS' if lint_ok else 'FAIL'} "
                  f"({lint.get('errors')} errors, {lint.get('warnings')} warnings, "
                  f"job {lint.get('job')})")
-    for t in c.ws.tests_with_tag(tag):
-        r = _t()["sim.run"].handler(c, test=t["name"], seed=1)
-        passed = r.get("sim_status") == "pass"
-        ok &= passed
-        lines.append(f"- sim {t['name']}: {'PASS' if passed else 'FAIL'} "
-                     f"(job {r.get('job')})")
+    regression = _t()["regress.run"].handler(c, tag=tag, seeds=[1], run_id="ci")
+    ok &= not any(regression.get(k) for k in ("error", "denied", "failed", "errored"))
+    lines.append("- regression: " + regression.get("summary", regression.get("error", "failed")))
+    for kind, path in regression.get("reports", {}).items():
+        lines.append(f"- {kind}: {path}")
+    # Regression reports include launch/budget errors that have no runner job.
+    from ..jobs.record import JobRecord
+    from ..util.jsonio import load_json
+    report_jobs = [r for r in c.task_jobs if r.kind == "lint"]
+    if regression.get("reports", {}).get("json"):
+        cases = load_json(ws_path(c, regression["reports"]["json"])[0])["cases"]
+        report_jobs.extend(JobRecord.from_dict(case["job"]) for case in cases)
+    elif regression.get("error"):
+        report_jobs.append(JobRecord("ERR-regression", "sim", "chipchamp", status="error",
+                                     summary=regression["error"]))
+    if lint.get("error"):
+        report_jobs.append(JobRecord("ERR-lint", "lint", "chipchamp", status="error", summary=lint["error"]))
+    atomic_write(sarif_path, dump_json(sarif_report(report_jobs, c.ws.root)))
     from ..dashboard import generate_dashboard
     generate_dashboard(c.ws)
-    report = c.ws.dot / "ci-report.md"
-    report.write_text("\n".join(lines) + "\n")
-    echo("\n".join(lines))
-    echo(f"[dim]report: {c.rel(str(report))} · dashboard regenerated[/]")
+    atomic_write(report_path, "\n".join(lines) + "\n")
+    if ctx.obj["as_json"]:
+        _emit({"ok": ok, "lint": lint, "regression": regression,
+               "reports": {"markdown": c.rel(report_path), "sarif": c.rel(sarif_path)}}, True)
+    else:
+        echo("\n".join(lines))
+        echo(f"[dim]report: {c.rel(report_path)} · SARIF: {c.rel(sarif_path)} · dashboard regenerated[/]")
     raise SystemExit(0 if ok else 1)
 
 

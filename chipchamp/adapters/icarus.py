@@ -38,12 +38,16 @@ class IcarusAdapter(Adapter):
     def sim(self, files: list[str], tb_top: str, workdir: str,
             seed: int | None = None, plusargs: list[str] | None = None,
             waves: bool = True, incdirs: list[str] | None = None,
-            defines: dict | None = None) -> Plan:
+            defines: dict | None = None, output_dir: str | None = None) -> Plan:
         # absolute so paths are unambiguous regardless of the step's cwd
-        vvp_out = os.path.abspath(os.path.join(workdir, f"{tb_top}.vvp"))
-        vcd = os.path.abspath(os.path.join(workdir, f"{tb_top}.vcd"))
+        from pathlib import Path
+        out = output_dir or workdir
+        Path(out).mkdir(parents=True, exist_ok=True)
+        vvp_out = os.path.abspath(os.path.join(out, f"{tb_top}.vvp"))
+        vcd = os.path.abspath(os.path.join(out, f"{tb_top}.vcd"))
+        deps = os.path.abspath(os.path.join(out, f"{tb_top}.inputs"))
         compile_argv = ["iverilog", "-g2012", "-grelative-include",
-                        "-s", tb_top, "-o", vvp_out]
+                        "-s", tb_top, "-o", vvp_out, f"-Mall={deps}"]
         for d in incdirs or []:
             compile_argv += ["-I", d]
         for k, v in (defines or {}).items():
@@ -64,8 +68,9 @@ class IcarusAdapter(Adapter):
             kind="sim", adapter=self.name, workdir=workdir,
             steps=[Step(argv=compile_argv, cwd=workdir),
                    Step(argv=run_argv, cwd=workdir, allow_fail=True)],
-            artifacts={"waves": vcd, "vvp": vvp_out},
-            meta={"tb_top": tb_top, "seed": seed})
+            artifacts={**({"waves": vcd} if waves else {}), "vvp": vvp_out},
+            meta={"tb_top": tb_top, "seed": seed,
+                  "depfiles": [{"path": deps, "format": "lines"}]})
 
     def parse(self, plan: Plan, results: list[StepResult]) -> ToolResult:
         from .simparse import parse_compile_run_sim, run_log

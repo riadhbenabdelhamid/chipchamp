@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
+from urllib.parse import quote
 import xml.etree.ElementTree as ET
 
 from .regression import RegressionResult
@@ -49,3 +51,57 @@ def junit_xml(result: RegressionResult, target: str) -> str:
         output.text = _xml_text(f"job={rec.id}\nstatus={rec.status}\n{rec.summary}")
     ET.indent(suite)
     return ET.tostring(suite, encoding="unicode", xml_declaration=True) + "\n"
+
+
+def sarif_report(jobs, workspace):
+    """SARIF 2.1.0 diagnostics for lint and simulations, with portable locations."""
+    rules, results, invocations = {}, [], []
+    for rec in jobs:
+        failed = rec.status != "passed"
+        invocations.append({"executionSuccessful": rec.status in ("passed", "failed"),
+                            "properties": {"job": rec.id, "status": rec.status}})
+        diagnostics = list(rec.result.get("diagnostics", []))
+        if failed and not any(d.get("severity") == "error" for d in diagnostics):
+            diagnostics.append({"code": "JOB_" + rec.status.upper(), "severity": "error",
+                                "message": rec.summary or rec.status})
+        for diag in diagnostics:
+            rule = f"{rec.adapter}/{diag.get('code') or diag.get('category') or rec.kind}"
+            rules.setdefault(rule, {"id": rule})
+            finding = {"ruleId": rule,
+                       "level": {"error": "error", "warning": "warning"}.get(diag.get("severity"), "note"),
+                       "message": {"text": str(diag.get("message") or rec.summary or rec.status)},
+                       "properties": {"job": rec.id, "test": rec.test_name, "seed": rec.seed}}
+            if diag.get("waiver"):
+                finding["suppressions"] = [{"kind": "external", "status": "accepted",
+                                             "justification": str(diag["waiver"])}]
+            if diag.get("file"):
+                path = Path(diag["file"])
+                path = path if path.is_absolute() else Path(workspace) / path
+                try:
+                    relative = path.resolve().relative_to(Path(workspace).resolve())
+                    location = {"artifactLocation": {"uri": quote(relative.as_posix(), safe="/"),
+                                                     "uriBaseId": "%SRCROOT%"}}
+                    if isinstance(diag.get("line"), int) and diag["line"] > 0:
+                        location["region"] = {"startLine": diag["line"]}
+                        if isinstance(diag.get("col"), int) and diag["col"] > 0:
+                            location["region"]["startColumn"] = diag["col"]
+                    finding["locations"] = [{"physicalLocation": location}]
+                except ValueError:
+                    pass  # external library: retain the diagnostic without a repository location
+            results.append(finding)
+    return {"version": "2.1.0", "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+            "runs": [{"tool": {"driver": {"name": "chipchamp", "rules": list(rules.values())}},
+                      "originalUriBaseIds": {"%SRCROOT%": {"uri": Path(workspace).resolve().as_uri() + "/"}},
+                      "invocations": invocations, "results": results}]}
+
+
+def regression_markdown(result, target, resumed=0):
+    def escape(value):
+        import html
+        return html.escape(str(value)).replace("|", "&#124;").replace("\n", " ").replace("\r", " ")
+    lines = [f"# Verification: {escape(target)}", "", escape(result.summary()),
+             f"Resumed {resumed} previously passed case(s).", "",
+             "| Test | Seed | Status | Job |", "| --- | ---: | --- | --- |"]
+    lines.extend(f"| {escape(c.test)} | {c.seed} | {escape(c.job.status)} | {escape(c.job.id)} |"
+                 for c in result.cases)
+    return "\n".join(lines) + "\n"

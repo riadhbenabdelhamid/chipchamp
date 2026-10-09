@@ -18,6 +18,34 @@ class VerilatorAdapter(Adapter):
     binary = "verilator"
     cost = "cheap"
 
+    def _toolchain_inputs(self):
+        """Verilator's built-in SV and C++ support is part of every build.
+
+        Ask the installed driver for its root; packaging layouts differ.
+        An unrecognized layout stays ineligible for reuse when the native
+        dependency file discovers anything this inventory missed.
+        """
+        import shutil
+        import subprocess
+        from pathlib import Path
+        try:
+            probe = subprocess.run([self.binary, "--getenv", "VERILATOR_ROOT"],
+                                   capture_output=True, text=True, timeout=5)
+            root = Path(probe.stdout.strip())
+            if probe.returncode or not probe.stdout.strip() or not root.is_dir():
+                return {}
+        except (OSError, subprocess.SubprocessError):
+            return {}
+        driver = Path(shutil.which(self.binary) or self.binary).resolve()
+        candidates = [driver, root / "bin/verilator_bin", driver.parent / "verilator_bin",
+                      driver.parent.parent / "libexec/verilator_bin"]
+        for command in ("make", os.environ.get("CXX", "g++")):
+            binary = shutil.which(command)
+            if binary:
+                candidates.append(Path(binary).resolve())
+        return {"toolchain_dirs": [str(root / "include")],
+                "toolchain_files": sorted({str(p) for p in candidates if p.is_file()})}
+
     def manifest(self) -> CapabilityManifest:
         return CapabilityManifest(
             name=self.name, roles=["lint", "coverage", "sim", "elab"],
@@ -30,7 +58,9 @@ class VerilatorAdapter(Adapter):
     def lint(self, files: list[str], workdir: str, top: str | None = None,
              incdirs: list[str] | None = None, defines: dict | None = None,
              extra: list[str] | None = None) -> Plan:
-        argv = [self.binary, "--lint-only", "-sv", "-Wall"]
+        objdir = os.path.abspath(os.path.join(workdir, "obj_chipchamp_lint"))
+        argv = [self.binary, "--lint-only", "-sv", "-Wall", "--MMD",
+                "--Mdir", objdir, "--prefix", "Vchipchamp_lint"]
         for d in incdirs or []:
             argv.append(f"+incdir+{d}")
         for k, v in (defines or {}).items():
@@ -40,7 +70,9 @@ class VerilatorAdapter(Adapter):
         argv += list(extra or [])
         argv += list(files)
         return Plan(kind="lint", adapter=self.name, workdir=workdir,
-                    steps=[Step(argv=argv, cwd=workdir, allow_fail=True)])
+                    steps=[Step(argv=argv, cwd=workdir, allow_fail=True)],
+                    meta={**self._toolchain_inputs(), "output_dirs": [objdir], "depfiles": [{
+                        "path": os.path.join(objdir, "Vchipchamp_lint__ver.d"), "format": "make"}]})
 
     def elaborate(self, files: list[str], workdir: str, top: str) -> Plan:
         plan = self.lint(files, workdir, top=top, extra=["-Wno-lint"])
@@ -50,15 +82,16 @@ class VerilatorAdapter(Adapter):
     def sim(self, files: list[str], tb_top: str, workdir: str,
             seed: int | None = None, plusargs: list[str] | None = None,
             waves: bool = True, incdirs: list[str] | None = None,
-            defines: dict | None = None, uvm: bool = False) -> Plan:
+            defines: dict | None = None, uvm: bool = False,
+            output_dir: str | None = None) -> Plan:
         """Compile+run with ``--binary --timing``. ``uvm=True`` compiles the
         IEEE 1800.2 library (Accellera uvm-core via :func:`uvm.uvm_home`) in
         front of the testbench — the license-free UVM path."""
-        objdir = os.path.abspath(os.path.join(workdir, f"obj_{tb_top}"))
-        vcd = os.path.abspath(os.path.join(workdir, f"{tb_top}.verilator.vcd"))
+        objdir = os.path.abspath(os.path.join(output_dir or workdir, f"obj_{tb_top}"))
+        vcd = os.path.abspath(os.path.join(output_dir or workdir, f"{tb_top}.verilator.vcd"))
         build = [self.binary, "--binary", "--timing", "-sv", "-Wno-fatal",
                  "-j", "0",  # parallel verilate+make (UVM builds are large)
-                 "--top-module", tb_top, "--Mdir", objdir, "-o", "Vsim"]
+                 "--top-module", tb_top, "--Mdir", objdir, "--MMD", "-o", "Vsim"]
         if waves:
             from ..brand import markers
             build += ["--trace", *(f"+define+{mk}" for mk in markers("WAVES"))]
@@ -84,16 +117,20 @@ class VerilatorAdapter(Adapter):
             run.append(f"+{p.lstrip('+')}")
         if seed is not None:
             run.append(f"+seed={seed}")
+        if waves:
+            run.append(f"+dumpfile={vcd}")
         return Plan(kind="sim", adapter=self.name, workdir=workdir,
                     steps=[Step(argv=build, cwd=workdir),
                            Step(argv=run, cwd=workdir, allow_fail=True)],
-                    artifacts={"waves": vcd} if waves else {},
-                    meta={"tb_top": tb_top, "seed": seed, "uvm": uvm})
+                    artifacts={"executable": run[0], **({"waves": vcd} if waves else {})},
+                    meta={"tb_top": tb_top, "seed": seed, "uvm": uvm, **self._toolchain_inputs(),
+                          "output_dirs": [objdir], "depfiles": [{
+                              "path": os.path.join(objdir, f"V{tb_top}__ver.d"), "format": "make"}]})
 
     def sim_cpp(self, rtl_files: list[str], cpp_files: list[str], top: str,
                 workdir: str, cpp_incdirs: list[str] | None = None,
                 incdirs: list[str] | None = None, defines: dict | None = None,
-                seed: int | None = None) -> Plan:
+                seed: int | None = None, output_dir: str | None = None) -> Plan:
         """Verilator C++-harness sim (`--cc --exe --build`): verilate the RTL
         `top` to C++ and link a C++ testbench `main()` that drives `V<top>` and
         checks it against a composed reference model. This is the reuse path for
@@ -103,11 +140,11 @@ class VerilatorAdapter(Adapter):
         `cpp_incdirs` is the C++ include path (where the ref models and the
         shared harness base live). The harness should print CHIPCHAMP_PASS /
         CHIPCHAMP_FAIL and exit 0 / non-zero."""
-        objdir = os.path.abspath(os.path.join(workdir, f"obj_cpp_{top}"))
+        objdir = os.path.abspath(os.path.join(output_dir or workdir, f"obj_cpp_{top}"))
         cflags = " ".join([f"-I{os.path.abspath(d)}" for d in (cpp_incdirs or [])]
                           + ["-std=c++17"])
         build = [self.binary, "--cc", "--exe", "--build", "-j", "0", "-sv",
-                 "-Wno-fatal", "--top-module", top, "--Mdir", objdir,
+                 "-Wno-fatal", "--top-module", top, "--Mdir", objdir, "--MMD",
                  "-o", "Vsim", "-CFLAGS", cflags]
         for d in incdirs or []:
             build.append(f"+incdir+{d}")
@@ -120,7 +157,10 @@ class VerilatorAdapter(Adapter):
         return Plan(kind="sim", adapter=self.name, workdir=workdir,
                     steps=[Step(argv=build, cwd=workdir),
                            Step(argv=run, cwd=workdir, allow_fail=True)],
-                    meta={"tb_top": top, "seed": seed, "mode": "cpp"})
+                    artifacts={"executable": run[0]},
+                    meta={"tb_top": top, "seed": seed, "mode": "cpp", **self._toolchain_inputs(),
+                          "output_dirs": [objdir], "depfiles": [{
+                              "path": os.path.join(objdir, f"V{top}__ver.d"), "format": "make"}]})
 
     def coverage(self, files: list[str], tb_top: str, workdir: str,
                  incdirs: list[str] | None = None) -> Plan:

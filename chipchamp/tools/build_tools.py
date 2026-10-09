@@ -48,7 +48,7 @@ def lint_run(ctx: ToolContext, paths=None, top: str = "") -> dict:
     top = top or ctx.target.top or (ctx.db.tops()[0] if ctx.db.tops() else "")
     if adapter.name == "verilator":
         plan = adapter.lint(compile_files, ctx.ws.root, top=top or None,
-                            incdirs=ctx.target.incdirs)
+                            incdirs=ctx.target.incdirs, defines=ctx.target.defines)
     else:
         plan = adapter.lint(compile_files, ctx.ws.root)
     rec, res = ctx.submit(plan, adapter, input_files=compile_files, timeout=120)

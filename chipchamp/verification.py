@@ -169,6 +169,7 @@ def verification_plan(ctx, changed_paths=None, seeds=None, base="HEAD") -> dict:
     jobs = len(selection["selected_tests"]) * len(seeds)
     remaining = max(0, ctx.ledger.budget.v3_submissions - ctx.ledger.v3_used)
     out = {"schema_version": 1, "target": ctx.target_name, "change_source": source,
+           "scope_hash": planning_scope_hash(ctx),
            "changed_files": [f.path for f in diff.files],
            "verification_hash": ctx.verification_hash(),
            "task_classes": policy.task_classes, "required_gates": policy.required_gates,
@@ -182,3 +183,22 @@ def verification_plan(ctx, changed_paths=None, seeds=None, base="HEAD") -> dict:
         selection["mode"] = "no_tests"
     out["plan_id"] = "VP-" + sha256_text(json.dumps(out, sort_keys=True))[:16]
     return out
+
+
+def planning_scope_hash(ctx):
+    """Fingerprint selection inputs, including benches outside target sources."""
+    from .jobs.inputs import dependency_files
+    from .tools.verif_tools import _runner_of
+    from .tools.paths import ws_path
+    roots = [*ctx.target.sources, *ctx.target.fileset.manifests]
+    roots.extend(str(p) for ext in ("*.toml", "*.yaml") for p in ctx.ws.dot.glob(ext))
+    dirs = list(ctx.target.incdirs)
+    for test in target_tests(ctx):
+        runner = _runner_of(test)
+        for key in ("files", "rtl", "cpp", "inputs"):
+            roots.extend(ws_path(ctx, p)[0] for p in runner.get(key, []))
+        dirs.extend(ws_path(ctx, p)[0] for p in runner.get("incdirs", []))
+    files, _ = dependency_files(roots, dirs, [ctx.ws.root])
+    return sha256_text(json.dumps({"files": files, "tests": target_tests(ctx),
+                                  "target": ctx.target_name, "defines": ctx.target.defines,
+                                  "incdirs": dirs}, sort_keys=True))
