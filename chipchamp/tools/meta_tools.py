@@ -306,7 +306,8 @@ def _collect_evidence(ctx: ToolContext, acknowledge: list[str]) -> Evidence:
     # Without a narrower persisted plan, the declared suite is the conservative
     # required set. Running one convenient smoke test is not a regression.
     from .verif_tools import _seeds_for
-    for test in ctx.ws.tests:
+    from ..verification import target_tests
+    for test in target_tests(ctx):
         if test.get("name"):
             for seed in _seeds_for(ctx, None):
                 req = {"test": test["name"], "seed": seed, "target": ctx.target_name}

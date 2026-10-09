@@ -43,6 +43,13 @@ class FailureCluster:
 
 
 @dataclass
+class RegressionCase:
+    test: str
+    seed: int
+    job: JobRecord
+
+
+@dataclass
 class RegressionResult:
     run_id: str
     total: int = 0
@@ -53,6 +60,7 @@ class RegressionResult:
     clusters: list[FailureCluster] = field(default_factory=list)
     flaky: list[dict] = field(default_factory=list)  # {test, pass_seeds, fail_seeds}
     errored_tests: list[dict] = field(default_factory=list)  # {test, seed, job, reason}
+    cases: list[RegressionCase] = field(default_factory=list)
 
     def summary(self) -> str:
         return (f"{self.run_id}: {self.passed}/{self.total} passed, "
@@ -87,9 +95,10 @@ class RegressionManager:
         for t, s, rec in jobs:
             by_test_seed_status[t][s] = rec.status
             res.jobs.append(rec)
+            res.cases.append(RegressionCase(t, s, rec))
             if rec.status == "passed":
                 res.passed += 1
-            elif rec.status == "error":
+            elif rec.status not in ("failed", "timeout"):
                 res.errored += 1
                 res.errored_tests.append({"test": t, "seed": s, "job": rec.id,
                                           "reason": rec.summary[:160]})
@@ -130,5 +139,5 @@ def _failure_text(rec: JobRecord) -> str:
 
 def _error_record(test: str, seed: int, msg: str) -> JobRecord:
     r = JobRecord(id=f"ERR-{test}-{seed}", kind="sim", adapter="?",
-                  status="error", summary=msg, seed=seed)
+                  status="error", summary=msg, seed=seed, test_name=test)
     return r

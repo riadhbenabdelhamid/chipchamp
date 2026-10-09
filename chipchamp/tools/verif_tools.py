@@ -313,19 +313,59 @@ def test_select(ctx: ToolContext, modules: list[str] | None = None) -> dict:
 
 
 @tool("regress.run", "Run a set of tests (by tag or explicit list), optionally "
-      "sweeping seeds, farm/license-bounded, and cluster the failures.",
+      "sweeping seeds, farm/license-bounded, and cluster the failures. Set affected "
+      "for hierarchy-based selection. Saves JSON/JUnit reports, including errors.",
       cost="metered", permission="submit", group="sim",
       schema={"type": "object", "properties": {
           "tag": {"type": "string"}, "tests": {"type": "array", "items": {"type": "string"}},
           "seeds": {"type": "array", "items": {"type": "integer"}},
-          "run_id": {"type": "string", "default": "reg"}}})
+          "run_id": {"type": "string", "default": "reg"},
+          "affected": {"type": "boolean", "default": False},
+          "changed_paths": {"type": "array", "items": {"type": "string"}},
+          "base": {"type": "string", "default": "HEAD"},
+          "junit": {"type": "string", "description": "optional workspace-relative .xml export"}}})
 def regress_run(ctx: ToolContext, tag: str = "", tests=None, seeds=None,
-                run_id: str = "reg") -> dict:
-    names = tests or [t.get("name") for t in (ctx.ws.tests_with_tag(tag) if tag else ctx.ws.tests)]
-    names = [n for n in names if n]
+                run_id: str = "reg", affected: bool = False, changed_paths=None,
+                base: str = "HEAD", junit: str = "") -> dict:
+    import uuid
+    from ..jobs.reports import junit_xml, regression_report
+    from ..util.jsonio import atomic_write, dump_json
+    from ..verification import regression_seeds, target_tests, verification_plan
+    from .paths import PathRefused, ws_path
+    if affected and (tests is not None or tag):
+        return {"error": "affected cannot be combined with tests or tag"}
+    if changed_paths is not None and not affected:
+        return {"error": "changed_paths requires affected=true"}
+    if tests is not None and (not isinstance(tests, list) or not tests
+                             or any(not isinstance(t, str) for t in tests)):
+        return {"error": "tests must be a non-empty list of test names"}
+    selection_plan = None
+    try:
+        ctx.ws.invalidate(ctx.target_name)
+        seeds = regression_seeds(ctx, seeds)
+        export = ws_path(ctx, junit, write=True)[0] if junit else None
+        if junit and not junit.lower().endswith(".xml"):
+            return {"error": "junit must name a workspace-relative .xml file"}
+        report_dir, _ = ws_path(ctx, ctx.rel(str(ctx.ws.dot / "regressions" /
+                                               ("R-" + uuid.uuid4().hex))), write=True)
+        declared = target_tests(ctx)
+        if affected:
+            selection_plan = verification_plan(ctx, changed_paths, seeds, base)
+            names = selection_plan["selection"]["selected_tests"]
+        else:
+            names = tests if tests is not None else [t["name"] for t in declared
+                                                     if not tag or tag in (t.get("tags") or [])]
+        names = list(dict.fromkeys(names))
+        wrong_target = [n for n in names if ctx.find_test(n)
+                        and ctx.find_test(n).get("target", ctx.target_name) != ctx.target_name]
+        if wrong_target:
+            return {"error": "tests belong to another target: " + ", ".join(wrong_target)}
+    except PathRefused as e:
+        return e.payload
+    except (ValueError, OSError) as e:
+        return {"error": str(e)}
     if not names:
         return {"error": "no tests selected", "tag": tag}
-    seeds = _seeds_for(ctx, seeds)
     # Record obligations BEFORE planning/submitting. A crashed or budget-blocked
     # test still belongs to the required set and cannot disappear from gates.
     for name in names:
@@ -351,13 +391,27 @@ def regress_run(ctx: ToolContext, tag: str = "", tests=None, seeds=None,
     mgr = RegressionManager(run_one, max_parallel=self_parallel(ctx))
     res = mgr.run(names, seeds, run_id=run_id)
     out = {"run_id": run_id, "summary": res.summary(),
-           "passed": res.passed, "failed": res.failed, "total": res.total,
+           "passed": res.passed, "failed": res.failed, "errored": res.errored, "total": res.total,
+           "selected_tests": names, "seeds": seeds,
            "errored_tests": res.errored_tests,
            "clusters": [{"id": c.id, "count": c.count, "signature": c.signature,
                          "representative": c.representative} for c in res.clusters],
            "flaky": res.flaky}
     if timeouts:
         out["timeouts"] = timeouts
+    if selection_plan:
+        out["plan"] = selection_plan
+    report = regression_report(res, ctx.target_name, selection_plan)
+    xml = junit_xml(res, ctx.target_name)
+    json_path, xml_path = os.path.join(report_dir, "results.json"), os.path.join(report_dir, "junit.xml")
+    try:
+        atomic_write(json_path, dump_json(report))
+        atomic_write(xml_path, xml)
+        if export:
+            atomic_write(export, xml)
+        out["reports"] = {"json": ctx.rel(json_path), "junit": ctx.rel(export or xml_path)}
+    except OSError as e:
+        out["error"] = f"regression completed but report export failed: {e}"
     return out
 
 

@@ -32,7 +32,7 @@ Icarus, Yosys, Verible, SymbiYosys, eqy, GHDL) — no mocks:
 | **Coverage service** — Verilator/functional/**UCIS XML** (Questa/VCS/Xcelium export)/**cocotb-coverage** ingest (format-sniffing `cov.load`), holes, attribution, anti-gaming baseline gate — functional coverage live on open tools | ✅ | §8.7 |
 | **Policy engine** — task classification, verification ladder V0–V4, gates, autonomy L0–L3, budgets, context ACLs, anti-gaming detectors | ✅ | §11 |
 | **Evidence bundles** — platform-signed, tamper-evident, assembled from job records | ✅ | §8.8, §11.3 |
-| **Agent tool catalog** — 103 tools with JSON schemas, cost classes, permission tiers, runtime capability discovery (`caps`) | ✅ | §9 |
+| **Agent tool catalog** — 104 tools with JSON schemas, cost classes, permission tiers, runtime capability discovery (`caps`) | ✅ | §9 |
 | **Model layer** — provider-agnostic (Anthropic · OpenAI · local: LM Studio/Ollama/vLLM/llama.cpp) with live model discovery, a `/model` selector, and a context audit log | ✅ | §14, §13.3 |
 | **Agent loop + CLI** — model-driven loop, scripted playbooks (P1 triage, P6 lint), headless + REPL | ✅ | §7.1, §8.2 |
 
@@ -349,6 +349,33 @@ chipchamp --root examples/soc notebook          # what this project has learned
 chipchamp --root examples/soc experiment autopsy  # compare recorded runs
 ```
 
+Plan verification before paying for a regression:
+
+```bash
+chipchamp --root examples/soc verify-plan --changed rtl/sync_fifo.sv
+chipchamp --root examples/soc --json verify-plan --changed rtl/sync_fifo.sv --seeds 1,2
+chipchamp --root examples/soc regress --affected --changed rtl/sync_fifo.sv --seeds 1 --junit work/regression.xml
+chipchamp --root examples/soc regress --tag smoke --junit work/smoke.xml
+```
+
+`verify-plan` shows changed modules and their parents, why each test was selected,
+required policy gates, seed counts, and the remaining V3 submission budget.
+Without `--changed`, it uses session edits or staged, unstaged and untracked Git
+changes relative to `--base` (default `HEAD`). Selection uses the test's declared
+HDL top and instance hierarchy. Unresolved test hierarchies are retained; header,
+configuration, build and unmapped changes fall back to the full target suite.
+Other targets' tests are excluded. This is a conservative feedback plan, not a
+proof that omitted tests are unnecessary: `report.done` still requires all
+declared-suite obligations and policy gates.
+
+`regress` writes JSON and JUnit XML under `.chipchamp/regressions/R-*/`, with an
+optional workspace-relative `--junit` export for CI. Every requested test/seed
+gets a case, including launch errors and budget refusals. Failures, timeouts,
+launch errors and report-export errors produce a nonzero CLI exit code, including
+with `--json`. Seeds default to `tests.yaml`; job execution retains the workspace's
+existing budget, license and farm controls. The same features are available to
+agents and MCP clients through `verify.plan` and `regress.run(affected=true)`.
+
 Inside a session, `/undo` reverts the files the last task changed (anything you
 edited by hand since is kept), and the gate ladder repaints under the
 conversation as jobs land — so you can see which rung the work is on rather
@@ -492,7 +519,7 @@ CLI  ── Workspace(config.toml, tests.yaml, policy.yaml, DESIGN.md)
  │        ├── CoverageSvc   (coverage/)  ingest · holes · attribution · baseline gate
  │        └── PolicyEngine  (policy/)    classify · gates · autonomy · ACL · anti-gaming
  │
- ├── ToolContext (tools/)   103 tools: design.* sim.* wave.* cov.* lint/synth/lec/formal · report.done
+ ├── ToolContext (tools/)   104 tools: design.* sim.* wave.* cov.* lint/synth/lec/formal · verify.plan · report.done
  └── AgentLoop (agent/)     model gateway (+ audit log) · scripted playbooks · session store
                            → EvidenceBundle (evidence/)  signed, from job records
 ```

@@ -172,6 +172,23 @@ filesystem lock semantics rather than a distributed lease service; the
 notebook is agent- and human-written but nothing prunes stale entries; and
 `agent.spawn` fan-out is bounded per call but not per task.
 
+## Feature roadmap: verification planning and CI reports
+
+The first roadmap increment adds `verify.plan` / `chipchamp verify-plan` and
+`regress.run(affected=true)` / `chipchamp regress --affected`. Module hierarchy
+drives test selection with reasons, full-suite fallbacks, target filtering, seed
+counts and a V3 budget forecast. Targeted runs do not relax completion gates.
+Each regression saves its plan and per-case job records as JSON plus a JUnit
+report suitable for CI; launch and budget errors remain visible as failed runs.
+Tests exercise the planner, Git change discovery, CLI exit codes and real Icarus
+pass/failure reports.
+
+Next depth work: adapter-provided dependency manifests, measured per-test coverage
+mapping, and durable verification plans that can justify a smaller completion
+suite. Next breadth work: richer CI annotations and additional protocol and
+register-model integrations. Hierarchy-based selection remains advisory until
+those completeness checks exist.
+
 ## Deliberately still open (unchanged scope)
 
 - **FSDB waveform reading** — needs the licensed Verdi kit (§8.6 R2); FST covers the open path.

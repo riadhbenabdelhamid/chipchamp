@@ -17,6 +17,7 @@ examples/**/coverage*.dat
 
 # generated per-workspace state (any nested .chipchamp/)
 **/.chipchamp/runs/
+**/.chipchamp/regressions/
 **/.chipchamp/db-*.json
 **/.chipchamp/sessions/
 **/.chipchamp/bundles/

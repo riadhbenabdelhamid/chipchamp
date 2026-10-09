@@ -15,6 +15,7 @@ from . import riscv_tools  # noqa: F401
 from . import skill_tools  # noqa: F401
 from . import uvm_tools  # noqa: F401
 from . import verif_tools  # noqa: F401
+from . import verification_tools  # noqa: F401
 from . import web_tools  # noqa: F401
 from .base import TOOLS, Tool
 

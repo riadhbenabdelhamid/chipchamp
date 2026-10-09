@@ -17,6 +17,79 @@ from .model import _build_gateway, _build_router
 from .repl import _agent_events, _context_budget
 
 
+def _parse_seeds(value):
+    if value is None:
+        return None
+    try:
+        if not value.strip() or any(not s.strip() for s in value.split(",")):
+            raise ValueError
+        return [int(s.strip()) for s in value.split(",")]
+    except ValueError:
+        raise click.BadParameter("use comma-separated integers, e.g. 1,2,3", param_hint="--seeds")
+
+
+@cli.command("verify-plan")
+@click.option("--changed", "changed_paths", multiple=True, help="changed file (repeatable); default: session/Git changes")
+@click.option("--base", default="HEAD", help="Git revision to compare against")
+@click.option("--seeds", default=None, help="comma-separated seeds; default: tests.yaml")
+@click.pass_context
+def verify_plan_cmd(ctx, changed_paths, base, seeds):
+    """Explain affected tests, required gates and regression budget without running jobs."""
+    c = _ctx(ctx.obj["root"], ctx.obj["target"])
+    result = _run_tool(c, "verify.plan", changed_paths=list(changed_paths) or None,
+                       base=base, seeds=_parse_seeds(seeds))
+    if ctx.obj["as_json"]:
+        _emit(result, True)
+    elif "error" in result:
+        echo(f"[red]{result['error']}[/]")
+    else:
+        selection = result["selection"]
+        echo(f"[bold]{result['plan_id']}[/] — {result['target']}: {selection['mode']}")
+        echo("Changed modules: " + (", ".join(selection["changed_modules"]) or "none identified"))
+        echo("Required gates: " + (", ".join(result["required_gates"]) or "none for this change"))
+        for name in selection["selected_tests"]:
+            echo(f"  {name}: {'; '.join(selection['reasons'][name])}")
+        echo(f"{result['test_jobs']} test/seed jobs selected; "
+             f"{result['declared_suite_jobs']} in the declared suite; "
+             f"{result['budget']['v3_remaining']} V3 submissions remain.")
+        if not result["budget"]["within_budget"]:
+            echo("[yellow]The selected run exceeds the remaining V3 budget.[/]")
+        for warning in selection["warnings"]:
+            echo(f"[yellow]{warning}[/]")
+        echo(result["note"])
+    if "error" in result:
+        raise SystemExit(1)
+
+
+@cli.command("regress")
+@click.option("--test", "tests", multiple=True, help="test name (repeatable)")
+@click.option("--tag", default="", help="select tests with this tag")
+@click.option("--seeds", default=None, help="comma-separated seeds; default: tests.yaml")
+@click.option("--affected", is_flag=True, help="select tests using changed-module impact")
+@click.option("--changed", "changed_paths", multiple=True, help="changed file for --affected (repeatable)")
+@click.option("--base", default="HEAD", help="Git revision for --affected")
+@click.option("--junit", default="", help="workspace-relative .xml export for CI")
+@click.option("--run-id", default="reg", help="label for this regression")
+@click.pass_context
+def regress_cmd(ctx, tests, tag, seeds, affected, changed_paths, base, junit, run_id):
+    """Run regressions and save JSON/JUnit reports. Failures/errors exit nonzero."""
+    c = _ctx(ctx.obj["root"], ctx.obj["target"])
+    result = _run_tool(c, "regress.run", tests=list(tests) or None, tag=tag,
+                       seeds=_parse_seeds(seeds), affected=affected,
+                       changed_paths=list(changed_paths) or None, base=base,
+                       junit=junit, run_id=run_id)
+    if ctx.obj["as_json"]:
+        _emit(result, True)
+    else:
+        echo(result.get("summary", result.get("error", result.get("note", "regression failed"))))
+        if result.get("summary") and result.get("error"):
+            echo(f"[red]{result['error']}[/]")
+        for kind, path in result.get("reports", {}).items():
+            echo(f"  {kind}: {path}")
+    if result.get("error") or result.get("denied") or result.get("failed") or result.get("errored"):
+        raise SystemExit(1)
+
+
 @cli.command()
 @click.argument("module")
 @click.option("--out", "out_dir", default="", help="bench dir (default verif/uvm/<module>)")

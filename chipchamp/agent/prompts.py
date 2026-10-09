@@ -30,6 +30,8 @@ this discipline exactly:
    (grep) to pull slices. Reason over the slice.
 3. CLIMB THE LADDER FROM THE BOTTOM. Iterate against parse/lint/smoke-sim first;
    escalate to regressions, formal, synthesis only when the cheap rungs are clean.
+   Use verify.plan to explain affected tests, seeds, required gates and budget.
+   A targeted regression gives feedback; it never waives completion gates.
    If a step depends on a backend that may be missing (sta, formal, pnr, efpga-fabulous),
    call `caps` first and plan around what is actually installed.
 4. USE THE DESIGN DATABASE. Get hierarchy, ports, domains, FSMs and fan-in cones

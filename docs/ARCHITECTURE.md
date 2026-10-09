@@ -52,6 +52,16 @@ completion refreshes the task's records and bills each job once. `mr.prepare`
 uses a private Git index to commit only recorded task content to a new branch;
 the user's staged files and checked-out branch stay intact.
 
+`verification.py` builds an advisory plan from explicit paths, session edits or
+Git changes. It indexes target sources and declared testbench files, walks parent
+instances from changed modules, and explains selection or a conservative full-suite
+fallback. `verify.plan` and `chipchamp verify-plan` expose the same result without
+launching jobs. `regress.run(affected=true)` consumes a freshly computed plan;
+completion gates retain the full declared suite. `jobs/reports.py` exports one
+JUnit case per requested test/seed plus a JSON report containing the plan and job
+records, including submission errors. Reports are written under
+`.chipchamp/regressions/`; the `regress` CLI exits nonzero on failures or errors.
+
 ## The debug loop (P1/P2), concretely
 
 `sim.run` → `JobRunner` runs Icarus, testbench dumps VCD → `WaveStore.open` indexes it →
