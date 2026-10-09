@@ -530,6 +530,23 @@ Machine-specific settings — MCP servers, tool paths, local model endpoints —
 go in `.chipchamp/config.local.toml` (ignored by git), deep-merged over the
 tracked `config.toml`.
 
+**Waveform accuracy.** Native `wave.snapshot` diagrams use a linear time axis
+across the requested window. `!` marks multiple or compressed transitions,
+`?` marks unavailable or truncated data, and `…` replaces bus labels that do not
+fit. X and Z remain distinct. The clock-sampled analyzer marks activity between
+samples; zoom with `wave.snapshot` to inspect its timing. WaveJSON uses uniform
+time bins, with compressed activity represented by `x`; its `chipchamp` metadata
+distinguishes compression from unknown data and records transition counts.
+
+Alwavelets text snapshots are displayed directly in the terminal and saved beside
+MCP images under `.chipchamp/mcp-images/`. Default text requests use the terminal
+width; an explicitly wider snapshot is visibly cropped at `→`, with the original
+available on disk. PNGs retain their original bytes. The accompanying Alwavelets
+renderer fix preserves pulses shorter than a pixel and supplies signal names,
+values and timing as a text companion to PNGs. Restart Chipchamp after updating
+Alwavelets so its MCP process loads the new renderer. Zoom or use waveform queries
+for exact edge times: a compressed display cannot show every pulse's duration.
+
 With no `.chipchamp/config.toml`, Chipchamp infers a target named after the repo by
 scanning conventional RTL dirs (`rtl/`, `hdl/`, `src/`…) **plus a `work/` scratch
 dir**, globbed *live* so a design the agent writes this session is immediately

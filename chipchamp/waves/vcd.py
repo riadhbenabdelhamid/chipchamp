@@ -38,10 +38,9 @@ class VcdData:
         if path in self.by_path:
             return self.by_path[path]
         # tolerate leading testbench scope omissions: match on suffix
-        for p, code in self.by_path.items():
-            if p.endswith("." + path) or p == path:
-                return code
-        return None
+        matches = {code for p, code in self.by_path.items()
+                   if p.endswith("." + path) or p == path}
+        return next(iter(matches)) if len(matches) == 1 else None
 
 
 def _canon_vec(val: str) -> str:

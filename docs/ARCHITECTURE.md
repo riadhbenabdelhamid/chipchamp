@@ -10,7 +10,7 @@ cites the spec section and requirement ids it realizes.
 | `chipchamp/design/` | Design Intelligence Layer | §8.3 | `lexer.py` (preprocess+tokenize), `parser.py` (modules/ports/params/instances/always/assign), `model.py`, `database.py` (elaboration, xref, persistence, semantic diff), `domains.py`, `fsm.py`, `cone.py`, `params.py` (constant eval) |
 | `chipchamp/adapters/` | EDA Adapter Layer | §8.4 | `base.py` (Adapter/Plan/Diagnostic/Manifest), `diagnostics.py`, `verilator.py`, `icarus.py`, `verible.py`, `yosys.py`, `eqy.py`, `symbiyosys.py`, `ghdl.py`, `registry.py` |
 | `chipchamp/jobs/` | Job Orchestration | §8.5 | `record.py` (provenance+repro), `runner.py` (local runner, license pools, log grep), `regression.py` (clustering, flake) |
-| `chipchamp/waves/` | Waveform Service | §8.6 | `vcd.py` (parse+index), `store.py` (queries), `expr.py` (4-state eval), `render.py` (ASCII/WaveJSON) |
+| `chipchamp/waves/` | Waveform Service | §8.6 | `vcd.py` (parse+index), `store.py` (queries), `expr.py` (4-state eval), `raster.py` (uniform time bins), `render.py` (ASCII/WaveJSON) |
 | `chipchamp/coverage/` | Coverage Service | §8.7 | `model.py`, `ingest.py` (Verilator .dat + functional JSON), `service.py` (holes/attribution/baseline gate) |
 | `chipchamp/policy/` | Policy engine | §11 | `diff.py`, `classify.py`, `gates.py` (ladder+gates), `autonomy.py`, `budgets.py`, `acl.py`, `antigaming.py`, `engine.py` |
 | `chipchamp/evidence/` | Evidence store | §8.8, §11.3 | `bundle.py` (build+sign+verify+markdown) |
@@ -132,6 +132,21 @@ a coverage observation can be recorded.
 `wave.when`/`wave.compare` find the first divergence over a scope → `design.cone`
 returns the pruned fan-in slice (crossing instance boundaries via port connections) →
 the agent names the mechanism at `file:line`. `demo.py` walks exactly this path.
+
+`WaveStore.snapshot` retains bounded transitions, the preceding value and explicit
+truncation/missing-signal metadata. `waves/raster.py` assigns events to uniform time
+bins using integer arithmetic, retaining same-timestamp activity and distinguishing
+unrecorded intervals from stable values. ASCII and WaveJSON share these bins;
+WaveJSON carries compression/state metadata because its `x` glyph also represents
+activity too short for one column. The sampled analyzer flags intervening changes.
+Bus labels are complete values or ellipses, never numeric prefixes.
+
+`mcp/client.py` saves each image and waveform text response at a unique path.
+`cli/repl.py` routes waveform text through `ui.waveform`, bypassing Markdown and
+marking terminal cropping. Native snapshot text follows the same display path.
+The separately configured Alwavelets server owns PNG rasterization; Chipchamp
+preserves its PNG bytes and displays any supplied text companion. Its process
+must be restarted to load changes to that external renderer.
 
 ## Context discipline (§8.9)
 

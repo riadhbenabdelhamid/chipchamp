@@ -218,9 +218,9 @@ def image_protocol() -> str:
     if not sys.stdout.isatty():
         return ""
     env = os.environ
-    if env.get("KITTY_WINDOW_ID") or "kitty" in env.get("TERM", ""):
+    if env.get("KITTY_WINDOW_ID") or "kitty" in env.get("TERM", "") or env.get("TERM_PROGRAM") == "ghostty":
         return "kitty"
-    if env.get("TERM_PROGRAM") in ("iTerm.app", "WezTerm"):
+    if env.get("TERM_PROGRAM") in ("iTerm.app", "WezTerm") or env.get("LC_TERMINAL") == "iTerm2":
         return "iterm2"
     if env.get("WEZTERM_PANE"):
         return "iterm2"          # WezTerm implements the iTerm2 protocol
@@ -243,6 +243,10 @@ def inline_image(path: str, *, max_cols: int = 0) -> bool:
     except OSError:
         return False
     import base64
+    # Kitty f=100 expects an encoded PNG, not JPEG/GIF bytes with a PNG flag.
+    # Keep the original file available when that protocol cannot represent it.
+    if proto == "kitty" and not raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return False
     b64 = base64.b64encode(raw).decode("ascii")
     try:
         if proto == "kitty":
@@ -252,7 +256,8 @@ def inline_image(path: str, *, max_cols: int = 0) -> bool:
             for i in range(0, len(b64), n):
                 chunk = b64[i:i + n]
                 more = 1 if i + n < len(b64) else 0
-                ctrl = (f"a=T,f=100,m={more}" if first else f"m={more}")
+                cols = f",c={int(max_cols)}" if max_cols > 0 else ""
+                ctrl = (f"a=T,f=100{cols},m={more}" if first else f"m={more}")
                 sys.stdout.write(f"\x1b_G{ctrl};{chunk}\x1b\\")
                 first = False
         else:
@@ -278,7 +283,7 @@ def show_images(images, mode: str = "auto", relto=None) -> None:
         path = im.get("path") if isinstance(im, dict) else str(im)
         if not path:
             continue
-        shown = mode != "off" and inline_image(path)
+        shown = mode != "off" and inline_image(path, max_cols=max(1, _console.size.width - 2))
         if shown:
             continue
         try:
@@ -291,6 +296,30 @@ def show_images(images, mode: str = "auto", relto=None) -> None:
         _console.print(f"  [dim]▪ image[/] {escape(rel)}"
                        f" [dim]({im.get('bytes', 0)} B)[/]{note}"
                        if isinstance(im, dict) else f"  [dim]▪ image[/] {rel}")
+
+
+def waveform(text: str, *, path: str = "") -> None:
+    """Display tool-produced columns literally; never let Markdown reflow them.
+
+    An over-wide explicit request is cropped with a visible marker. The original
+    remains on disk; synthesizing a smaller waveform from its text would alter
+    its time scale. Default MCP requests already use the terminal's width.
+    """
+    from rich.cells import cell_len, set_cell_size
+    # Ignore terminal control sequences from external tool text while retaining
+    # spaces and Unicode diagram characters. No color/markup interpretation.
+    text = Text.from_ansi(text.expandtabs(8)).plain
+    text = "".join(ch for ch in text if ch == "\n" or ord(ch) >= 32 and not 127 <= ord(ch) < 160)
+    width, cropped = max(1, _console.size.width), False
+    for line in text.splitlines():
+        if cell_len(line) > width:
+            line = set_cell_size(line, max(0, width - 1)) + "→"
+            cropped = True
+        _console.print(Text(line), soft_wrap=True)
+    if cropped:
+        _console.print("Waveform cropped at →; request a narrower render or open the saved snapshot.")
+    if path:
+        _console.print(Text("  snapshot: " + path, style="dim"))
 
 
 def markdown(text: str) -> None:

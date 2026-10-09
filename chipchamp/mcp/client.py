@@ -135,27 +135,51 @@ class McpClient:
                 break
         if out is None:
             out = {} if images else result
+        texts = [item["text"] for item in blocks if item.get("type") == "text"]
+        if len(texts) > 1:
+            out["text"] = "\n".join(texts)
+        if result.get("isError"):
+            out["error"] = out.get("text") or "MCP tool returned an error"
         saved = [self._spill_image(tool, b) for b in images]
         saved = [s for s in saved if s]
         if saved:
             out["images"] = saved
+        is_wave_text = tool in ("render_waveform", "viewer_render") or (
+            tool == "render_waveform_png" and any(t.startswith("waveform ") for t in texts))
+        if is_wave_text and texts and not result.get("isError"):
+            text = "\n".join(texts)
+            try:
+                from ..util.jsonio import atomic_write
+                path = self._artifact_path(tool, "txt")
+                atomic_write(path, text)
+                out["text"] = text
+                out["waveform"] = {"path": str(path), "format": "text"}
+            except OSError:
+                pass
         return out
+
+    def _artifact_path(self, tool, ext):
+        import re
+        import uuid
+        # A server can return several images in one millisecond. Each result
+        # needs its own immutable path so a later panel cannot replace it.
+        name = re.sub(r"[^a-zA-Z0-9_-]", "_", f"{self.name}-{tool}")[:100]
+        return self.image_dir / f"{name}-{uuid.uuid4().hex}.{ext}"
 
     def _spill_image(self, tool: str, block: dict) -> Optional[dict]:
         """Write one image block beside the workspace and describe it."""
         import base64
-        import time
         mime = block.get("mimeType") or "image/png"
         ext = {"image/png": "png", "image/svg+xml": "svg",
                "image/jpeg": "jpg", "image/gif": "gif"}.get(mime, "bin")
         try:
-            raw = base64.b64decode(block["data"], validate=False)
+            raw = base64.b64decode("".join(block["data"].split()), validate=True)
         except Exception:
             return None
         d = self.image_dir
         try:
             d.mkdir(parents=True, exist_ok=True)
-            p = d / f"{self.name}-{tool}-{int(time.time() * 1000)}.{ext}"
+            p = self._artifact_path(tool, ext)
             p.write_bytes(raw)
         except OSError:
             return None
@@ -218,6 +242,9 @@ def load_mcp_tools(config: dict, cwd: Optional[str] = None,
             local_name = f"mcp.{name}.{wire.replace('__', '.')}"
 
             def handler(ctx, _c=client, _w=wire, **kwargs):
+                if _w in ("render_waveform", "viewer_render") and "width" not in kwargs:
+                    from .. import ui
+                    kwargs["width"] = max(20, ui.console().size.width - 2)
                 return _c.call(_w, kwargs)
 
             tools[local_name] = Tool(

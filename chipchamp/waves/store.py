@@ -194,17 +194,27 @@ class WaveStore:
         return {"signal": path, "first_x_time": None,
                 "note": "signal never X/Z in dump", "provenance": self.provenance}
 
-    def snapshot(self, paths: list[str], t0: int, t1: int, max_edges: int = 40) -> dict:
-        """Return the transition data needed to render a timing excerpt."""
-        out = {}
+    def snapshot(self, paths: list[str], t0: int, t1: int, max_edges: int = 4096) -> dict:
+        """Bounded transitions, with explicit limits on what a renderer knows."""
+        if t0 < 0 or t1 < t0 or max_edges < 1:
+            raise ValueError("waveform window must satisfy 0 <= t0 <= t1; max_edges must be positive")
+        out, missing = {}, []
         for p in paths:
             code = self.data.id_for(p)
             if code is None:
+                missing.append(p)
                 continue
-            edges = [(t, v) for t, v in self.data.changes[code] if t0 <= t <= t1]
+            changes, times = self.data.changes[code], self._times[code]
+            lo, hi = bisect.bisect_left(times, t0), bisect.bisect_right(times, t1)
+            end = min(hi, lo + max_edges)
             out[p] = {"width": self.data.signals[code].width,
-                      "edges": edges[:max_edges],
+                      "var_type": self.data.signals[code].var_type,
+                      "edges": changes[lo:end], "edge_count": hi - lo,
+                      "omitted_edges": hi - end,
+                      "truncated_at": changes[end][0] if end < hi else None,
+                      "value_before_start": changes[lo - 1][1] if lo else None,
                       "value_at_start": self.value(p, t0)}
         return {"window": [t0, t1], "signals": out,
+                "trace_end": self.data.end_time, "missing_signals": missing,
                 "timescale": self.data.timescale,
                 "provenance": self.provenance}

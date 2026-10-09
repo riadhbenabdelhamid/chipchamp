@@ -300,6 +300,12 @@ def _agent_events(c):
                 ui.console().print(f"  [yellow]⊘ skipped {name} (not approved)[/]")
             elif "error" in res:
                 ui.console().print(f"  [red]✗ {name}: {str(res['error'])[:100]}[/]")
+            elif isinstance(res.get("waveform"), dict) and res["waveform"].get("format") == "text":
+                ui.waveform(res.get("text", ""), path=res["waveform"]["path"])
+                if res.get("images"):
+                    ui.show_images(res["images"], mode=_image_mode(c), relto=c.ws.root)
+            elif name == "wave.snapshot" and res.get("ascii"):
+                ui.waveform(res["ascii"])
             elif res.get("images"):
                 # an MCP renderer (e.g. wavelets' render_waveform_png) handed
                 # back a picture; the base64 never entered the transcript, so

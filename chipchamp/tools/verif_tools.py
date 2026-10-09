@@ -800,7 +800,10 @@ def wave_snapshot(ctx: ToolContext, run: str, signals: list[str], t0: int, t1: i
     ws = ctx.resolve_wave(run)
     if not ws:
         return {"error": f"no dump for {run}"}
-    snap = ws.snapshot(signals, t0, t1)
+    try:
+        snap = ws.snapshot(signals, t0, t1)
+    except ValueError as exc:
+        return {"error": str(exc)}
     return {"ascii": ascii_timing(snap), "wavejson": wavejson(snap),
             "provenance": ws.provenance}
 
