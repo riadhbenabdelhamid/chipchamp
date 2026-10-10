@@ -99,6 +99,8 @@ class ModelRegistry:
             return {"provider": "anthropic", "model": ""}
         if os.environ.get("OPENAI_API_KEY"):
             return {"provider": "openai", "model": ""}
+        if os.environ.get("GEMINI_API_KEY"):
+            return {"provider": "gemini", "model": ""}
         return None
 
     def resolve(self, role: str | None = None) -> tuple[Optional[Provider], str, str]:
@@ -119,7 +121,7 @@ class ModelRegistry:
         sel = self.current()
         if not sel:
             return None, "", ("no model configured — run `chipchamp model` to pick one, "
-                              f"or set {_env_name('PROVIDER')} / ANTHROPIC_API_KEY / OPENAI_API_KEY")
+                              f"or set {_env_name('PROVIDER')} / ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY")
         cfgs = self.provider_configs()
         cfg = cfgs.get(sel["provider"])
         if cfg is None:

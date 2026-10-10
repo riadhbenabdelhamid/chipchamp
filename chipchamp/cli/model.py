@@ -780,8 +780,8 @@ def _list_models(reg):
         sdk = ("" if importlib.util.find_spec("anthropic") else
                " The anthropic SDK is not installed — `pip install -e '.[model]'`"
                " — so ANTHROPIC_API_KEY alone cannot enable it.")
-        echo("[yellow]No reachable providers.[/] Set ANTHROPIC_API_KEY or OPENAI_API_KEY, "
-             "or start a local server (Ollama :11434, LM Studio :1234)." + sdk)
+        echo("[yellow]No reachable providers.[/] Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or "
+             "GEMINI_API_KEY, or start a local server (Ollama :11434, LM Studio :1234)." + sdk)
         return found
     for prov, models in found:
         loc = " [dim](local)[/]" if prov.config.local else ""

@@ -83,6 +83,15 @@ PRESETS: dict[str, ProviderConfig] = {
         name="openai", kind="openai",
         base_url="https://api.openai.com/v1", api_key_env="OPENAI_API_KEY",
         default_model="gpt-4o"),
+    # Gemini speaks the OpenAI chat-completions wire format at this base URL
+    # (verified: /chat/completions, /models, and function-calling tool_calls
+    # all match parse_openai_response()'s expected shape) — no dedicated
+    # provider class needed, just this preset.
+    "gemini": ProviderConfig(
+        name="gemini", kind="openai",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+        api_key_env="GEMINI_API_KEY",
+        default_model="gemini-3.1-pro-preview"),
     "lmstudio": ProviderConfig(
         name="lmstudio", kind="openai",
         base_url="http://localhost:1234/v1", api_key="lm-studio", local=True),
