@@ -60,8 +60,8 @@ _console = Console()
 
 # ---- themes ------------------------------------------------------------------
 # A theme retints the STANDARD style names, so every existing "[green]✓[/]"
-# call site follows it with zero changes. `[ui] theme = phosphor` in
-# config.toml selects one; unset keeps rich's defaults.
+# call site follows it with zero changes. Project defaults can live in
+# config.toml; personal overrides go in the ignored .chipchamp/ui.json.
 from rich.theme import Theme as _Theme  # noqa: E402
 
 _THEMES = {
@@ -116,8 +116,7 @@ _THEMES = {
         "dim": "#4a7c94",
         "rule.line": "#33566b",
     }, inherit=True),
-    # grayscale with red as the ONLY color: colorblind-safe, and what a
-    # paper screenshot or grayscale print wants
+    # Grayscale; verdict words and glyphs preserve the status distinctions.
     "mono": _Theme({
         "green": "bold #e8e8e8",
         "bright_green": "bold #ffffff",
@@ -137,6 +136,44 @@ _THEMES = {
 
 
 _active_theme = ""
+_density = "compact"
+_motion = True
+
+from .ui_theme import palette, rich_color, rich_styles, prompt_style, syntax_theme
+
+_THEMES["light"] = _Theme({
+    "green": "#176b35", "cyan": "#006d91", "yellow": "#815400",
+    "red": "#b82020", "white": "#263238", "dim": "#526575",
+    "grey30": "#bdcbd4", "grey37": "#bdcbd4", "grey42": "#526575",
+    "grey50": "#526575", "grey58": "#526575", "rule.line": "#bdcbd4",
+})
+for _theme_name, _theme in list(_THEMES.items()):
+    _p = palette(_theme_name)
+    _THEMES[_theme_name] = _Theme({
+        **_theme.styles, **rich_styles(_theme_name),
+        "red": _p["error"], "bright_red": "bold " + _p["error"],
+        "yellow": _p["warning"], "dim": _p["muted"],
+        **{grey: _p["muted"] for grey in ("grey37", "grey50", "grey58", "grey62", "grey70")},
+    })
+
+
+def color(role):
+    return rich_color(palette(_active_theme)[role])
+
+
+def accent_ansi(text):
+    from rich.style import Style as RichStyle
+    if _console.no_color:
+        return text
+    return RichStyle(color=color("accent")).render(text, color_system=_console.color_system)
+
+
+def configure(values):
+    global _density, _motion
+    name = values.get("theme", "scope")
+    set_theme(name if name in _THEMES or name in ("", "off", "default", "none") else "scope")
+    _density = values.get("density", "compact")
+    _motion = values.get("motion", True)
 
 
 def set_theme(name: str) -> str:
@@ -175,7 +212,7 @@ try:
     from prompt_toolkit.formatted_text import HTML
     from prompt_toolkit.history import InMemoryHistory
     from prompt_toolkit.key_binding import KeyBindings
-    from prompt_toolkit.styles import Style
+    from prompt_toolkit.styles import Style, DynamicStyle
     _HAS_PTK = True
 except Exception:  # pragma: no cover
     _HAS_PTK = False
@@ -328,7 +365,7 @@ def markdown(text: str) -> None:
     if not text:
         return
     try:
-        _console.print(_RTLMarkdown(text, code_theme="ansi_dark"))
+        _console.print(_RTLMarkdown(text, code_theme=syntax_theme(_active_theme)))
     except Exception:
         _console.print(text)
 
@@ -353,7 +390,7 @@ def source(text: str, path: str | None = None, lang: str | None = None,
            title: str | None = None, line_numbers: bool = True,
            start_line: int = 1) -> None:
     """Render source with syntax highlighting (SystemVerilog by default)."""
-    syn = Syntax(text, _lang_for(path, lang), theme="ansi_dark",
+    syn = Syntax(text, _lang_for(path, lang), theme=syntax_theme(_active_theme),
                  line_numbers=line_numbers, start_line=start_line, word_wrap=False)
     if title or path:
         _console.print(Panel(syn, title=f"[cyan]{title or path}[/]",
@@ -378,15 +415,15 @@ def diff(old: str, new: str, path: str = "", *, context: int = 3,
         if ln.startswith("+++") or ln.startswith("---"):
             body.append(ln + "\n", style="dim")
         elif ln.startswith("@@"):
-            body.append(ln + "\n", style="cyan")
+            body.append(ln + "\n", style=color("accent"))
         elif ln.startswith("+"):
-            body.append(ln + "\n", style="green")
+            body.append(ln + "\n", style=color("success"))
             added += 1
         elif ln.startswith("-"):
-            body.append(ln + "\n", style="red")
+            body.append(ln + "\n", style=color("error"))
             removed += 1
         else:
-            body.append(ln + "\n", style="grey58")
+            body.append(ln + "\n", style=color("muted"))
     if len(lines) > max_lines:
         body.append(f"… (+{len(lines) - max_lines} more diff lines)\n", style="dim")
     title = f"[cyan]{path or 'edit'}[/]  [green]+{added}[/] [red]-{removed}[/]"
@@ -458,7 +495,7 @@ _PULSE = "✻✽✳✶✢·"
 def pulse_glyph(i: int) -> str:
     """The animated sign of life. One glyph per 4 frames, so at the 0.1s frame
     rate it breathes (~2.5 Hz) instead of strobing."""
-    return _PULSE[(i // 4) % len(_PULSE)]
+    return _PULSE[(i // 4) % len(_PULSE)] if _motion else "·"
 
 
 def fmt_dur(sec: float) -> str:
@@ -550,10 +587,10 @@ class TaskPulse:
             if room >= floor:
                 task = task_label(self.task, room)
                 dots = "" if task.endswith("…") else "…"
-                return (f"\x1b[36m{glyph}\x1b[0m \x1b[2m{task}{dots} "
+                return (f"{accent_ansi(glyph)} \x1b[2m{task}{dots} "
                         f"({status})\x1b[0m")
         # even that does not fit: the clock alone still shows it is working
-        return f"\x1b[36m{glyph}\x1b[0m \x1b[2m{fmt_dur(self.elapsed())}\x1b[0m"
+        return f"{accent_ansi(glyph)} \x1b[2m{fmt_dur(self.elapsed())}\x1b[0m"
 
 
 class Thinking:
@@ -580,11 +617,11 @@ class Thinking:
         while not self._stop.is_set():
             el = time.time() - self._start
             hint = "  [ctrl-c to interrupt]" if el >= 8 else ""
-            sys.stdout.write(f"\r\x1b[36m{_clk(i)}\x1b[0m \x1b[2m{self.label} "
+            sys.stdout.write(f"\r{accent_ansi(_clk(i if _motion else 0))} \x1b[2m{self.label} "
                              f"{el:0.0f}s{hint}\x1b[0m\x1b[K")
             sys.stdout.flush()
             i += 1
-            self._stop.wait(0.1)
+            self._stop.wait(0.1 if _motion else 1.0)
 
     def stop(self) -> None:
         if self._thread is None:
@@ -727,7 +764,7 @@ class StreamView:
         con = self._render_console
         with con.capture() as cap:
             con.print(_RTLMarkdown(_close_fences(content),
-                                   code_theme="ansi_dark"))
+                                   code_theme=syntax_theme(_active_theme)))
         return cap.get().split("\n")[:-1]  # drop the trailing empty split
 
     def _ticker(self, elapsed: float, i: int) -> str:
@@ -745,7 +782,7 @@ class StreamView:
             # no task context (headless, sub-agents): the model and its own
             # clock, which is all there is to report
             rate = f" · {tok / elapsed:0.0f} tok/s" if tok and elapsed >= 2 else ""
-            head = (f"\x1b[36m{pulse_glyph(i)}\x1b[0m \x1b[2m{self.label} "
+            head = (f"{accent_ansi(pulse_glyph(i))} \x1b[2m{self.label} "
                     f"{fmt_dur(elapsed)} · ~{fmt_tok(tok)} tok{rate}\x1b[0m")
         parts = [head]
         used = _vislen(head)
@@ -813,7 +850,7 @@ class StreamView:
             sys.stdout.flush()
             self._painted = volatile + 1
             i += 1
-            self._stop.wait(0.1)
+            self._stop.wait(0.1 if _motion else 1.0)
 
 
 class JobTail:
@@ -922,7 +959,7 @@ class JobTail:
             job = f" \x1b[2m· {self.label} {fmt_dur(el)}\x1b[0m"
             head = (self.pulse.line(i, width=width - _vislen(job))
                     if self.pulse is not None
-                    else f"\x1b[36m{pulse_glyph(i)}\x1b[0m")
+                    else f"{accent_ansi(pulse_glyph(i))}")
             block = [_clip_ansi(head + job, width)]
             block += [f"\x1b[2m  │ {ln}\x1b[0m" for ln in self._tail()]
             pinned = [f"\x1b[2m  ┃ {ln[:width - 4]}\x1b[0m" for ln in self._new_milestones()]
@@ -933,7 +970,7 @@ class JobTail:
             sys.stdout.flush()
             self._painted = len(block)
             i += 1
-            self._stop.wait(0.25)
+            self._stop.wait(0.25 if _motion else 1.0)
 
 
 _PLAN_MARK = {"done": "[green]✔[/]", "in_progress": "[cyan]▶[/]",
@@ -972,14 +1009,14 @@ def handoff(frm: str, to: str, reason: str) -> None:
     from the failing model to the fallback. Briefly animated on a TTY (~0.5s
     — the switch is a moment worth marking); always ends with a permanent
     static line so scrollback keeps the record."""
-    if is_tty():
+    if is_tty() and _motion:
         span = 16
         a = frm.rsplit("/", 1)[-1]
         b = to.rsplit("/", 1)[-1]
         for i in range(span):
             wire = "─" * i + "●" + "─" * (span - 1 - i)
-            sys.stdout.write(f"\r  \x1b[35m⇄\x1b[0m \x1b[2m{a}\x1b[0m "
-                             f"\x1b[35m{wire}▶\x1b[0m \x1b[1m{b}\x1b[0m\x1b[K")
+            sys.stdout.write(f"\r  {accent_ansi('⇄')} \x1b[2m{a}\x1b[0m "
+                             f"{accent_ansi(wire + '▶')} \x1b[1m{b}\x1b[0m\x1b[K")
             sys.stdout.flush()
             time.sleep(0.03)
         sys.stdout.write("\r\x1b[2K")
@@ -996,6 +1033,52 @@ def tool_call(name: str, args: dict | str) -> None:
     import json
     s = args if isinstance(args, str) else json.dumps(args)
     _console.print(f"  [grey50]→ {name}[/][grey37]({s[:80]})[/]")
+
+
+def job_result(name, result, record=None, *, actions=True):
+    """A compact verdict, with a diagnostic and direct job actions on failure."""
+    jid = result.get("job") or getattr(record, "id", "")
+    status = result.get("sim_status") or result.get("status") or getattr(record, "status", "unknown")
+    labels = {"passed": ("✓", "PASS", "success"), "failed": ("✗", "FAIL", "error"),
+              "error": ("✗", "ERROR", "error"), "timeout": ("!", "TIMEOUT", "error"),
+              "running": ("◐", "RUNNING", "warning"), "queued": ("○", "QUEUED", "muted")}
+    mark, label, role = labels.get(status, ("?", str(status).upper(), "muted"))
+    kind = name.removesuffix(".run") or getattr(record, "kind", "job")
+    title = {"sim": "Simulation", "lint": "Lint", "synth": "Synthesis"}.get(kind, kind)
+    test = result.get("test") or getattr(record, "test_name", "")
+    line = Text(f"  {mark} {title}", style=color(role))
+    if test:
+        line.append(f" · {test}", style="bold")
+    line.append(f"  {label}", style="bold")
+    if jid:
+        line.append(f"  {jid}", style=color("muted"))
+    if getattr(record, "cached", False) or result.get("cached"):
+        line.append(" · cached", style=color("muted"))
+    _console.print(line)
+    summary = result.get("summary") or getattr(record, "summary", "")
+    if summary and (role != "success" or _density == "verbose"):
+        _console.print(Text("    " + str(summary), style=color("muted")))
+    if role == "error":
+        diagnostics = result.get("errors") or result.get("diagnostics")
+        if not isinstance(diagnostics, list):
+            diagnostics = (getattr(record, "result", {}) or {}).get("diagnostics", [])
+        if not isinstance(diagnostics, list):
+            diagnostics = []
+        first = next((d for d in diagnostics if isinstance(d, dict) and
+                      d.get("severity", "error") == "error"), None)
+        if first:
+            location = str(first.get("file") or "")
+            if first.get("line"):
+                location += ":" + str(first["line"])
+            text = (location + " · " if location else "") + str(first.get("message") or "")
+            _console.print(Text("    " + text, style=color("error")))
+        if actions and jid:
+            commands = [f"/job {jid} log"]
+            if result.get("waves_job") or (getattr(record, "artifacts", {}) or {}).get("waves"):
+                commands.append(f"/job {jid} waves")
+            if kind == "sim" and test:
+                commands.append(f"/job {jid} rerun")
+            _console.print(Text("    " + " · ".join(commands), style=color("accent")))
 
 
 def info(msg: str) -> None:
@@ -1036,18 +1119,27 @@ def menu_entry(value) -> tuple[str, str]:
 
 if _HAS_PTK:
     class _SlashCompleter(Completer):
-        def __init__(self, commands: dict):
+        def __init__(self, commands: dict, arguments=None):
             self.commands = commands
+            self.arguments = arguments
 
         def get_completions(self, document, complete_event):
             text = document.text_before_cursor
             if not text.startswith("/"):
                 return
             word = text[1:]
-            # insertion order is the menu order — the table arrives sorted
-            for name, value in self.commands.items():
-                if not name.startswith(word):
-                    continue
+            if any(ch.isspace() for ch in word):
+                if self.arguments:
+                    for value, description, replace in self.arguments(text):
+                        yield Completion(value, start_position=-replace,
+                                         display_meta=description)
+                return
+            matches = [(name, value) for name, value in self.commands.items()
+                       if name.startswith(word)]
+            matches += [(name, value) for name, value in self.commands.items()
+                        if word and not name.startswith(word) and
+                        word.casefold() in (name + " " + menu_entry(value)[0]).casefold()]
+            for name, value in matches:
                 desc, kind = menu_entry(value)
                 style, badge = _MENU_KINDS.get(kind, ("", ""))
                 # the badge leads the META column (not the name) so every
@@ -1103,7 +1195,7 @@ class InputController:
     mode shows in the bottom toolbar."""
 
     def __init__(self, commands: dict[str, str], mode=None,
-                 on_mode_change=None, toolbar_extra=None):
+                 on_mode_change=None, toolbar_extra=None, arguments=None):
         self.commands = commands
         self.tty = is_tty()
         self.mode = mode
@@ -1127,28 +1219,31 @@ class InputController:
         self._announced = False
         self.session = None
         if _HAS_PTK and self.tty:
-            style = Style.from_dict({"prompt": "bold cyan",
-                                     # lime-phosphor status bar: black text on phosphor, CRT-style
-                                     "bottom-toolbar": "bg:#a8ff00 #000000",
-                                     # skills in the slash menu. ptk's default
-                                     # menu is LIGHT (#bbbbbb, #ffffff when
-                                     # selected, #999999 for meta), so this has
-                                     # to be a dark hue: violet clears 5:1 on
-                                     # all three, a light accent clears none.
-                                     "completion.skill": "#5f00af"})
+            style = DynamicStyle(lambda: Style.from_dict(prompt_style(_active_theme)))
             kb = KeyBindings()
 
-            @kb.add("enter", filter=has_completions)
+            @kb.add("enter", filter=has_focus(DEFAULT_BUFFER), eager=True)
             def _(event):
-                # the completion menu highlights its first entry by default
-                # (see _preselect below); enter means "take the highlighted
-                # command and run it" — /rev + enter behaves as /review
+                # One handler owns submission, both before and after async
+                # completions arrive. Enter must never rewrite an argument.
                 buf = event.current_buffer
-                cs = buf.complete_state
-                if cs and cs.completions:
-                    buf.apply_completion(cs.current_completion
-                                         or cs.completions[0])
+                text = buf.text
+                if text.startswith("/") and not any(c.isspace() for c in text):
+                    word = text[1:]
+                    if word and word not in self.commands:
+                        cs = buf.complete_state
+                        if cs and cs.completions:
+                            buf.apply_completion(cs.current_completion or cs.completions[0])
+                        else:
+                            match = next((c for c in self.commands if c.startswith(word)), None)
+                            if match:
+                                buf.text = "/" + match
+                                buf.cursor_position = len(buf.text)
                 buf.validate_and_handle()
+
+            @kb.add("c-j")
+            def _(event):
+                event.current_buffer.insert_text("\n")
 
             @kb.add("tab", filter=has_completions)
             def _(event):
@@ -1162,24 +1257,6 @@ class InputController:
                 else:
                     buf.complete_next()
 
-            @kb.add("enter", filter=~has_completions & has_focus(DEFAULT_BUFFER))
-            def _(event):
-                # fast typists can hit enter BEFORE the async completion round
-                # lands ("/li<enter>" in one burst) — resolve the prefix
-                # against the command table directly so the result is the
-                # same as if the menu had been open
-                buf = event.current_buffer
-                text = buf.text
-                if text.startswith("/") and " " not in text:
-                    word = text[1:]
-                    if word and word not in self.commands:
-                        m = next((c for c in self.commands
-                                  if c.startswith(word)), None)
-                        if m:
-                            buf.text = f"/{m}"
-                            buf.cursor_position = len(buf.text)
-                buf.validate_and_handle()
-
             if mode is not None:
                 @kb.add("s-tab")  # shift-tab cycles the autonomy mode
                 def _(event):
@@ -1192,7 +1269,9 @@ class InputController:
                         run_in_terminal(lambda: self._announce_mode(name))
                     event.app.invalidate()  # redraw the toolbar
             self.session = PromptSession(
-                completer=_SlashCompleter(commands), history=self.history,
+                completer=_SlashCompleter(commands, arguments), history=self.history,
+                multiline=True,
+                refresh_interval=3,
                 complete_while_typing=True, style=style, key_bindings=kb,
                 # 4 menu rows (scrolls internally) instead of ptk's 8: less
                 # dead space below the prompt in the drop-DOWN case; the
@@ -1243,18 +1322,29 @@ class InputController:
                 extra = self.toolbar_extra() or ""
             except Exception:
                 extra = ""
-        # everything inherits black-on-phosphor from the bar; the MODE is
-        # an inverted pill (phosphor-on-black), matching the model pill
-        sep = "  │  "
+        import html
+        from prompt_toolkit.formatted_text import fragment_list_to_text, to_formatted_text
+        from rich.cells import cell_len, set_cell_size
+        mode = html.escape(self.mode.name) if self.mode is not None else "normal"
+        width = _console.size.width
+        hint = " · / commands · Ctrl-J newline" if width >= 110 else " · / commands"
+        body = f'<status.accent>{mode}</status.accent>'
         if extra:
-            extra = f" {extra}{sep}"
-        if self.mode is not None:
-            name = (f'<style bg="#000000" fg="#a8ff00"><b> '
-                    f'{self.mode.name} </b></style>')
-            return HTML(f"{extra}{name} mode (shift-tab){sep}"
-                        f"<b>/</b> commands{sep}ctrl-d exits")
-        return HTML(f"{extra}<b>/</b> commands{sep}enter sends · "
-                    "ctrl-d exits")
+            body += " · " + extra
+        if cell_len(fragment_list_to_text(to_formatted_text(HTML(body + hint)))) <= width:
+            return HTML(body + hint)
+        if cell_len(fragment_list_to_text(to_formatted_text(HTML(body)))) <= width:
+            return HTML(body)
+        # A narrow terminal still gets a bounded footer, never an extra row
+        # over the input. Prefer target/job state over the model segment.
+        if extra and " · " in extra:
+            body = f'<status.accent>{mode}</status.accent> · ' + extra.split(" · ", 1)[1]
+        plain = fragment_list_to_text(to_formatted_text(HTML(body)))
+        if cell_len(plain) <= width:
+            return HTML(body)
+        if cell_len(plain) > width:
+            plain = set_cell_size(plain, max(0, width - 1)) + "…"
+        return HTML(html.escape(plain))
 
     def _init_readline(self) -> None:
         try:

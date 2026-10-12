@@ -61,7 +61,8 @@ def echo(msg="", **kw):
 def _ctx(root, target=None) -> ToolContext:
     ws = Workspace(root)
     from .. import ui
-    ui.set_theme((ws.config.get("ui", {}) or {}).get("theme", ""))
+    from ..ui_preferences import load
+    ui.configure(load(ws))
     return ToolContext(ws, target=target)
 
 

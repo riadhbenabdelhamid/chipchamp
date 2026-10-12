@@ -580,8 +580,8 @@ and any tool marked destructive can never be auto-approved, and decline off a TT
 the workspace, `chipchamp --resume <id>` a specific one; in-session `/sessions`
 lists them (newest-first, with a preview) and `/sessions resume <id>` swaps the
 live transcript. **Live job visibility**: a running EDA job (sim/synth/pnr/…)
-shows a `running <tool> · Ns` spinner, then an indexed `▪ J-0042 sim.run passed`
-line colored by verdict.
+shows a `running <tool> · Ns` indicator, then a compact verdict with its test
+name and job ID. Failures include the first error and commands to inspect the run.
 
 **Two surfaces, one tool.** Bare `chipchamp` is an interactive agent session
 (plain-English tasks go to the model; `/command` runs a skill). Every `/command`
@@ -596,6 +596,41 @@ generates, and shows a **live plan checklist** the agent keeps current as it wor
 (via the `plan.update` tool). This needs `prompt_toolkit` (installed by `setup.sh`
 via the `tui` extra); without it, input falls back to readline tab-completion and
 the rest still renders.
+
+**Terminal controls.** The command menu searches both names and descriptions.
+Tab completes commands, test names, job IDs, flags and loaded waveform signals;
+Enter submits without replacing typed arguments. **Ctrl-J** inserts a newline,
+and pasted multiline text stays together. Shift-Tab cycles autonomy modes.
+
+The footer shows the active target and latest lint, simulation and synthesis
+results, plus formal/LEC/eFPGA results when present. Verdicts are labeled **PASS**,
+**FAIL**, **ERROR**, **TIMEOUT**, **RUNNING**, **QUEUED**, **STALE**, **NOT RUN** or
+**UNKNOWN**. Changed source/configuration fingerprints or captured dependencies
+make an old result stale; records without freshness information remain unknown.
+These are the latest individual jobs, not whole-suite signoff. Failures get
+priority when terminal space is limited.
+
+`/theme scope` selects the default cyan palette; `light`, `phosphor`, `amber`,
+`mono` and `off` are also available. The prompt, menus, source highlighting and
+status colors follow the theme. `/ui motion off` stops decorative animations.
+`/ui compact` groups routine read/query calls, with their arguments available
+through `/details` for the latest task; `/ui verbose` shows each call. Preferences
+are saved locally in ignored `.chipchamp/ui.json`, overriding project `[ui]`
+defaults without changing verification inputs.
+
+Inspect a job from either the session or shell:
+
+```text
+/job J-0042                         # verdict and first error
+/job J-0042 log --lines 80          # bounded log tail, with full log paths
+/job J-0042 waves --signal tb.clk --t0 0 --t1 1000
+/job J-0042 rerun                   # same test and seed, using current sources
+chipchamp --json job J-0042         # full recorded metadata
+```
+
+Wave windows use the trace's time ticks. Rerun supports simulation jobs on the
+active target, honors normal execution policy, and can reuse a valid cached run
+(marked `cached`). `/repro J-0042` provides recorded commands for other job kinds.
 
 **Plan mode.** Run `chipchamp --plan` (or `/plan` in-session; on by default when a
 path's autonomy is L0) and the agent must **get your approval before every edit or

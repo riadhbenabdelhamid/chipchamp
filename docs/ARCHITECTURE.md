@@ -148,6 +148,19 @@ The separately configured Alwavelets server owns PNG rasterization; Chipchamp
 preserves its PNG bytes and displays any supplied text companion. Its process
 must be restarted to load changes to that external renderer.
 
+## Terminal surface (§7.1)
+
+The terminal's palette is shared by Rich, prompt-toolkit and syntax highlighting
+through `ui_theme.py`. `ui_preferences.py` stores personal display overrides in
+ignored `.chipchamp/ui.json`; TOML/YAML verification manifests remain untouched.
+`ui_status.py` caches target-scoped job freshness for three seconds, comparing
+the current verification fingerprint and recorded input snapshots. Missing
+provenance is displayed as unknown. The footer summarizes individual jobs rather
+than evaluating or replacing policy gates. `cli/completion.py` provides local
+argument suggestions. `cli/verify.py` exposes job summaries, bounded log tails,
+waveform windows and policy-mediated simulation reruns; `cli/repl.py` groups
+routine read calls while preserving their arguments for `/details`.
+
 ## Context discipline (§8.9)
 
 - `tools/base.py::truncate` enforces per-result ceilings with explicit markers (FR-CTX-01).

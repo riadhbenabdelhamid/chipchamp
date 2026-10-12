@@ -47,6 +47,7 @@ examples/**/verif/uvm_t/
 # machine-local: the CLI-managed library registry and the config overlay
 **/.chipchamp/library.json
 **/.chipchamp/config.local.toml
+**/.chipchamp/ui.json
 *.vec.json
 
 # agent scratch/design dir (regenerable; never commit generated RTL/sim)

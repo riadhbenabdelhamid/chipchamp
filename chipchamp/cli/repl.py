@@ -37,63 +37,33 @@ def agent(ctx, prompt, model, provider, max_steps, plan_mode):
 _SLASH_EXCLUDE = {"agent", "mcp-serve"}
 
 
-_LED_KINDS = ("lint", "sim", "synth")
-
-
 def _board_leds(c, loop):
-    """Dev-board LED strip for the input toolbar: one LED per job kind, lit
-    from the workspace's LATEST job of that kind (green pass / red fail /
-    yellow running / dark never-ran), plus the live model. Job records are
-    TTL-cached — the toolbar re-renders on every keystroke."""
-    import html as _html
-    import time as _time
-    now = _time.time()
-    cache = getattr(_board_leds, "_cache", None)
-    if cache and cache[0] > now - 3.0:
-        latest = cache[1]
-    else:
-        latest = {}
-        try:
-            for rec in c.runner.list_jobs():  # ascending → later wins
-                latest[rec.kind] = rec.status
-        except Exception:
-            pass
-        _board_leds._cache = (now, latest)
-    # Lime-phosphor bar: the toolbar paints black-on-phosphor, so plain
-    # text needs no styling at all — the MODEL rides as an inverted pill
-    # (phosphor-on-black), and the LED strip is monochrome: filled=pass,
-    # hollow=never-ran, half=running, with red reserved for failure.
-    segs = []
-    try:
-        ref = getattr(loop.gateway, "ref", "") or ""
-        prov, _, mdl = ref.partition(":")
-        mdl = (mdl or getattr(loop.gateway, "model", "")
-               or "").rsplit("/", 1)[-1][:28]
-        eff = getattr(loop.gateway, "reasoning_effort", "") or ""
-        if mdl:
-            label = f"{prov or 'model'}:{mdl}" + (f" ↯{eff}" if eff else "")
-            segs.append(f'<style bg="#000000" fg="#a8ff00"><b> '
-                        f'{_html.escape(label)} </b></style>')
-    except Exception:
-        pass
-    kinds = list(_LED_KINDS) + sorted(
-        k for k in latest if k in ("formal", "lec", "efpga-fabulous"))
-    short = {"efpga-fabulous": "efpga"}
-    cells = []
-    for k in kinds:
-        st = latest.get(k)
-        if st == "passed":
-            led = "●"
-        elif st in ("failed", "error", "timeout"):
-            led = "<ansired>●</ansired>"
-        elif st == "running":
-            led = "◐"
-        else:
-            led = "○"
-        cells.append(f"{short.get(k, k)} {led}")
-    if cells:
-        segs.append("  ".join(cells))
-    return "  │  ".join(segs)
+    """Current target evidence, cached per context rather than across workspaces."""
+    import html
+    from ..ui_status import job_states
+    gateway = getattr(loop, "gateway", None)
+    ref = getattr(gateway, "ref", "") or getattr(gateway, "model", "") or "no model"
+    effort = getattr(gateway, "reasoning_effort", "")
+    model = ref.rsplit("/", 1)[-1]
+    model = model if len(model) <= 34 else model[:33] + "…"
+    parts = [f'<status.accent>{html.escape(model)}</status.accent>' +
+             (f" ↯{html.escape(effort)}" if effort else "")]
+    target = getattr(c, "target_name", "")
+    if target:
+        from rich.cells import cell_len, set_cell_size
+        from .. import ui
+        limit = 12 if ui.console().size.width < 80 else 24
+        if cell_len(target) > limit:
+            target = set_cell_size(target, limit - 1) + "…"
+        parts.append(html.escape(target))
+    priority = {"FAIL": 0, "ERROR": 0, "TIMEOUT": 0, "RUNNING": 1, "QUEUED": 1, "STALE": 2}
+    for kind, status in sorted(job_states(c).items(), key=lambda item: priority.get(item[1], 3)):
+        role = ("success" if status == "PASS" else "error" if status in
+                ("FAIL", "ERROR", "TIMEOUT") else "warning" if status in
+                ("STALE", "RUNNING", "QUEUED") else "muted")
+        label = "efpga" if kind == "efpga-fabulous" else kind
+        parts.append(f'{label} <status.{role}>{status}</status.{role}>')
+    return " · ".join(parts)
 
 
 def _print_failure_waves(c, jid: str) -> None:
@@ -127,27 +97,10 @@ def _burndown(hist: list[int]) -> str:
     return " ".join(cells)
 
 
-def _persist_theme(c, name: str) -> None:
-    """Write `[ui] theme` into the workspace config so the choice survives
-    the session. Surgical: replaces an existing theme line, extends an
-    existing [ui] section, or appends one — comments elsewhere untouched."""
-    import re as _re
-    path = c.ws.dot / "config.toml"
-    try:
-        text = path.read_text() if path.exists() else ""
-    except OSError:
-        return
-    line = f'theme = "{name}"' if name else 'theme = ""'
-    if _re.search(r"(?m)^\s*theme\s*=", text):
-        text = _re.sub(r"(?m)^\s*theme\s*=.*$", line, text, count=1)
-    elif _re.search(r"(?m)^\[ui\]", text):
-        text = _re.sub(r"(?m)^\[ui\]\s*$", f"[ui]\n{line}", text, count=1)
-    else:
-        text += f"\n[ui]\n{line}\n"
-    try:
-        path.write_text(text)
-    except OSError:
-        pass
+def _persist_theme(c, name: str):
+    """Save a visual preference without changing verification configuration."""
+    from ..ui_preferences import save
+    return save(c.ws, "theme", name)
 
 
 def _agent_events(c):
@@ -156,7 +109,26 @@ def _agent_events(c):
     tokens streaming live as the model generates (reasoning scrolls by in the
     ticker), and a rolling tail of the live log while an EDA job runs."""
     from .. import ui
-    state = {"think": None, "job": None, "streamed": 0, "pulse": None}
+    state = {"think": None, "job": None, "streamed": 0, "pulse": None,
+             "reads": 0, "rendered_jobs": {}}
+
+    def flush_reads():
+        if state["reads"]:
+            from rich.text import Text
+            ui.console().print(Text(f"  Read/query tools: {state['reads']} calls · /details to inspect",
+                                    style=ui.color("muted")))
+            state["reads"] = 0
+
+    def show_job(name, result):
+        jid = result.get("job")
+        verdict = result.get("sim_status") or result.get("status")
+        if jid and (jid not in state["rendered_jobs"] or state["rendered_jobs"][jid] != verdict):
+            try:
+                rec = c.runner.get(jid)
+            except (OSError, AttributeError):
+                rec = None
+            ui.job_result(getattr(rec, "kind", name), result, rec)
+            state["rendered_jobs"][jid] = verdict
 
     # the runner announces each step's live log; hand it to the active tail
     def _on_step(_job_id, live_path):
@@ -188,6 +160,12 @@ def _agent_events(c):
         ui.console().print("  " + ui.gate_ladder(rep))
 
     def on_event(kind, data):
+        from ..ui_status import invalidate
+        if kind in ("job_start", "job_done") or (kind == "tool_result" and
+                data.get("name") in ("fs.edit", "fs.write", "fs.delete")):
+            invalidate(c)
+        if kind in ("assistant", "job_start", "error"):
+            flush_reads()
         sub = data.get("subagent")
         if sub:
             # Subagent traffic gets its own compact, LABELED path. Unlabeled,
@@ -258,17 +236,11 @@ def _agent_events(c):
                 jid = res.get("job", "")
                 status = res.get("status") or res.get("sim_status") \
                     or res.get("verdict") or ("error" if "error" in res else "done")
-                col = "green" if status in ("passed", "pass", "done") else \
-                    ("red" if status in ("failed", "error", "fail") else "yellow")
                 if jid:
-                    ui.console().print(
-                        f"  [dim]▪[/] [bold]{jid}[/] {data['name']} "
-                        f"[{col}]{status}[/]"
-                        + (f" [dim]· {str(res['summary'])[:70]}[/]"
-                           if res.get("summary") else ""))
+                    show_job(data["name"], res)
                 # post-mortem at a glance: a failing sim that dumped waves
                 # gets its last cycles rendered inline, analyzer-style
-                if (data["name"] == "sim.run" and res.get("waves_job")
+                if (ui._density == "verbose" and data["name"] == "sim.run" and res.get("waves_job")
                         and str(status) in ("failed", "fail", "error")):
                     _print_failure_waves(c, res["waves_job"])
             _show_ladder()
@@ -288,7 +260,18 @@ def _agent_events(c):
         elif kind == "destructive":
             ui.warn(f"  ⚠ destructive: {data['name']} — will ask to confirm")
         elif kind == "tool_call":
-            if not data["name"].startswith("plan."):  # plan renders on its result
+            routine = data["name"] in ("fs.read", "fs.list", "fs.grep", "design.module",
+                                        "design.hier", "design.signals", "design.search")
+            if ui._density == "compact" and routine:
+                state["reads"] += 1
+                calls = getattr(c, "_ui_call_details", [])
+                calls.append((data["name"], data.get("input", {})))
+                if len(calls) > 200:
+                    calls.pop(0)
+                    c._ui_call_omitted = getattr(c, "_ui_call_omitted", 0) + 1
+                c._ui_call_details = calls
+            elif not data["name"].startswith("plan."):
+                flush_reads()
                 ui.tool_call(data["name"], data["input"])
         elif kind == "tool_result":
             name, res = data.get("name", ""), data.get("result", {})
@@ -299,7 +282,9 @@ def _agent_events(c):
             elif res.get("denied"):
                 ui.console().print(f"  [yellow]⊘ skipped {name} (not approved)[/]")
             elif "error" in res:
-                ui.console().print(f"  [red]✗ {name}: {str(res['error'])[:100]}[/]")
+                flush_reads()
+                from rich.text import Text
+                ui.console().print(Text(f"  ✗ {name}: {res['error']}", style=ui.color("error")))
             elif isinstance(res.get("waveform"), dict) and res["waveform"].get("format") == "text":
                 ui.waveform(res.get("text", ""), path=res["waveform"]["path"])
                 if res.get("images"):
@@ -319,6 +304,7 @@ def _agent_events(c):
                 # report.done when it is too late to plan around.
                 _show_ladder()
             elif name == "lint.run" and isinstance(res.get("errors"), int):
+                show_job(name, res)
                 hist = state.setdefault("lint_hist", [])
                 hist.append(res["errors"])
                 n = res["errors"]
@@ -327,7 +313,10 @@ def _agent_events(c):
                         f"lint [{col}]{n} error(s)[/]")
                 if len(hist) >= 2:  # one point isn't a burndown yet
                     line += f"  [dim]⌁[/] {_burndown(hist)}"
-                ui.console().print(line)
+                if len(hist) >= 2 or not res.get("job"):
+                    ui.console().print(line)
+            elif res.get("job") and (name.endswith(".run") or name in ("job.wait", "job.status")):
+                show_job(name, res)
             elif name == "regmap.generate" and res.get("ok"):
                 for w in res.get("written", []):
                     if w.get("changed"):
@@ -350,6 +339,7 @@ def _agent_events(c):
     def shutdown():
         """Stop any live renderer (ctrl-c mid-generation would otherwise leave
         a daemon thread repainting over the prompt forever)."""
+        flush_reads()
         for key in ("think", "job"):
             if state.get(key):
                 state[key].stop()
@@ -358,9 +348,12 @@ def _agent_events(c):
     def begin_task(text: str, effort: str = ""):
         """Open the task-level clock the step spinners report against."""
         state["pulse"] = ui.TaskPulse(text, effort)
+        state["rendered_jobs"].clear()
+        c._ui_call_details, c._ui_call_omitted = [], 0
         return state["pulse"]
 
     def end_task():
+        flush_reads()
         state["pulse"] = None
 
     on_event.shutdown = shutdown
@@ -383,7 +376,9 @@ def _session_commands(c=None) -> dict:
                  "timeout": "per-model call budget (raise it for a slow model)",
                  "router": "auto model-routing: on/off, pool, profiles, chains",
                  "mode": "cycle autonomy: normal/auto/plan (shift-tab)",
-                 "theme": "UI theme: phosphor · amber · scope · mono · off",
+                 "theme": "UI theme: scope · light · phosphor · amber · mono · off",
+                 "ui": "display: compact · verbose · motion on/off",
+                 "details": "show tool calls grouped by compact display",
                  "plan": "toggle plan mode (approve edits/jobs)",
                  "sessions": "list / resume saved sessions",
                  "undo": "revert the files the last task changed",
@@ -735,12 +730,14 @@ def _interactive(ctx_obj, prompt=None, model=None, provider=None, max_steps=40,
         echo(f"  [green]resumed[/] {resumed} session [bold]{sess.id}[/] "
              f"[dim]({len(sess.messages)} messages) — /sessions to switch[/]")
         _replay_session(sess)
+    from .completion import arguments
     inp = ui.InputController(
         _session_commands(c), mode=mode,
         on_mode_change=lambda name: echo(
             f"  [dim]autonomy → [/][bold {_MODE_COLOR[name]}]{name}[/] "
             f"[dim]{_MODE_DESC[name]}[/]"),
-        toolbar_extra=lambda: _board_leds(c, loop))
+        toolbar_extra=lambda: _board_leds(c, loop),
+        arguments=lambda text: arguments(c, text))
     if resumed:  # make the resumed session's requests recallable with up/down
         inp.remember(_session_user_inputs(sess))
     pending: list[str] = []  # /skill playbooks staged for the next task
@@ -965,6 +962,39 @@ def _dispatch_slash(ctx_obj, c, loop, line, pending=None, mode=None,
         return None
     if name == "undo":
         _undo_cmd(c)
+        from ..ui_status import invalidate
+        invalidate(c)
+        return None
+    if name == "details":
+        import json
+        from rich.text import Text
+        calls = getattr(c, "_ui_call_details", [])
+        if not calls:
+            echo("No grouped tool calls in the latest task.")
+        for tool, arguments in calls:
+            echo(Text(f"{tool}\n{json.dumps(arguments, indent=2, default=str)}"))
+        if getattr(c, "_ui_call_omitted", 0):
+            echo(f"{c._ui_call_omitted} earlier calls omitted; see the session audit log.")
+        return None
+    if name == "ui":
+        from .. import ui
+        from ..ui_preferences import load, save
+        if args in (["compact"], ["verbose"]):
+            key, value = "density", args[0]
+        elif len(args) == 2 and args[0] == "motion" and args[1] in ("on", "off"):
+            key, value = "motion", args[1] == "on"
+        else:
+            values = load(c.ws)
+            echo(f"Display: {values['density']} · motion {'on' if values['motion'] else 'off'}. "
+                 "Use /ui compact, /ui verbose, or /ui motion on|off.")
+            return None
+        try:
+            save(c.ws, key, value)
+        except OSError as exc:
+            echo(f"Could not save UI preference: {exc}")
+            return None
+        ui.configure(load(c.ws))
+        echo("Display preference saved to .chipchamp/ui.json.")
         return None
     if name == "theme":
         from .. import ui as _ui
@@ -979,9 +1009,13 @@ def _dispatch_slash(ctx_obj, c, loop, line, pending=None, mode=None,
             echo(f"[yellow]unknown theme '{want}'[/] — available: "
                  + ", ".join(_ui.theme_names() + ["off"]))
             return None
-        _persist_theme(c, applied)
+        try:
+            _persist_theme(c, applied)
+        except OSError as exc:
+            echo(f"Theme applied for this session; could not save it: {exc}")
+            return None
         echo(f"theme: [bold]{applied or 'default'}[/] [dim](applied live, "
-             f"saved to .chipchamp/config.toml)[/]")
+             f"saved to .chipchamp/ui.json)[/]")
         return None
     if name == "mode":
         if mode is None:
@@ -1165,7 +1199,7 @@ _HELP_GROUPS = {
     "verify": ["sim", "lint", "lint-burndown", "cov", "triage", "ci", "bench"],
     "implement": ["uvm", "regmap", "synth", "optimize", "pnr", "fpga", "pins",
                   "efpga-fabulous", "riscv"],
-    "report": ["jobs", "repro", "dashboard"],
+    "report": ["jobs", "job", "repro", "dashboard"],
     "setup": ["workspace", "library", "skills"],
 }
 
@@ -1186,7 +1220,7 @@ def _head(name: str) -> str:
 # argument hint like [on|off] as markup and swallowing it.
 _HELP_SESSION = {
     "mode": " — cycle autonomy (shift-tab): normal · auto · plan",
-    "theme": " — UI theme, live + saved: phosphor · amber · scope · mono · off",
+    "theme": " — UI theme, live + saved: scope · light · phosphor · amber · mono · off",
     "plan": r" \[on|off] — plan mode (approve edits/jobs)",
     "sessions": r" \[resume <id>] — list or resume a saved session "
                 "(also `chipchamp --continue` / `--resume <id>` at launch)",

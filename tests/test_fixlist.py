@@ -511,7 +511,6 @@ def test_footer_model_segment_leads_and_is_valid_markup():
     from types import SimpleNamespace as NS
     from prompt_toolkit.formatted_text import HTML
     from chipchamp.cli import _board_leds
-    _board_leds._cache = None
     c = NS(runner=NS(list_jobs=lambda: [NS(kind="sim", status="passed")]))
     loop = NS(gateway=NS(ref="ollama:qwen3.6:35b", model="qwen3.6:35b",
                          reasoning_effort="high"))
@@ -575,6 +574,7 @@ def test_set_theme_switches_and_reverts():
 
 
 def test_persist_theme_is_surgical(tmp_path):
+    import json
     from types import SimpleNamespace as NS
     from chipchamp.cli import _persist_theme
     cfg = tmp_path / "config.toml"
@@ -582,10 +582,11 @@ def test_persist_theme_is_surgical(tmp_path):
     c = NS(ws=NS(dot=tmp_path))
     _persist_theme(c, "phosphor")
     t = cfg.read_text()
-    assert 'theme = "phosphor"' in t and "[model]" in t and "# comment" in t
+    assert t == "[model]\nref = 'x'\n\n[ui]\n# comment kept\n"
+    local = tmp_path / "ui.json"
+    assert json.loads(local.read_text())["theme"] == "phosphor"
     _persist_theme(c, "")                             # off → cleared, once
-    t = cfg.read_text()
-    assert t.count("theme =") == 1 and 'theme = ""' in t
+    assert json.loads(local.read_text())["theme"] == ""
 
 
 # --- 23. cross-run artifact sweep + wrapper-call teaching -------------------

@@ -283,14 +283,13 @@ def test_mode_colors_distinct_and_complete():
 @pytest.mark.skipif(not ui._HAS_PTK, reason="prompt_toolkit not installed")
 def test_toolbar_colors_the_mode_name():
     from types import SimpleNamespace as NS
-    # phosphor bar: the mode renders as an inverted phosphor-on-black pill
-    # regardless of the legacy per-mode accent color
+    from prompt_toolkit.formatted_text import to_formatted_text
+    # The mode uses the current palette, not a hardcoded lime pill.
     for name in ("normal", "auto", "plan"):
         ic = ui.InputController({"sim": "x"}, mode=NS(name=name, color="cyan"))
-        assert (f'<style bg="#000000" fg="#a8ff00"><b> {name} </b></style>'
-                in ic._toolbar().value)
+        assert ("class:status.accent", name) in to_formatted_text(ic._toolbar())
     ic = ui.InputController({"sim": "x"}, mode=NS(name="normal"))
-    assert " normal " in ic._toolbar().value
+    assert ">normal<" in ic._toolbar().value
 
 
 @pytest.mark.skipif(not ui._HAS_PTK, reason="prompt_toolkit not installed")
@@ -308,38 +307,31 @@ def test_toolbar_extra_is_crash_shielded():
 def test_board_leds_reflect_latest_job_per_kind():
     from types import SimpleNamespace as NS
     from chipchamp.cli import _board_leds
-    _board_leds._cache = None          # defeat the TTL cache between tests
-
     class FakeRunner:
         def list_jobs(self):
-            return [NS(kind="lint", status="failed"),
-                    NS(kind="sim", status="failed"),
-                    NS(kind="sim", status="passed"),   # later wins
-                    NS(kind="formal", status="passed")]
+            return [NS(kind=k, status=s, verification_hash="current") for k, s in
+                    [("lint", "failed"), ("sim", "failed"), ("sim", "passed"), ("formal", "passed")]]
 
-    c = NS(runner=FakeRunner())
+    c = NS(runner=FakeRunner(), verification_hash=lambda: "current")
     loop = NS(gateway=NS(model="mistralai/devstral-small-2-2512"))
     out = _board_leds(c, loop)
-    assert "lint" in out and "<ansired>●" in out       # failure = only color
-    assert "sim ●" in out                              # latest passed: filled
-    assert "synth" in out and "○" in out               # never ran
+    assert 'lint <status.error>FAIL' in out
+    assert 'sim <status.success>PASS' in out
+    assert "synth" in out and "NOT RUN" in out
     assert "formal" in out                             # extra kind surfaced
     assert "devstral-small-2-2512" in out              # live model, short name
-    _board_leds._cache = None
 
 
 def test_board_leds_survive_a_broken_runner():
     from types import SimpleNamespace as NS
     from chipchamp.cli import _board_leds
-    _board_leds._cache = None
 
     class DeadRunner:
         def list_jobs(self):
             raise OSError("runs dir vanished")
 
     out = _board_leds(NS(runner=DeadRunner()), NS(gateway=NS(model="m")))
-    assert "lint" in out and "○" in out    # all dark, no crash
-    _board_leds._cache = None
+    assert "lint" in out and "UNKNOWN" in out
 
 
 def test_burndown_sparkline():

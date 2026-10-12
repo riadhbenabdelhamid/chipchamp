@@ -288,6 +288,96 @@ def repro(ctx, job):
     echo(r.get("repro", r.get("error")))
 
 
+@cli.command("job")
+@click.argument("job_id")
+@click.argument("view", type=click.Choice(["summary", "log", "waves", "rerun"]), default="summary")
+@click.option("--lines", type=click.IntRange(1, 1000), default=80, help="log tail lines")
+@click.option("--signal", "signals", multiple=True, help="signal to display (repeatable)")
+@click.option("--t0", type=click.IntRange(0), default=None, help="wave window start tick")
+@click.option("--t1", type=click.IntRange(0), default=None, help="wave window end tick")
+@click.pass_context
+def job_view(ctx, job_id, view, lines, signals, t0, t1):
+    """Inspect a job, tail logs, view waves, or rerun its test on current sources."""
+    from .. import ui
+    from rich.text import Text
+    c = _ctx(ctx.obj["root"], ctx.obj["target"])
+    rec = c.runner.get(job_id)
+    if rec is None:
+        raise click.ClickException(f"No such job: {job_id}. Use /jobs to list runs.")
+    if view == "summary":
+        if ctx.obj["as_json"]:
+            _emit(rec.to_dict(), True)
+        else:
+            ui.job_result(rec.kind, {"job": rec.id, "status": rec.status}, rec)
+    elif view == "log":
+        tail, paths, truncated = [], [], False
+        try:
+            for index, step in enumerate(reversed(rec.steps)):
+                with open(step.log_path, "rb") as log:
+                    size = log.seek(0, 2)
+                    start = max(0, size - 256 * 1024)
+                    log.seek(start)
+                    content = log.read(256 * 1024).decode(errors="replace")
+                truncated |= start > 0
+                paths.insert(0, step.log_path)
+                chunk = content.splitlines(keepends=True)
+                truncated |= len(chunk) + len(tail) > lines
+                tail = (chunk + tail)[-lines:]
+                if len(tail) >= lines:
+                    truncated |= index + 1 < len(rec.steps)
+                    break
+        except OSError as exc:
+            raise click.ClickException(f"Cannot read job log: {exc}") from exc
+        if ctx.obj["as_json"]:
+            _emit({"job": rec.id, "text": "".join(tail), "paths": paths, "truncated": truncated}, True)
+        elif not tail:
+            echo("No log output recorded yet.")
+        else:
+            if truncated:
+                echo(Text("… earlier output omitted", style="dim"))
+            plain = Text.from_ansi("".join(tail)).plain
+            plain = "".join(c for c in plain if c in "\n\t" or ord(c) >= 32 and not 127 <= ord(c) < 160)
+            echo(Text(plain.rstrip()))
+            for path in paths:
+                echo(Text("Full log: " + path, style="dim"))
+    elif view == "waves":
+        from subprocess import SubprocessError
+        try:
+            store = c.resolve_wave(job_id)
+        except (OSError, RuntimeError, ValueError, SubprocessError) as exc:
+            raise click.ClickException(f"Cannot load waveform: {exc}") from exc
+        if store is None:
+            raise click.ClickException(f"No waveform available for {job_id}.")
+        from ..waves.render import ascii_timing, pick_signals
+        selected = list(signals) or pick_signals(store.data)
+        end = store.data.end_time if t1 is None else t1
+        start = max(0, end - 1000) if t0 is None else t0
+        try:
+            snapshot = store.snapshot(selected, start, end)
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+        if ctx.obj["as_json"]:
+            _emit(snapshot, True)
+        else:
+            ui.waveform(ascii_timing(snapshot, width=ui.console().size.width))
+    else:
+        if rec.kind != "sim" or not rec.test_name:
+            raise click.ClickException("Rerun requires a simulation with a recorded test name; use /repro for other jobs.")
+        if rec.status in ("running", "queued"):
+            raise click.ClickException("This job is still running; inspect its log before launching another run.")
+        if rec.target_name != c.target_name:
+            raise click.ClickException(f"This job belongs to target {rec.target_name}; select it with --target.")
+        result = _run_tool(c, "sim.run", test=rec.test_name, seed=rec.seed if rec.seed is not None else 1)
+        if ctx.obj["as_json"]:
+            _emit(result, True)
+        elif result.get("error"):
+            raise click.ClickException(str(result["error"]))
+        else:
+            ui.job_result("sim", {**result, "test": rec.test_name}, c.runner.get(result.get("job", "")))
+        if result.get("status") != "passed":
+            raise click.exceptions.Exit(1)
+
+
 @cli.command()
 @click.pass_context
 def adapters(ctx):
